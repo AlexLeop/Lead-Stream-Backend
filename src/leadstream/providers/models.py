@@ -77,3 +77,91 @@ class ProviderHealth(TenantOwnedModel):
     def clean(self) -> None:
         if self.policy.tenant_id != self.tenant_id:
             raise ValidationError({"policy": "Saúde e política devem pertencer ao mesmo tenant."})
+
+
+class DiscoverySearch(TenantOwnedModel):
+    class Status(models.TextChoices):
+        QUEUED = "QUEUED", "Na fila"
+        RUNNING = "RUNNING", "Em execução"
+        COMPLETED = "COMPLETED", "Concluída"
+        FAILED = "FAILED", "Falhou"
+        CANCELLED = "CANCELLED", "Cancelada"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=160)
+    idempotency_key = models.CharField(max_length=128)
+    filters = models.JSONField(default=dict)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    max_results = models.PositiveIntegerField(default=10_000)
+    query_page_size = models.PositiveIntegerField(default=1_000)
+    checkpoint_offset = models.PositiveIntegerField(default=0)
+    total_results = models.PositiveIntegerField(default=0)
+    billed_bytes = models.PositiveBigIntegerField(default=0)
+    estimated_cost_cents = models.PositiveIntegerField(default=0)
+    lease_owner = models.CharField(max_length=255, blank=True)
+    leased_until = models.DateTimeField(null=True, blank=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    max_attempts = models.PositiveSmallIntegerField(default=5)
+    last_error_code = models.CharField(max_length=64, blank=True)
+    last_error_message = models.CharField(max_length=500, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "leadstream_discovery_search"
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=("tenant", "idempotency_key"), name="discovery_tenant_idempotency_uniq"
+            ),
+            models.CheckConstraint(
+                condition=Q(max_results__gte=1) & Q(max_results__lte=100_000),
+                name="discovery_max_results_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(query_page_size__gte=100) & Q(query_page_size__lte=10_000),
+                name="discovery_page_size_range",
+            ),
+        ]
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=("tenant", "status", "created_at"), name="discovery_status_idx"),
+            models.Index(fields=("status", "leased_until"), name="discovery_lease_idx"),
+        ]
+
+
+class DiscoveryResult(TenantOwnedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    search = models.ForeignKey(
+        DiscoverySearch, on_delete=models.PROTECT, related_name="results"
+    )
+    rank = models.PositiveIntegerField()
+    cnpj = models.CharField(max_length=14)
+    legal_name = models.CharField(max_length=255, blank=True)
+    trade_name = models.CharField(max_length=255, blank=True)
+    registration_status = models.CharField(max_length=64, blank=True)
+    primary_cnae = models.CharField(max_length=16, blank=True)
+    company_size = models.CharField(max_length=80, blank=True)
+    state = models.CharField(max_length=2, blank=True)
+    city = models.CharField(max_length=160, blank=True)
+    source_data = models.JSONField(default=dict)
+    source_fingerprint = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "leadstream_discovery_result"
+        ordering: ClassVar[list[str]] = ["rank", "id"]
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(fields=("search", "cnpj"), name="discovery_result_cnpj_uniq"),
+            models.UniqueConstraint(fields=("search", "rank"), name="discovery_result_rank_uniq"),
+        ]
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=("tenant", "search", "rank"), name="discovery_result_rank_idx"),
+            models.Index(fields=("tenant", "cnpj"), name="discovery_result_cnpj_idx"),
+        ]
+
+    def clean(self) -> None:
+        if self.search.tenant_id != self.tenant_id:
+            raise ValidationError({"search": "Resultado e busca devem pertencer ao mesmo tenant."})

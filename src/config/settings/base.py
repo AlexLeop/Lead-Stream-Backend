@@ -85,7 +85,11 @@ CELERY_BEAT_SCHEDULE = {
     "recover-stalled-batches": {
         "task": "leadstream.batches.recover",
         "schedule": 60.0,
-    }
+    },
+    "recover-stalled-discoveries": {
+        "task": "leadstream.providers.recover_discovery",
+        "schedule": 60.0,
+    },
 }
 DEPENDENCY_CHECK_TIMEOUT_SECONDS = env_int("DEPENDENCY_CHECK_TIMEOUT_SECONDS", default=2)
 APPWRITE_ENDPOINT = env("APPWRITE_ENDPOINT")

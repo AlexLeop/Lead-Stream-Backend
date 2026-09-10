@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -24,7 +25,7 @@ CSV_CONTENT = """CNPJ;Razão Social;E-mail
 """.encode()
 
 
-def upload_csv(client: APIClient, *, key: str) -> object:
+def upload_csv(client: APIClient, *, key: str) -> Any:
     return client.post(
         "/api/v1/lotes/",
         {

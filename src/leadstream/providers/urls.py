@@ -1,6 +1,10 @@
 from django.urls import path
 
 from .views import (
+    DiscoveryCollectionView,
+    DiscoveryDetailView,
+    DiscoveryMaterializeView,
+    DiscoveryResultsView,
     ProviderMetricsView,
     ProviderPolicyCollectionView,
     ProviderPolicyDetailView,
@@ -8,6 +12,22 @@ from .views import (
 )
 
 urlpatterns = [
+    path("descobertas/", DiscoveryCollectionView.as_view(), name="discovery-list"),
+    path(
+        "descobertas/<uuid:search_id>/",
+        DiscoveryDetailView.as_view(),
+        name="discovery-detail",
+    ),
+    path(
+        "descobertas/<uuid:search_id>/resultados/",
+        DiscoveryResultsView.as_view(),
+        name="discovery-results",
+    ),
+    path(
+        "descobertas/<uuid:search_id>/materializar/",
+        DiscoveryMaterializeView.as_view(),
+        name="discovery-materialize",
+    ),
     path("provedores/", ProviderPolicyCollectionView.as_view(), name="provider-policies"),
     path(
         "provedores/<uuid:policy_id>/",

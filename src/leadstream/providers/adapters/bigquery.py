@@ -43,20 +43,19 @@ class BigQueryOpenCNPJAdapter:
             from google.cloud import bigquery
         except ImportError as exc:
             raise ProviderNotConfigured("Instale google-cloud-bigquery.") from exc
-        query_parameters = [
-            bigquery.ScalarQueryParameter(
-                name,
-                (
-                    "BOOL"
-                    if isinstance(value, bool)
-                    else "INT64"
-                    if isinstance(value, int)
-                    else "STRING"
-                ),
-                value,
+        query_parameters: list[Any] = []
+        for name, value in parameters.items():
+            if isinstance(value, (list, tuple)):
+                query_parameters.append(bigquery.ArrayQueryParameter(name, "STRING", list(value)))
+                continue
+            parameter_type = (
+                "BOOL"
+                if isinstance(value, bool)
+                else "INT64"
+                if isinstance(value, int)
+                else "STRING"
             )
-            for name, value in parameters.items()
-        ]
+            query_parameters.append(bigquery.ScalarQueryParameter(name, parameter_type, value))
         job_config = bigquery.QueryJobConfig(
             query_parameters=query_parameters,
             maximum_bytes_billed=settings.BIGQUERY_MAXIMUM_BYTES_BILLED or None,
@@ -140,7 +139,12 @@ class BigQueryOpenCNPJAdapter:
         tebibytes = response.billed_bytes / (1024**4)
         return math.ceil(tebibytes * settings.BIGQUERY_COST_CENTS_PER_TIB)
 
-    def discover(self, filters: dict[str, str], *, limit: int, offset: int) -> QueryResponse:
+    def is_discovery_configured(self) -> bool:
+        return bool(settings.BIGQUERY_PROJECT_ID and settings.OPEN_CNPJ_DISCOVERY_SQL)
+
+    def discover(self, filters: dict[str, Any], *, limit: int, offset: int) -> QueryResponse:
+        if not self.is_discovery_configured():
+            raise ProviderNotConfigured("Descoberta BigQuery/OpenCNPJ não configurada.")
         sql = settings.OPEN_CNPJ_DISCOVERY_SQL
         if not sql:
             raise ProviderPermanentError("SQL de descoberta não configurado.")

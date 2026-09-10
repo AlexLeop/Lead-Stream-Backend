@@ -6,7 +6,8 @@ from rest_framework import serializers
 
 from leadstream.billing.models import DataBlock
 
-from .models import ProviderPolicy
+from .discovery import normalize_discovery_filters
+from .models import DiscoveryResult, DiscoverySearch, ProviderPolicy
 
 
 class ProviderPolicySerializer(serializers.ModelSerializer[ProviderPolicy]):
@@ -65,3 +66,89 @@ class ProviderMetricSerializer(serializers.Serializer[object]):
     calls = serializers.IntegerField()
     average_latency_ms = serializers.FloatField(allow_null=True)
     confirmed_cost_cents = serializers.IntegerField()
+
+
+class DiscoveryFiltersSerializer(serializers.Serializer[object]):
+    cnaes = serializers.ListField(
+        child=serializers.CharField(max_length=16), required=False, allow_empty=False
+    )
+    ufs = serializers.ListField(
+        child=serializers.CharField(min_length=2, max_length=2),
+        required=False,
+        allow_empty=False,
+    )
+    municipios = serializers.ListField(
+        child=serializers.CharField(max_length=160), required=False, allow_empty=False
+    )
+    situacoes_cadastrais = serializers.ListField(
+        child=serializers.CharField(max_length=80), required=False, allow_empty=False
+    )
+    portes = serializers.ListField(
+        child=serializers.CharField(max_length=80), required=False, allow_empty=False
+    )
+    naturezas_juridicas = serializers.ListField(
+        child=serializers.CharField(max_length=120), required=False, allow_empty=False
+    )
+    matriz = serializers.BooleanField(required=False)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        return normalize_discovery_filters(attrs)
+
+
+class DiscoveryCreateSerializer(serializers.Serializer[object]):
+    name = serializers.CharField(max_length=160, required=False, allow_blank=True)
+    filters = DiscoveryFiltersSerializer()
+    max_results = serializers.IntegerField(min_value=1, max_value=100_000, default=10_000)
+    query_page_size = serializers.IntegerField(min_value=100, max_value=10_000, default=1_000)
+
+
+class DiscoverySearchSerializer(serializers.ModelSerializer[DiscoverySearch]):
+    class Meta:
+        model = DiscoverySearch
+        fields = (
+            "id",
+            "name",
+            "filters",
+            "status",
+            "max_results",
+            "query_page_size",
+            "checkpoint_offset",
+            "total_results",
+            "billed_bytes",
+            "estimated_cost_cents",
+            "attempt_count",
+            "last_error_code",
+            "last_error_message",
+            "started_at",
+            "completed_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class DiscoveryResultSerializer(serializers.ModelSerializer[DiscoveryResult]):
+    class Meta:
+        model = DiscoveryResult
+        fields = (
+            "id",
+            "rank",
+            "cnpj",
+            "legal_name",
+            "trade_name",
+            "registration_status",
+            "primary_cnae",
+            "company_size",
+            "state",
+            "city",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class DiscoveryMaterializeSerializer(serializers.Serializer[object]):
+    name = serializers.CharField(max_length=160, required=False, allow_blank=True)
+    chunk_size = serializers.IntegerField(min_value=50, max_value=5_000, default=500)
+    result_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=False, max_length=100_000
+    )

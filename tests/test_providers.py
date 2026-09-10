@@ -24,13 +24,19 @@ from leadstream.providers.contracts import (
     ProviderResult,
     SocialCandidate,
 )
+from leadstream.providers.discovery import execute_discovery_search
 from leadstream.providers.exceptions import (
     ProviderBudgetExceeded,
     ProviderCircuitOpen,
     ProviderTemporaryError,
 )
 from leadstream.providers.executor import execute_provider
-from leadstream.providers.models import ProviderHealth, ProviderPolicy
+from leadstream.providers.models import (
+    DiscoveryResult,
+    DiscoverySearch,
+    ProviderHealth,
+    ProviderPolicy,
+)
 from leadstream.tenancy.services import get_internal_tenant
 
 pytestmark = pytest.mark.django_db
@@ -176,6 +182,7 @@ def test_executor_persiste_decisor_contatos_e_cobra_apenas_qualidade_suficiente(
     assert SocialProfile.objects.filter(tenant=context.tenant).count() == 1
     assert Observation.objects.filter(tenant=context.tenant).count() >= 4
     assert SourceRecord.objects.filter(tenant=context.tenant).count() == 1
+    assert execution.call_id is not None
     assert ProviderCall.objects.get(pk=execution.call_id).confirmed_cost_cents == 16
     assert BillableEvent.objects.filter(batch=context.batch).count() == 3
     assert sum(
@@ -343,3 +350,128 @@ def test_api_expoe_politicas_sem_credenciais_e_inicia_enriquecimento(
     chunk = BatchChunk.objects.get(batch=context.batch, stage=BatchChunk.Stage.ENRICHMENT)
     assert chunk.requested_blocks == [DataBlock.COMPANY_REGISTRY, DataBlock.DECISION_MAKER]
     assert published == [[chunk.pk]]
+
+
+@override_settings(
+    BIGQUERY_PROJECT_ID="project-test",
+    OPEN_CNPJ_DISCOVERY_SQL=(
+        "SELECT * FROM table WHERE uf IN UNNEST(@ufs) LIMIT @limit OFFSET @offset"
+    ),
+    BIGQUERY_COST_CENTS_PER_TIB=3_500,
+)
+def test_descoberta_paginada_materializa_lote_idempotente(
+    api_client: Any,
+    django_capture_on_commit_callbacks: Any,
+) -> None:
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        dispatched: list[str] = []
+        monkeypatch.setattr(
+            "leadstream.providers.tasks.process_discovery_search_task.delay",
+            lambda search_id: dispatched.append(search_id),
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = api_client.post(
+                "/api/v1/descobertas/",
+                {
+                    "name": "Empresas de tecnologia em SP",
+                    "filters": {"cnaes": ["6201501"], "ufs": ["sp"], "matriz": True},
+                    "max_results": 2,
+                    "query_page_size": 100,
+                },
+                format="json",
+                HTTP_IDEMPOTENCY_KEY="discovery-search-001",
+            )
+    assert response.status_code == 202
+    search = DiscoverySearch.objects.get(pk=response.json()["id"])
+    assert dispatched == [str(search.pk)]
+    assert search.filters == {"cnaes": ["6201501"], "matriz": True, "ufs": ["SP"]}
+
+    captured: list[dict[str, Any]] = []
+
+    def runner(sql: str, parameters: dict[str, Any]) -> QueryResponse:
+        assert "UNNEST(@ufs)" in sql
+        captured.append(parameters)
+        return QueryResponse(
+            rows=(
+                {
+                    "cnpj": "04.252.011/0001-10",
+                    "razao_social": "Empresa Exemplo Ltda",
+                    "nome_fantasia": "Exemplo",
+                    "cnae_fiscal": "6201501",
+                    "uf": "SP",
+                    "municipio": "São Paulo",
+                    "situacao_cadastral": "ATIVA",
+                    "porte": "ME",
+                },
+                {
+                    "cnpj": "33.000.167/0001-01",
+                    "razao_social": "Empresa Nacional S.A.",
+                    "cnae_fiscal": "6201501",
+                    "uf": "SP",
+                    "municipio": "Santos",
+                    "situacao_cadastral": "ATIVA",
+                    "porte": "DEMAIS",
+                },
+            ),
+            billed_bytes=1_000_000,
+        )
+
+    execution = execute_discovery_search(
+        search_id=search.pk,
+        worker_id="worker-discovery",
+        adapter=BigQueryOpenCNPJAdapter(runner=runner),
+    )
+    assert execution.status == DiscoverySearch.Status.COMPLETED
+    search.refresh_from_db()
+    assert search.total_results == 2
+    assert search.checkpoint_offset == 2
+    assert DiscoveryResult.objects.filter(search=search).count() == 2
+    assert captured == [
+        {"cnaes": ["6201501"], "matriz": True, "ufs": ["SP"], "limit": 2, "offset": 0}
+    ]
+
+    first_page = api_client.get(f"/api/v1/descobertas/{search.pk}/resultados/?page_size=1")
+    assert first_page.status_code == 200
+    assert len(first_page.json()["results"]) == 1
+    assert first_page.json()["next"] is not None
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        chunks: list[str] = []
+        monkeypatch.setattr(
+            "leadstream.batches.tasks.process_chunk_task.delay",
+            lambda chunk_id: chunks.append(chunk_id),
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            materialized = api_client.post(
+                f"/api/v1/descobertas/{search.pk}/materializar/",
+                {"name": "Lote SP", "chunk_size": 50},
+                format="json",
+                HTTP_IDEMPOTENCY_KEY="discovery-batch-001",
+            )
+    assert materialized.status_code == 202
+    batch = Batch.objects.get(pk=materialized.json()["id"])
+    assert batch.source_type == Batch.SourceType.DISCOVERY
+    assert batch.total_rows == 2
+    assert batch.items.count() == 2
+    assert batch.chunks.count() == 1
+    assert chunks == [str(batch.chunks.get().pk)]
+
+    replay = api_client.post(
+        f"/api/v1/descobertas/{search.pk}/materializar/",
+        {"name": "Outro nome", "chunk_size": 50},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="discovery-batch-001",
+    )
+    assert replay.status_code == 200
+    assert replay.json()["id"] == str(batch.pk)
+
+
+def test_api_bloqueia_descoberta_sem_bigquery_configurado(api_client: Any) -> None:
+    response = api_client.post(
+        "/api/v1/descobertas/",
+        {"filters": {"ufs": ["SP"]}},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="discovery-disabled-001",
+    )
+    assert response.status_code == 503
+    assert DiscoverySearch.objects.count() == 0

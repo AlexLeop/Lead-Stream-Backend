@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
 
+from leadstream.entities.models import Entity
 from leadstream.entities.services import create_company
 from leadstream.evidence.models import (
     CaptureMethod,
@@ -25,7 +26,7 @@ from leadstream.tenancy.services import get_internal_tenant
 pytestmark = pytest.mark.django_db
 
 
-def build_context() -> tuple[Tenant, object, SourceRecord, Evidence]:
+def build_context() -> tuple[Tenant, Entity, SourceRecord, Evidence]:
     tenant = get_internal_tenant()
     target = create_company(
         tenant=tenant,
@@ -80,7 +81,7 @@ def test_observacao_exige_proveniencia_e_confianca_valida() -> None:
     tenant, target, record, evidence = build_context()
     observation = append_observation(
         tenant=tenant,
-        target=target,  # type: ignore[arg-type]
+        target=target,
         source_record=record,
         field_path="company.trade_name",
         value="Empresa Exemplo",
@@ -94,7 +95,7 @@ def test_observacao_exige_proveniencia_e_confianca_valida() -> None:
 
     invalid = Observation(
         tenant=tenant,
-        target=target,  # type: ignore[arg-type]
+        target=target,
         source_record=record,
         field_path="company.trade_name",
         value="X",
@@ -113,7 +114,7 @@ def test_observacao_e_append_only_e_pode_ser_supersedida() -> None:
     tenant, target, record, _ = build_context()
     first = append_observation(
         tenant=tenant,
-        target=target,  # type: ignore[arg-type]
+        target=target,
         source_record=record,
         field_path="company.trade_name",
         value="Nome anterior",
@@ -131,7 +132,7 @@ def test_observacao_e_append_only_e_pode_ser_supersedida() -> None:
 
     second = append_observation(
         tenant=tenant,
-        target=target,  # type: ignore[arg-type]
+        target=target,
         source_record=record,
         field_path="company.trade_name",
         value="Nome atual",
@@ -160,7 +161,7 @@ def test_trigger_postgresql_bloqueia_sql_direto() -> None:
     tenant, target, record, _ = build_context()
     observation = append_observation(
         tenant=tenant,
-        target=target,  # type: ignore[arg-type]
+        target=target,
         source_record=record,
         field_path="company.trade_name",
         value="Imutável",
