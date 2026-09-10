@@ -17,6 +17,7 @@ dependencies = [
   "djangorestframework>=3.18,<3.19",
   "drf-spectacular>=0.30,<0.31",
   "gunicorn>=23,<24",
+  "google-cloud-bigquery>=3.44,<4",
   "httpx>=0.28,<0.29",
   "psycopg[binary,pool]>=3.2,<4",
   "redis>=6,<7",
@@ -67,5 +68,5 @@ exclude = ["src/.*/migrations/"]
 django_settings_module = "config.settings.test"
 
 [[tool.mypy.overrides]]
-module = ["appwrite.*", "celery.*", "kombu.*"]
+module = ["appwrite.*", "celery.*", "kombu.*", "google.*"]
 ignore_missing_imports = true

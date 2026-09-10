@@ -70,13 +70,21 @@ def _publish_ingestion(batch_id: UUID | str) -> None:
 
 
 def _publish_chunk(chunk_id: UUID | str) -> None:
+    from leadstream.providers.tasks import process_enrichment_chunk_task
+
     from .tasks import process_chunk_task
 
-    BatchChunk.objects.filter(pk=chunk_id, status=BatchChunk.Status.PENDING).update(
+    chunk = BatchChunk.objects.filter(pk=chunk_id).values("stage", "status").first()
+    if chunk is None or chunk["status"] != BatchChunk.Status.PENDING:
+        return
+    BatchChunk.objects.filter(pk=chunk_id).update(
         dispatched_at=timezone.now()
     )
     try:
-        process_chunk_task.delay(str(chunk_id))
+        if chunk["stage"] == BatchChunk.Stage.ENRICHMENT:
+            process_enrichment_chunk_task.delay(str(chunk_id))
+        else:
+            process_chunk_task.delay(str(chunk_id))
     except Exception:
         BatchChunk.objects.filter(pk=chunk_id, status=BatchChunk.Status.PENDING).update(
             dispatched_at=None
@@ -319,7 +327,7 @@ def claim_chunk(
     )
     Batch.objects.filter(pk=chunk.batch_id, status=Batch.Status.QUEUED).update(
         status=Batch.Status.RUNNING,
-        current_stage="HYGIENE",
+        current_stage=chunk.stage,
     )
     return chunk, attempt
 

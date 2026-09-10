@@ -93,6 +93,8 @@ class ProviderCall(TenantOwnedModel):
     currency = models.CharField(max_length=3, default="BRL")
     external_request_id = models.CharField(max_length=255, blank=True)
     error_code = models.CharField(max_length=64, blank=True)
+    latency_ms = models.PositiveIntegerField(default=0)
+    delivered_blocks = models.JSONField(default=list, blank=True)
     started_at = models.DateTimeField()
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

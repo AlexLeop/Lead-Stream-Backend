@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "leadstream.governance.apps.GovernanceConfig",
     "leadstream.batches.apps.BatchesConfig",
     "leadstream.billing.apps.BillingConfig",
+    "leadstream.providers.apps.ProvidersConfig",
 ]
 
 MIDDLEWARE = [
@@ -98,6 +99,32 @@ BATCH_STORAGE_ROOT = Path(env("BATCH_STORAGE_ROOT", default=str(BASE_DIR / "data
 BATCH_MAX_UPLOAD_BYTES = env_int("BATCH_MAX_UPLOAD_BYTES", default=50 * 1024 * 1024)
 BATCH_MAX_ROWS = env_int("BATCH_MAX_ROWS", default=100_000)
 BATCH_LEASE_SECONDS = env_int("BATCH_LEASE_SECONDS", default=300)
+BIGQUERY_PROJECT_ID = env("BIGQUERY_PROJECT_ID")
+OPEN_CNPJ_BIGQUERY_SQL = env("OPEN_CNPJ_BIGQUERY_SQL")
+OPEN_CNPJ_DISCOVERY_SQL = env("OPEN_CNPJ_DISCOVERY_SQL")
+BIGQUERY_MAXIMUM_BYTES_BILLED = env_int("BIGQUERY_MAXIMUM_BYTES_BILLED", default=10_000_000_000)
+BIGQUERY_TIMEOUT_SECONDS = env_int("BIGQUERY_TIMEOUT_SECONDS", default=60)
+BIGQUERY_COST_CENTS_PER_TIB = env_int("BIGQUERY_COST_CENTS_PER_TIB", default=3500)
+BIGDATACORP_BASE_URL = env(
+    "BIGDATACORP_BASE_URL", default="https://plataforma.bigdatacorp.com.br"
+)
+BIGDATACORP_ACCESS_TOKEN = env("BIGDATACORP_ACCESS_TOKEN")
+BIGDATACORP_TOKEN_ID = env("BIGDATACORP_TOKEN_ID")
+BIGDATACORP_DATASETS = env("BIGDATACORP_DATASETS", default="basic_data,relationships")
+BIGDATACORP_TIMEOUT_SECONDS = env_int("BIGDATACORP_TIMEOUT_SECONDS", default=30)
+BIGDATACORP_COST_CENTS = env_int("BIGDATACORP_COST_CENTS", default=0)
+APIFY_BASE_URL = env("APIFY_BASE_URL", default="https://api.apify.com/v2")
+APIFY_TOKEN = env("APIFY_TOKEN")
+APIFY_DECISION_MAKER_ACTOR_ID = env("APIFY_DECISION_MAKER_ACTOR_ID")
+APIFY_TIMEOUT_SECONDS = env_int("APIFY_TIMEOUT_SECONDS", default=300)
+APIFY_MAX_RESULTS_PER_COMPANY = env_int("APIFY_MAX_RESULTS_PER_COMPANY", default=10)
+APIFY_COST_CENTS = env_int("APIFY_COST_CENTS", default=0)
+OPEN_ENRICH_URL = env("OPEN_ENRICH_URL")
+OPEN_ENRICH_TOKEN = env("OPEN_ENRICH_TOKEN")
+OPEN_ENRICH_COST_CENTS = env_int("OPEN_ENRICH_COST_CENTS", default=0)
+PREMIUM_ENRICH_URL = env("PREMIUM_ENRICH_URL")
+PREMIUM_ENRICH_TOKEN = env("PREMIUM_ENRICH_TOKEN")
+PREMIUM_ENRICH_COST_CENTS = env_int("PREMIUM_ENRICH_COST_CENTS", default=0)
 LOG_LEVEL = env("LOG_LEVEL", default="INFO")
 LOGGING = build_logging_config(LOG_LEVEL)
 
@@ -132,5 +159,6 @@ SPECTACULAR_SETTINGS = {
         "ContactPointScopeEnum": "leadstream.entities.models.CONTACT_POINT_SCOPE_CHOICES",
         "SuppressionScopeEnum": "leadstream.governance.models.SUPPRESSION_SCOPE_CHOICES",
         "DataBlockEnum": "leadstream.billing.models.DATA_BLOCK_CHOICES",
+        "ProviderCallStatusEnum": "leadstream.billing.models.ProviderCall.Status.choices",
     },
 }

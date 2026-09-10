@@ -94,6 +94,13 @@ class BatchItem(TenantOwnedModel):
         ABSENT = "ABSENT", "Sem resultado"
         FAILED = "FAILED", "Falhou"
 
+    class EnrichmentStatus(models.TextChoices):
+        PENDING = "PENDING", "Pendente"
+        SUCCEEDED = "SUCCEEDED", "Concluído"
+        PARTIAL = "PARTIAL", "Parcial"
+        FAILED = "FAILED", "Falhou"
+        SKIPPED = "SKIPPED", "Ignorado"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     batch = models.ForeignKey(Batch, on_delete=models.PROTECT, related_name="items")
     row_number = models.PositiveIntegerField()
@@ -113,6 +120,12 @@ class BatchItem(TenantOwnedModel):
     error_code = models.CharField(max_length=64, blank=True)
     error_message = models.CharField(max_length=500, blank=True)
     processed_at = models.DateTimeField(null=True, blank=True)
+    enrichment_status = models.CharField(
+        max_length=16, choices=EnrichmentStatus.choices, default=EnrichmentStatus.PENDING
+    )
+    delivered_blocks = models.JSONField(default=list)
+    missing_blocks = models.JSONField(default=list)
+    enrichment_errors = models.JSONField(default=list)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -145,6 +158,10 @@ class BatchItem(TenantOwnedModel):
 
 
 class BatchChunk(TenantOwnedModel):
+    class Stage(models.TextChoices):
+        HYGIENE = "HYGIENE", "Higienização"
+        ENRICHMENT = "ENRICHMENT", "Enriquecimento"
+
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pendente"
         LEASED = "LEASED", "Reservado"
@@ -156,6 +173,8 @@ class BatchChunk(TenantOwnedModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     batch = models.ForeignKey(Batch, on_delete=models.PROTECT, related_name="chunks")
+    stage = models.CharField(max_length=16, choices=Stage.choices, default=Stage.HYGIENE)
+    requested_blocks = models.JSONField(default=list)
     sequence = models.PositiveIntegerField()
     start_row = models.PositiveIntegerField()
     end_row = models.PositiveIntegerField()
@@ -176,7 +195,9 @@ class BatchChunk(TenantOwnedModel):
     class Meta:
         db_table = "leadstream_batch_chunk"
         constraints: ClassVar[list[models.BaseConstraint]] = [
-            models.UniqueConstraint(fields=("batch", "sequence"), name="batch_chunk_seq_uniq"),
+            models.UniqueConstraint(
+                fields=("batch", "stage", "sequence"), name="batch_chunk_stage_seq_uniq"
+            ),
             models.CheckConstraint(
                 condition=Q(end_row__gte=models.F("start_row")), name="batch_chunk_rows_order"
             ),

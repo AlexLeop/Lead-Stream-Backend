@@ -166,6 +166,8 @@ def finalize_provider_call(
     confirmed_cost_cents: int,
     external_request_id: str = "",
     error_code: str = "",
+    latency_ms: int = 0,
+    delivered_blocks: Iterable[str] = (),
 ) -> ProviderCall:
     locked = ProviderCall.objects.select_for_update().select_related("batch").get(pk=call.pk)
     if status not in TERMINAL_CALL_STATUSES:
@@ -178,6 +180,8 @@ def finalize_provider_call(
     locked.confirmed_cost_cents = confirmed_cost_cents
     locked.external_request_id = external_request_id[:255]
     locked.error_code = error_code[:64]
+    locked.latency_ms = max(latency_ms, 0)
+    locked.delivered_blocks = sorted(set(delivered_blocks))
     locked.completed_at = timezone.now()
     locked.save()
     refresh_batch_financials(locked.batch_id)

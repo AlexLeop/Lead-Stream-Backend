@@ -26,4 +26,5 @@ urlpatterns = [
     path("api/v1/dados/", include("leadstream.governance.urls")),
     path("api/v1/lotes/", include("leadstream.batches.urls")),
     path("api/v1/", include("leadstream.billing.urls")),
+    path("api/v1/", include("leadstream.providers.urls")),
 ]

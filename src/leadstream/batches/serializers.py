@@ -59,6 +59,7 @@ class BatchItemSerializer(serializers.ModelSerializer[BatchItem]):
             "id", "batch", "row_number", "original_data", "normalized_data",
             "hygiene_state", "applied_rules", "issues", "fingerprint", "duplicate_of",
             "entity", "status", "error_code", "error_message", "processed_at", "created_at",
+            "enrichment_status", "delivered_blocks", "missing_blocks", "enrichment_errors",
         )
         read_only_fields = fields
 
@@ -79,7 +80,8 @@ class BatchChunkSerializer(serializers.ModelSerializer[BatchChunk]):
     class Meta:
         model = BatchChunk
         fields = (
-            "id", "batch", "sequence", "start_row", "end_row", "status",
+            "id", "batch", "stage", "requested_blocks", "sequence", "start_row", "end_row",
+            "status",
             "checkpoint_row", "attempt_count", "max_attempts", "last_error_code",
             "last_error_message", "dispatched_at", "started_at", "completed_at", "attempts",
         )
