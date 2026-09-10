@@ -109,7 +109,7 @@ Plans:
 
 Plans:
 
-- [ ] 04-01: Criar provider SDK interno, quotas, circuit breaker e orçamento.
+- [x] 04-01: Criar provider SDK interno, quotas, circuit breaker e orçamento.
 - [ ] 04-02: Integrar OpenCNPJ/BigQuery e BigDataCorp.
 - [ ] 04-03: Integrar Apify, Open Enrich, fallback premium e orquestração da cascata.
 
@@ -165,6 +165,6 @@ Plans:
 | 1. Fundação Executável | 3/3 | Verification |  |
 | 2. Dados Confiáveis | 3/3 | Complete | 2026-09-10 |
 | 3. Lotes com Valor Mensurável | 3/3 | Complete | 2026-09-10 |
-| 4. Descoberta e Enriquecimento Real | 0/3 | Not started | - |
+| 4. Descoberta e Enriquecimento Real | 1/3 | In progress | - |
 | 5. Entrega e Operação Comercial | 0/3 | Not started | - |
 | 6. Aceite de Produção | 0/4 | Not started | - |

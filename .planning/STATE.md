@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Starting Phase 4 — Descoberta e Enriquecimento Real
-last_updated: "2026-09-10T12:00:00-03:00"
+last_updated: "2026-09-10T12:10:00-03:00"
 last_activity: 2026-09-10
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 19
-  completed_plans: 9
-  percent: 47
+  completed_plans: 10
+  percent: 53
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-09-09)
 ## Current Position
 
 Phase: 4 (Descoberta e Enriquecimento Real)
-Plan: 0 of 3
-Status: Ready to plan and execute
+Plan: 1 of 3
+Status: Executing
 Last activity: 2026-09-10
 
-Progress: [█████░░░░░] 47%
+Progress: [█████░░░░░] 53%
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Progress: [█████░░░░░] 47%
 - Milestone v1.0: uma sexta fase bloqueia o go-live até segurança, carga, falhas, restore e SLOs serem comprovados.
 - Phase 2: tenant nunca é aceito do payload; referências cruzadas são rejeitadas.
 - Phase 2: supressão persiste HMAC versionado e canonização exclui dados suprimidos.
+- Phase 4: segredos de provedores permanecem no runtime; resultados externos viram evidência antes de canonização e cobrança.
 
 ### Roadmap Evolution
 
