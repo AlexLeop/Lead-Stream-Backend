@@ -88,9 +88,9 @@ Plans:
 
 Plans:
 
-- [ ] 03-01: Implementar lotes, chunks, state machines, leasing e comandos operacionais.
-- [ ] 03-02: Implementar ingestão CSV, normalização e deduplicação em bulk.
-- [ ] 03-03: Implementar custos, tabela de preços e ledger faturável idempotente.
+- [x] 03-01: Implementar lotes, chunks, state machines, leasing e comandos operacionais.
+- [x] 03-02: Implementar ingestão CSV, normalização e deduplicação em bulk.
+- [x] 03-03: Implementar custos, tabela de preços e ledger faturável idempotente.
 
 ### Phase 4: Descoberta e Enriquecimento Real
 
@@ -164,7 +164,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Fundação Executável | 3/3 | Verification |  |
 | 2. Dados Confiáveis | 3/3 | Complete | 2026-09-10 |
-| 3. Lotes com Valor Mensurável | 0/3 | Not started | - |
+| 3. Lotes com Valor Mensurável | 3/3 | Complete | 2026-09-10 |
 | 4. Descoberta e Enriquecimento Real | 0/3 | Not started | - |
 | 5. Entrega e Operação Comercial | 0/3 | Not started | - |
 | 6. Aceite de Produção | 0/4 | Not started | - |

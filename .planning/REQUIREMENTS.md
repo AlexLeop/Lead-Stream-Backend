@@ -28,17 +28,17 @@
 
 - [ ] **DISC-01**: Operador pode descobrir empresas por filtros de segmento, localização, porte, situação, CNAE e características disponíveis nas fontes cadastradas.
 - [ ] **DISC-02**: Descoberta retorna resultados paginados e pode materializar seleção como lote sem baixar a base nacional para a VPS.
-- [ ] **HYG-01**: Sistema normaliza CNPJ, razão social, domínio, e-mail e telefone por regras determinísticas e testadas.
-- [ ] **HYG-02**: Sistema deduplica e correlaciona registros preservando o valor original, a regra aplicada e o motivo da decisão.
-- [ ] **HYG-03**: Sistema diferencia valor inválido, ausente, inalterado, corrigido, inferido e validado.
+- [x] **HYG-01**: Sistema normaliza CNPJ, razão social, domínio, e-mail e telefone por regras determinísticas e testadas.
+- [x] **HYG-02**: Sistema deduplica e correlaciona registros preservando o valor original, a regra aplicada e o motivo da decisão.
+- [x] **HYG-03**: Sistema diferencia valor inválido, ausente, inalterado, corrigido, inferido e validado.
 
 ### Lotes e execução
 
-- [ ] **BATCH-01**: Operador pode enviar CSV ou uma seleção de descoberta com até 100 mil empresas e recebe um ID sem aguardar o processamento.
-- [ ] **BATCH-02**: Sistema divide lotes em chunks configuráveis e persiste o estado de cada lote, etapa, item e tentativa.
-- [ ] **BATCH-03**: Job interrompido retoma do checkpoint sem repetir efeitos já confirmados.
-- [ ] **BATCH-04**: Operador pode pausar, retomar ou cancelar trabalho ainda não iniciado sem corromper resultados concluídos.
-- [ ] **BATCH-05**: Progresso expõe totais, etapa atual, sucessos, ausências, erros, custo, cobertura e estimativa de conclusão.
+- [x] **BATCH-01**: Operador pode enviar CSV ou uma seleção de descoberta com até 100 mil empresas e recebe um ID sem aguardar o processamento.
+- [x] **BATCH-02**: Sistema divide lotes em chunks configuráveis e persiste o estado de cada lote, etapa, item e tentativa.
+- [x] **BATCH-03**: Job interrompido retoma do checkpoint sem repetir efeitos já confirmados.
+- [x] **BATCH-04**: Operador pode pausar, retomar ou cancelar trabalho ainda não iniciado sem corromper resultados concluídos.
+- [x] **BATCH-05**: Progresso expõe totais, etapa atual, sucessos, ausências, erros, custo, cobertura e estimativa de conclusão.
 
 ### Provedores e cascata
 
@@ -52,11 +52,11 @@
 
 ### Custos e cobrança
 
-- [ ] **BILL-01**: Sistema registra custo estimado e confirmado de cada chamada externa em centavos e moeda de origem.
-- [ ] **BILL-02**: Sistema cria cobrança apenas para bloco efetivamente entregue e elegível, nunca por tentativa, erro, ausência ou baixa confiança.
-- [ ] **BILL-03**: Cobrança é idempotente por tenant, registro, bloco, valor e janela de atualização.
-- [ ] **BILL-04**: Operador pode consultar receita projetada, custo, lucro bruto e cobertura por lote, provedor e bloco.
-- [ ] **BILL-05**: Tabela de preços possui histórico; alterações não modificam eventos já gerados.
+- [x] **BILL-01**: Sistema registra custo estimado e confirmado de cada chamada externa em centavos e moeda de origem.
+- [x] **BILL-02**: Sistema cria cobrança apenas para bloco efetivamente entregue e elegível, nunca por tentativa, erro, ausência ou baixa confiança.
+- [x] **BILL-03**: Cobrança é idempotente por tenant, registro, bloco, valor e janela de atualização.
+- [x] **BILL-04**: Operador pode consultar receita projetada, custo, lucro bruto e cobertura por lote, provedor e bloco.
+- [x] **BILL-05**: Tabela de preços possui histórico; alterações não modificam eventos já gerados.
 
 ### Privacidade e governança
 
@@ -79,7 +79,7 @@
 
 - [x] **OPS-01**: Logs estruturados correlacionam request, tenant, lote, chunk e provedor com redação de dados sensíveis.
 - [ ] **OPS-02**: Métricas mostram filas, latência, erros, retries, circuit breakers, custo e cobertura por fonte.
-- [ ] **OPS-03**: Testes não dependem de rede real e cobrem transações, idempotência, replay, promoção de evidência e isolamento de tenant.
+- [x] **OPS-03**: Testes não dependem de rede real e cobrem transações, idempotência, replay, promoção de evidência e isolamento de tenant.
 - [x] **OPS-04**: Pipeline de qualidade executa lint, tipos, migrations check e testes antes do build de produção.
 - [ ] **OPS-05**: Operador possui runbook de implantação, backup, restore, rotação de credenciais e recuperação de lote.
 
@@ -134,10 +134,10 @@
 | OPS-01, OPS-04 | Phase 1 | Complete |
 | DATA-01, DATA-02, DATA-03, DATA-04, DATA-05, DATA-06 | Phase 2 | Complete |
 | COMP-01, COMP-02, COMP-03 | Phase 2 | Partial (COMP-02 aguarda integração de saída) |
-| HYG-01, HYG-02, HYG-03 | Phase 3 | Pending |
-| BATCH-01, BATCH-02, BATCH-03, BATCH-04, BATCH-05 | Phase 3 | Pending |
-| BILL-01, BILL-02, BILL-03, BILL-04, BILL-05 | Phase 3 | Pending |
-| OPS-03 | Phase 3 | Pending |
+| HYG-01, HYG-02, HYG-03 | Phase 3 | Complete |
+| BATCH-01, BATCH-02, BATCH-03, BATCH-04, BATCH-05 | Phase 3 | Complete |
+| BILL-01, BILL-02, BILL-03, BILL-04, BILL-05 | Phase 3 | Complete |
+| OPS-03 | Phase 3 | Complete |
 | DISC-01, DISC-02 | Phase 4 | Pending |
 | PROV-01, PROV-02, PROV-03, PROV-04, PROV-05, PROV-06, PROV-07 | Phase 4 | Pending |
 | OPS-02 | Phase 4 | Pending |
