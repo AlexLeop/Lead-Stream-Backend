@@ -16,7 +16,16 @@ from leadstream.batches.models import Batch, BatchItem
 from leadstream.evidence.models import CanonicalDecision, EvidenceStatus
 from leadstream.tenancy.models import Tenant
 
-from .models import BillableEvent, DataBlock, PriceBook, PriceRule, ProviderCall
+from .models import (
+    BillableEvent,
+    CreditReservation,
+    CreditTransaction,
+    CreditWallet,
+    DataBlock,
+    PriceBook,
+    PriceRule,
+    ProviderCall,
+)
 
 DEFAULT_PRICE_RULES: tuple[tuple[str, int, int, int], ...] = (
     (DataBlock.COMPANY_REGISTRY, 8, 85, 30),
@@ -334,3 +343,197 @@ def financial_summary(*, tenant: Tenant, batch: Batch) -> dict[str, Any]:
         "by_block": blocks,
         "by_provider": providers,
     }
+
+
+INITIAL_CREDIT_BONUS = 500
+
+
+def get_or_create_wallet(tenant: Tenant) -> CreditWallet:
+    """Obtém ou inicializa a carteira de créditos do tenant.
+    Novos tenants recebem 500 créditos de cortesia inicial.
+    O tenant interno de administração possui créditos ilimitados.
+    """
+    with transaction.atomic():
+        wallet = (
+            CreditWallet.objects.select_for_update()
+            .filter(tenant=tenant)
+            .first()
+        )
+        if wallet:
+            return wallet
+
+        is_internal = (
+            str(tenant.id) == "00000000-0000-4000-8000-000000000001"
+            or tenant.slug == "alexandre-leopoldo"
+        )
+        initial_balance = 0 if is_internal else INITIAL_CREDIT_BONUS
+
+        wallet = CreditWallet.objects.create(
+            tenant=tenant,
+            balance=initial_balance,
+            reserved_balance=0,
+            is_unlimited=is_internal,
+        )
+
+        if initial_balance > 0:
+            CreditTransaction.objects.create(
+                tenant=tenant,
+                wallet=wallet,
+                transaction_type=CreditTransaction.Type.BONUS,
+                amount=initial_balance,
+                balance_after=initial_balance,
+                reference_id="INITIAL_BONUS",
+                metadata={"reason": "Boas-vindas ao LeadStream (saldo cortesia)"},
+            )
+
+        return wallet
+
+
+def deposit_credits(
+    wallet: CreditWallet,
+    amount: int,
+    reference_id: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> CreditTransaction:
+    """Adiciona créditos à carteira de forma atômica e registra a transação imutável."""
+    if amount <= 0:
+        raise ValidationError("O valor do depósito deve ser estritamente positivo.")
+
+    with transaction.atomic():
+        locked_wallet = (
+            CreditWallet.objects.select_for_update()
+            .get(id=wallet.id)
+        )
+        locked_wallet.balance += amount
+        locked_wallet.save(update_fields=["balance", "updated_at"])
+
+        tx = CreditTransaction.objects.create(
+            tenant=locked_wallet.tenant,
+            wallet=locked_wallet,
+            transaction_type=CreditTransaction.Type.DEPOSIT,
+            amount=amount,
+            balance_after=locked_wallet.balance,
+            reference_id=reference_id,
+            metadata=metadata or {},
+        )
+        return tx
+
+
+def hold_credits(
+    wallet: CreditWallet,
+    amount: int,
+    batch: Batch | None = None,
+    description: str = "",
+) -> CreditReservation:
+    """Reserva créditos para a execução de um lote ou enriquecimento (Hold)."""
+    if amount <= 0:
+        raise ValidationError("O valor da reserva deve ser estritamente positivo.")
+
+    with transaction.atomic():
+        locked_wallet = (
+            CreditWallet.objects.select_for_update()
+            .get(id=wallet.id)
+        )
+
+        if not locked_wallet.is_unlimited and locked_wallet.balance < amount:
+            raise ValidationError(
+                f"Saldo insuficiente. Disponível: {locked_wallet.balance}, necessário: {amount}."
+            )
+
+        if not locked_wallet.is_unlimited:
+            locked_wallet.balance -= amount
+
+        locked_wallet.reserved_balance += amount
+        locked_wallet.save(update_fields=["balance", "reserved_balance", "updated_at"])
+
+        reservation = CreditReservation.objects.create(
+            tenant=locked_wallet.tenant,
+            wallet=locked_wallet,
+            batch=batch,
+            amount=amount,
+            status=CreditReservation.Status.ACTIVE,
+            description=description,
+        )
+
+        CreditTransaction.objects.create(
+            tenant=locked_wallet.tenant,
+            wallet=locked_wallet,
+            reservation=reservation,
+            transaction_type=CreditTransaction.Type.HOLD,
+            amount=-amount if not locked_wallet.is_unlimited else 0,
+            balance_after=locked_wallet.balance,
+            reference_id=f"HOLD_{reservation.id}",
+            metadata={"batch_id": str(batch.id) if batch else None, "description": description},
+        )
+
+        return reservation
+
+
+def capture_and_release(
+    reservation: CreditReservation,
+    actual_amount: int,
+) -> tuple[CreditTransaction, CreditTransaction | None]:
+    """Liquida a reserva (Capture de leads úteis + Release do excedente não utilizado)."""
+    if actual_amount < 0:
+        raise ValidationError("O valor faturado não pode ser negativo.")
+
+    with transaction.atomic():
+        locked_res = (
+            CreditReservation.objects.select_for_update()
+            .get(id=reservation.id)
+        )
+        if locked_res.status != CreditReservation.Status.ACTIVE:
+            raise ValidationError("Apenas reservas ativas podem ser liquidadas.")
+
+        locked_wallet = (
+            CreditWallet.objects.select_for_update()
+            .get(id=locked_res.wallet_id)
+        )
+
+        reserved = locked_res.amount
+        capture_val = min(actual_amount, reserved)
+        release_val = max(0, reserved - capture_val)
+
+        locked_wallet.reserved_balance = max(0, locked_wallet.reserved_balance - reserved)
+        if not locked_wallet.is_unlimited and release_val > 0:
+            locked_wallet.balance += release_val
+
+        locked_wallet.save(update_fields=["balance", "reserved_balance", "updated_at"])
+
+        locked_res.captured_amount = capture_val
+        locked_res.released_amount = release_val
+        locked_res.status = CreditReservation.Status.SETTLED
+        locked_res.save(
+            update_fields=["captured_amount", "released_amount", "status", "updated_at"]
+        )
+
+        reservation.captured_amount = capture_val
+        reservation.released_amount = release_val
+        reservation.status = CreditReservation.Status.SETTLED
+
+        capture_tx = CreditTransaction.objects.create(
+            tenant=locked_wallet.tenant,
+            wallet=locked_wallet,
+            reservation=locked_res,
+            transaction_type=CreditTransaction.Type.CAPTURE,
+            amount=-capture_val if not locked_wallet.is_unlimited else 0,
+            balance_after=locked_wallet.balance,
+            reference_id=f"CAP_{locked_res.id}",
+            metadata={"actual_delivered_credits": capture_val},
+        )
+
+        release_tx = None
+        if release_val > 0:
+            release_tx = CreditTransaction.objects.create(
+                tenant=locked_wallet.tenant,
+                wallet=locked_wallet,
+                reservation=locked_res,
+                transaction_type=CreditTransaction.Type.RELEASE,
+                amount=release_val if not locked_wallet.is_unlimited else 0,
+                balance_after=locked_wallet.balance,
+                reference_id=f"REL_{locked_res.id}",
+                metadata={"unused_refunded_credits": release_val},
+            )
+
+        return capture_tx, release_tx
+

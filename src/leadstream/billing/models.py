@@ -211,3 +211,124 @@ class BillableEvent(TenantOwnedModel):
 
 DATA_BLOCK_CHOICES = DataBlock.choices
 PROVIDER_CALL_STATUS_CHOICES = ProviderCall.Status.choices
+
+
+class CreditWallet(TenantOwnedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    balance = models.IntegerField(default=0)
+    reserved_balance = models.IntegerField(default=0)
+    is_unlimited = models.BooleanField(default=False)
+    auto_recharge = models.BooleanField(default=False)
+    recharge_threshold = models.IntegerField(default=100)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "leadstream_credit_wallet"
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(fields=("tenant",), name="credit_wallet_tenant_uniq"),
+            models.CheckConstraint(
+                condition=Q(balance__gte=0) | Q(is_unlimited=True),
+                name="credit_wallet_balance_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(reserved_balance__gte=0),
+                name="credit_wallet_reserved_positive",
+            ),
+        ]
+
+    @property
+    def available_balance(self) -> int:
+        return self.balance
+
+
+class CreditReservation(TenantOwnedModel):
+    class Status(models.TextChoices):
+        ACTIVE = "ACTIVE", "Ativa"
+        SETTLED = "SETTLED", "Liquidada"
+        CANCELLED = "CANCELLED", "Cancelada"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wallet = models.ForeignKey(CreditWallet, on_delete=models.PROTECT, related_name="reservations")
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="credit_reservations",
+    )
+    amount = models.PositiveIntegerField()
+    captured_amount = models.PositiveIntegerField(default=0)
+    released_amount = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    description = models.CharField(max_length=255, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "leadstream_credit_reservation"
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=("tenant", "status"), name="credit_res_status_idx"),
+            models.Index(fields=("wallet", "status"), name="credit_res_wallet_idx"),
+        ]
+
+
+class CreditTransaction(TenantOwnedModel):
+    class Type(models.TextChoices):
+        DEPOSIT = "DEPOSIT", "Depósito / Recarga"
+        HOLD = "HOLD", "Reserva de lote"
+        CAPTURE = "CAPTURE", "Captura / Cobrança de lead útil"
+        RELEASE = "RELEASE", "Liberação / Estorno de excedente"
+        BONUS = "BONUS", "Crédito bônus inicial"
+        ADJUSTMENT = "ADJUSTMENT", "Ajuste manual administrativo"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wallet = models.ForeignKey(
+        CreditWallet, on_delete=models.PROTECT, related_name="transactions"
+    )
+    reservation = models.ForeignKey(
+        CreditReservation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transactions",
+    )
+    transaction_type = models.CharField(max_length=20, choices=Type.choices)
+    amount = models.IntegerField()
+    balance_after = models.IntegerField()
+    reference_id = models.CharField(max_length=160, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ImmutableLedgerQuerySet.as_manager()
+
+    class Meta:
+        db_table = "leadstream_credit_transaction"
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=("wallet", "-created_at"), name="credit_tx_wallet_idx"),
+            models.Index(fields=("tenant", "-created_at"), name="credit_tx_tenant_idx"),
+        ]
+
+    def save(
+        self,
+        *,
+        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
+        if not self._state.adding or force_update or update_fields:
+            raise ValidationError("Eventos de transação de crédito são append-only.")
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
+
+    def delete(self, using: str | None = None, keep_parents: bool = False) -> NoReturn:
+        del using, keep_parents
+        raise ValidationError("Eventos de transação de crédito são append-only.")
+
