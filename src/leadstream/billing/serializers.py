@@ -4,7 +4,14 @@ from typing import Any
 
 from rest_framework import serializers
 
-from .models import DataBlock, PriceBook, PriceRule
+from .models import (
+    CreditReservation,
+    CreditTransaction,
+    CreditWallet,
+    DataBlock,
+    PriceBook,
+    PriceRule,
+)
 
 
 class PriceRuleSerializer(serializers.ModelSerializer[PriceRule]):
@@ -102,3 +109,68 @@ class FinancialSummarySerializer(serializers.Serializer[object]):
     coverage_percent = serializers.FloatField()
     by_block = FinancialBlockSerializer(many=True)
     by_provider = FinancialProviderSerializer(many=True)
+
+
+class CreditTransactionSerializer(serializers.ModelSerializer[CreditTransaction]):
+    class Meta:
+        model = CreditTransaction
+        fields = (
+            "id",
+            "transaction_type",
+            "amount",
+            "balance_after",
+            "reference_id",
+            "metadata",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class CreditReservationSerializer(serializers.ModelSerializer[CreditReservation]):
+    class Meta:
+        model = CreditReservation
+        fields = (
+            "id",
+            "batch",
+            "amount",
+            "captured_amount",
+            "released_amount",
+            "status",
+            "description",
+            "expires_at",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class CreditWalletSerializer(serializers.ModelSerializer[CreditWallet]):
+    available_balance = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = CreditWallet
+        fields = (
+            "id",
+            "balance",
+            "reserved_balance",
+            "available_balance",
+            "is_unlimited",
+            "auto_recharge",
+            "recharge_threshold",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class CreditDepositRequestSerializer(serializers.Serializer[object]):
+    amount = serializers.IntegerField(min_value=1, max_value=10_000_000)
+    reference_id = serializers.CharField(
+        max_length=160, required=False, default="", allow_blank=True
+    )
+    metadata = serializers.JSONField(required=False, default=dict)
+
+
+class CreditDepositResponseSerializer(serializers.Serializer[object]):
+    message = serializers.CharField()
+    balance = serializers.IntegerField()
+    transaction = CreditTransactionSerializer()
+

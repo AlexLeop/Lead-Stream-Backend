@@ -48,4 +48,5 @@ urlpatterns = [
     path("api/v1/", include("leadstream.billing.urls")),
     path("api/v1/", include("leadstream.providers.urls")),
     path("api/v1/", include("leadstream.integrations.urls")),
+    path("api/v1/", include("leadstream.validation.urls")),
 ]
