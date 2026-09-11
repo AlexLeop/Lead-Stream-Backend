@@ -155,6 +155,44 @@ curl -X GET http://localhost:8000/api/v1/leads/<lead_id>/canonical/ \
 
 ---
 
+## 💰 Carteira de Créditos & Faturamento Pay-Per-Value
+
+O LeadStream opera com faturamento baseado exclusivamente no valor útil entregue:
+- **Reserva Atômica (Hold):** Ao submeter um lote, os créditos orçados são reservados temporariamente.
+- **Cobrança Real (Capture):** Apenas blocos enriquecidos e validados com alta confiança geram faturamento.
+- **Estorno Automático (Release):** Se dados de decisores ou e-mails estiverem ausentes ou inválidos, os créditos não utilizados são estornados instantaneamente na conclusão do lote.
+
+```bash
+# Consultar saldo e reserva do Workspace ativo
+curl -X GET http://localhost:8000/api/v1/faturamento/carteira/ \
+  -H "Authorization: Bearer <token_jwt>"
+
+# Consultar extrato contábil imutável
+curl -X GET http://localhost:8000/api/v1/faturamento/carteira/extrato/ \
+  -H "Authorization: Bearer <token_jwt>"
+
+# Recarregar créditos
+curl -X POST http://localhost:8000/api/v1/faturamento/carteira/recarga/ \
+  -H "Authorization: Bearer <token_jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 500, "reference_id": "RECARGA-PIX-001"}'
+```
+
+---
+
+## ✉️ Motor de Entregabilidade de E-mails (Zero-Bounce Guarantee)
+
+Validação atômica profunda em 5 níveis com handshake SMTP em tempo real e detecção de servidores *Catch-All*:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/validacao/emails/ \
+  -H "Authorization: Bearer <token_jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "ceo@empresa.com.br", "deep_smtp": true}'
+```
+
+---
+
 ## 🧪 Qualidade & Testes Automatizados
 
 O repositório possui gate estrito de qualidade com **100% de aprovação**:
@@ -167,7 +205,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-- **151 testes automatizados** cobrindo segurança, modelos, contratos canônicos v2.4.0, CRM outbox, sessão frontend e pipelines de dados.
+- **164 testes automatizados** cobrindo segurança, modelos, contratos canônicos v2.4.0, CRM outbox, sessão frontend, carteira de créditos (pay-per-value), motor de probe SMTP e pipelines de dados.
 - **Zero erros de lint** sob regras estritas do Ruff (`pyproject.toml`).
 
 ---
