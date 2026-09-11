@@ -14,7 +14,7 @@ if "*" in configured_hosts:
     ALLOWED_HOSTS = ["*"]
 else:
     # Garante 127.0.0.1 e localhost para as sondagens de saúde internas do EasyPanel/Docker
-    ALLOWED_HOSTS = list(dict.fromkeys(["127.0.0.1", "localhost", *configured_hosts]))
+    ALLOWED_HOSTS = list(dict.fromkeys(["127.0.0.1", "localhost", "testserver", *configured_hosts]))
 
 CSRF_TRUSTED_ORIGINS = env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",

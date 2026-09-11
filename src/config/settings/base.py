@@ -15,7 +15,7 @@ configured_hosts = env_list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0
 if "*" in configured_hosts:
     ALLOWED_HOSTS = ["*"]
 else:
-    ALLOWED_HOSTS = list(dict.fromkeys(["localhost", "127.0.0.1", *configured_hosts]))
+    ALLOWED_HOSTS = list(dict.fromkeys(["localhost", "127.0.0.1", "testserver", *configured_hosts]))
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
@@ -46,7 +46,7 @@ ASGI_APPLICATION = "config.asgi.application"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {"context_processors": []},
     }
@@ -158,11 +158,144 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 50,
 }
 
+API_DESCRIPTION = """
+### Bem-vindo ao LeadStream Core API (v1.0.0 Enterprise)
+
+O **LeadStream Backend** é o núcleo independente Brasil-first para extração,
+higienização, descoberta e enriquecimento contínuo de leads corporativos B2B.
+
+---
+
+### 🚀 Os 3 Modos Operacionais de Negócio
+1. **Importação de Base Própria (`/api/v1/lotes/`)**: Ingestão assíncrona de CSV,
+   higienização inteligente com detecção de duplicatas, enriquecimento em cascata
+   e exportação comercial de alta performance com **Zero Mascaramento**.
+2. **Extração do Zero via Descoberta (`/api/v1/descobertas/`)**: Filtros de mercado
+   (CNAE, UF, Município, Porte, Situação Cadastral) consultando bases públicas oficiais
+   e materialização direta em novos lotes de leads.
+3. **Busca Manual / Pontual (`/api/v1/dados/`)**: Consulta e cadastro pontual em tempo real
+   de empresas, pessoas, vínculos societários, e-mails corporativos diretos,
+   telefones com WhatsApp validado e perfis LinkedIn.
+
+---
+
+### 🛡️ Multi-Tenancy & Segurança
+- **Isolamento por Workspace (Tenant)**: O backend aplica proteção rigorosa contra IDOR.
+  Informe o cabeçalho HTTP `X-Tenant-ID: <UUID>` em todas as requisições para operar
+  no contexto de um cliente específico.
+- **Tenant Padrão**: Se omitido, o sistema assume automaticamente o tenant operacional interno
+  (`00000000-0000-4000-8000-000000000001`).
+- **Garantia de Zero Mascaramento**: Todos os e-mails e telefones retornados em consultas
+  autorizadas ou exportações CSV são entregues em texto claro para utilização comercial plena.
+
+---
+
+### 🔌 Conectores de CRM & Outbox Transacional (`/api/v1/integracoes/`)
+Integração nativa com **HubSpot, Pipedrive, RD Station, Salesforce, Ploomes** e suporte a
+**Webhooks Universais** (n8n, Make, Zapier) com assinatura criptográfica HMAC-SHA256
+(`X-LeadStream-Signature`) e garantia de entrega *at-least-once* idempotente.
+
+---
+
+### 📊 Cockpit do CEO & Telemetria (`/api/v1/admin/integracoes/metricas/`)
+Painel analítico consolidado para a diretoria: volume global de mensagens, monitoramento de
+Dead Letter Queue (DLQ), latência média e custos consolidados de provedores em tempo real.
+"""
+
 SPECTACULAR_SETTINGS = {
-    "TITLE": "LeadStream API",
-    "DESCRIPTION": "API interna para higienização e enriquecimento confiável de leads.",
+    "TITLE": "LeadStream API — Núcleo de Inteligência B2B",
+    "DESCRIPTION": API_DESCRIPTION,
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "SWAGGER_UI_SETTINGS": {
+        "deepLinking": True,
+        "persistAuthorization": True,
+        "displayRequestDuration": True,
+        "filter": True,
+        "docExpansion": "none",
+        "defaultModelsExpandDepth": 2,
+        "defaultModelExpandDepth": 2,
+        "showExtensions": True,
+        "showCommonExtensions": True,
+        "syntaxHighlight.theme": "monokai",
+    },
+    "TAGS": [
+        {
+            "name": "Lotes",
+            "description": (
+                "Ingestão de arquivos CSV, fatiamento em chunks, controle de ciclo de vida "
+                "(pausa/retomada) e exportações comerciais."
+            ),
+        },
+        {
+            "name": "Descobertas",
+            "description": (
+                "Busca por CNAE, UF, porte e situação cadastral com materialização direta "
+                "em novos lotes de leads."
+            ),
+        },
+        {
+            "name": "Empresas",
+            "description": (
+                "Consulta e cadastro pontual de empresas e estabelecimentos (CNPJ) com "
+                "validação de dígitos verificadores."
+            ),
+        },
+        {
+            "name": "Pessoas",
+            "description": "Decisores, executivos, sócios e contatos normalizados.",
+        },
+        {
+            "name": "Vínculos",
+            "description": "Relações societárias e profissionais entre pessoas e empresas.",
+        },
+        {
+            "name": "Contatos",
+            "description": (
+                "Canais de contato direto (e-mails corporativos, telefones com DDD e WhatsApp)."
+            ),
+        },
+        {
+            "name": "Perfis sociais",
+            "description": (
+                "Redes sociais públicas e perfis do LinkedIn atribuíveis aos decisores."
+            ),
+        },
+        {
+            "name": "Integrações - Conexões CRM",
+            "description": (
+                "Gestão de conexões com CRMs (HubSpot, Pipedrive, RD Station, Salesforce, Ploomes) "
+                "e Webhooks Universais."
+            ),
+        },
+        {
+            "name": "Cockpit do CEO",
+            "description": (
+                "Telemetria consolidada da plataforma, saúde da Outbox, mensagens em DLQ "
+                "e análise agregada de custos."
+            ),
+        },
+        {
+            "name": "Faturamento",
+            "description": (
+                "Tabelas de preços dinâmicas por bloco de dados, auditoria de chamadas e "
+                "resumo de margem bruta por lote."
+            ),
+        },
+        {
+            "name": "Evidências e governança",
+            "description": (
+                "Proveniência de dados, cálculo de confiança, resolução de conflitos, "
+                "supressões e políticas LGPD."
+            ),
+        },
+        {
+            "name": "Operação interna",
+            "description": (
+                "Consultas de workspace, metadados de infraestrutura e probes de saúde do sistema."
+            ),
+        },
+    ],
     "ENUM_NAME_OVERRIDES": {
         "ContactStatusEnum": "leadstream.entities.models.CONTACT_POINT_STATUS_CHOICES",
         "EvidenceStatusEnum": "leadstream.evidence.models.EvidenceStatus.choices",
