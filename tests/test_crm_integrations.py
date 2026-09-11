@@ -360,9 +360,9 @@ def test_field_mapping_transformation(internal_tenant: Tenant) -> None:
 
 
 def test_api_connection_crud_and_tenant_isolation(
-    internal_tenant: Tenant, other_tenant: Tenant
+    api_client: APIClient, internal_tenant: Tenant, other_tenant: Tenant
 ) -> None:
-    client = APIClient()
+    client = api_client
 
     # 1. Cria conexão para internal_tenant
     client.defaults["HTTP_X_TENANT_ID"] = str(internal_tenant.id)
@@ -393,7 +393,7 @@ def test_api_connection_crud_and_tenant_isolation(
     assert "active_connectors_summary" in resp_admin.data
 
 
-def test_batch_sync_to_crm_api(sample_batch_with_data: Batch) -> None:
+def test_batch_sync_to_crm_api(api_client: APIClient, sample_batch_with_data: Batch) -> None:
     tenant = sample_batch_with_data.tenant
     conn = CRMConnection.objects.create(
         tenant=tenant,
@@ -401,7 +401,7 @@ def test_batch_sync_to_crm_api(sample_batch_with_data: Batch) -> None:
         connector_type=CRMConnectorType.HUBSPOT,
         credentials={"access_token": "hs_secret_api"},
     )
-    client = APIClient()
+    client = api_client
     client.defaults["HTTP_X_TENANT_ID"] = str(tenant.id)
 
     with patch("leadstream.integrations.tasks.sync_batch_to_crm_task.delay") as mock_delay:

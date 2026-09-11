@@ -9,7 +9,7 @@ from leadstream.tenancy.services import get_internal_tenant
 pytestmark = pytest.mark.django_db
 
 
-def test_get_canonical_lead_endpoint() -> None:
+def test_get_canonical_lead_endpoint(api_client: APIClient) -> None:
     tenant = get_internal_tenant()
     batch = Batch.objects.create(
         tenant=tenant,
@@ -30,8 +30,7 @@ def test_get_canonical_lead_endpoint() -> None:
         },
     )
 
-    client = APIClient()
-    response = client.get(
+    response = api_client.get(
         f"/api/v1/leads/{item.id}/canonical/",
         HTTP_X_TENANT_ID=tenant.slug,
     )
@@ -41,7 +40,7 @@ def test_get_canonical_lead_endpoint() -> None:
     assert response.data["identification"]["status"] == "QUALIFIED"
 
 
-def test_get_canonical_lead_direct_endpoint() -> None:
+def test_get_canonical_lead_direct_endpoint(api_client: APIClient) -> None:
     tenant = get_internal_tenant()
     batch = Batch.objects.create(
         tenant=tenant,
@@ -60,8 +59,7 @@ def test_get_canonical_lead_direct_endpoint() -> None:
         },
     )
 
-    client = APIClient()
-    response = client.get(
+    response = api_client.get(
         f"/api/v1/leads/{item.id}/",
         HTTP_X_TENANT_ID=tenant.slug,
     )

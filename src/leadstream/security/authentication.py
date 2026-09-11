@@ -90,7 +90,28 @@ class CombinedAuthentication(BaseAuthentication):
         APIKey.objects.filter(pk=api_key.pk).update(last_used_at=timezone.now())
         api_key.last_used_at = timezone.now()
 
-        request.tenant = api_key.tenant
+        tenant_header = request.headers.get("X-Tenant-ID")
+        from leadstream.security.models import WorkspaceRole
+        from leadstream.tenancy.services import INTERNAL_TENANT_SLUG
+
+        if (
+            api_key.tenant.slug == INTERNAL_TENANT_SLUG
+            and api_key.role == WorkspaceRole.ADMIN
+            and tenant_header
+        ):
+            try:
+                if _is_uuid(tenant_header):
+                    target_tenant = Tenant.objects.get(id=tenant_header, is_active=True)
+                else:
+                    target_tenant = Tenant.objects.get(slug=tenant_header, is_active=True)
+                request.tenant = target_tenant
+            except Tenant.DoesNotExist as exc:
+                raise AuthenticationFailed(
+                    f"Workspace '{tenant_header}' não encontrado ou inativo."
+                ) from exc
+        else:
+            request.tenant = api_key.tenant
+
         request.auth = api_key
         return ApiKeyUser(api_key), api_key
 

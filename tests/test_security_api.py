@@ -157,3 +157,23 @@ def test_security_audit_logs_list() -> None:
     results = data.get("results", data)
     assert len(results) >= 1
     assert results[0]["action"] == "KEY_CREATE"
+
+
+@pytest.mark.django_db
+def test_unauthenticated_request_rejected_on_protected_endpoints() -> None:
+    client = APIClient()
+
+    # Tentativa sem token / chave em endpoint de leads canonicos
+    resp_lead = client.get("/api/v1/leads/00000000-0000-0000-0000-000000000001/canonical/")
+    assert resp_lead.status_code == 401
+    assert "detail" in resp_lead.json()
+
+    # Tentativa sem token / chave em endpoint de lotes
+    resp_lotes = client.get("/api/v1/lotes/")
+    assert resp_lotes.status_code == 401
+    assert "detail" in resp_lotes.json()
+
+    # Tentativa sem token / chave em endpoint de integracoes
+    resp_integracoes = client.get("/api/v1/integracoes/conexoes/")
+    assert resp_integracoes.status_code == 401
+    assert "detail" in resp_integracoes.json()

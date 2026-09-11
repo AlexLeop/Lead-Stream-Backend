@@ -23,7 +23,7 @@ pytestmark = pytest.mark.django_db
     BIGQUERY_PROJECT_ID="leadstream-507303",
     OPEN_CNPJ_BIGQUERY_SQL="SELECT 1",
 )
-def test_cnpj_alex_canonical_end_to_end() -> None:
+def test_cnpj_alex_canonical_end_to_end(api_client: APIClient) -> None:
     tenant = get_internal_tenant()
     batch = Batch.objects.create(
         tenant=tenant,
@@ -117,7 +117,7 @@ def test_cnpj_alex_canonical_end_to_end() -> None:
     )
 
     # 7. Query the REST API for canonical lead
-    client = APIClient()
+    client = api_client
     response = client.get(
         f"/api/v1/leads/{item.id}/canonical/",
         HTTP_X_TENANT_ID=tenant.slug,

@@ -61,9 +61,6 @@ def other_tenant() -> Tenant:
     return Tenant.objects.create(name="Tenant Externo B2B", is_active=True)
 
 
-@pytest.fixture
-def api_client() -> APIClient:
-    return APIClient()
 
 
 # ==============================================================================
