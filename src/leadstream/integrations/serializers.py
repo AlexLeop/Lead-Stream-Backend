@@ -1,6 +1,8 @@
 # pyrefly: ignore-errors[bad-override]
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
 from .models import CRMConnection, CRMFieldMapping, CRMOutboxMessage, CRMSyncEvent
@@ -132,3 +134,33 @@ class AdminCRMOverviewResponseSerializer(serializers.Serializer[object]):
     total_delivered = serializers.IntegerField()
     total_failed = serializers.IntegerField()
     global_success_rate_percent = serializers.FloatField()
+
+
+class CRMOutboxStatusCountsSerializer(serializers.Serializer[dict[str, Any]]):
+    pending = serializers.IntegerField(default=0)
+    processing = serializers.IntegerField(default=0)
+    delivered = serializers.IntegerField(default=0)
+    failed = serializers.IntegerField(default=0)
+    dead_letter = serializers.IntegerField(default=0)
+
+
+class CRMOutboxStatusResponseSerializer(serializers.Serializer[dict[str, Any]]):
+    tenant_id = serializers.CharField()
+    counts = CRMOutboxStatusCountsSerializer()
+    oldest_pending_seconds = serializers.IntegerField(allow_null=True)
+    is_healthy = serializers.BooleanField()
+
+
+class CRMOutboxRetryDeadLetterRequestSerializer(serializers.Serializer[dict[str, Any]]):
+    message_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        default=list,
+        help_text="Lista opcional de IDs de mensagens em dead-letter a reprocessar.",
+    )
+
+
+class CRMOutboxRetryDeadLetterResponseSerializer(serializers.Serializer[dict[str, Any]]):
+    retried_count = serializers.IntegerField()
+    message = serializers.CharField()
+

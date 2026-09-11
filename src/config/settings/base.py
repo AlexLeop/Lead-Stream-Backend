@@ -102,6 +102,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "leadstream.providers.recover_discovery",
         "schedule": 60.0,
     },
+    "process-crm-outbox": {
+        "task": "leadstream.integrations.process_crm_outbox_batch",
+        "schedule": 30.0,
+        "kwargs": {"batch_size": 50},
+    },
 }
 DEPENDENCY_CHECK_TIMEOUT_SECONDS = env_int("DEPENDENCY_CHECK_TIMEOUT_SECONDS", default=2)
 APPWRITE_ENDPOINT = env("APPWRITE_ENDPOINT")

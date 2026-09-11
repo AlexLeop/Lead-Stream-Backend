@@ -11,6 +11,8 @@ from .views import (
     CRMFieldMappingDetailView,
     CRMFieldMappingListCreateView,
     CRMOutboxMessageListView,
+    CRMOutboxRetryDeadLetterView,
+    CRMOutboxStatusView,
 )
 
 app_name = "integrations"
@@ -43,7 +45,17 @@ urlpatterns = [
         CRMFieldMappingDetailView.as_view(),
         name="crm_field_mapping_detail",
     ),
-    # B2B Workspace - Acompanhamento da Outbox
+    # B2B Workspace - Acompanhamento e Métricas da Outbox
+    path(
+        "integracoes/outbox/status/",
+        CRMOutboxStatusView.as_view(),
+        name="crm_outbox_status",
+    ),
+    path(
+        "integracoes/outbox/retry-dead-letter/",
+        CRMOutboxRetryDeadLetterView.as_view(),
+        name="crm_outbox_retry_dead_letter",
+    ),
     path(
         "integracoes/conexoes/<uuid:connection_id>/outbox/",
         CRMOutboxMessageListView.as_view(),

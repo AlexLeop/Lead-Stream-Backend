@@ -6,39 +6,48 @@ from uuid import UUID
 from django.db.models import Count
 from django.http import Http404
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from leadstream.batches.models import Batch
+from leadstream.security.permissions import IsTenantMember, IsWorkspaceAdmin
 from leadstream.tenancy.models import Tenant
 from leadstream.tenancy.services import get_internal_tenant
 
-from .models import CRMConnection, CRMFieldMapping, CRMOutboxMessage
+from .models import CRMConnection, CRMFieldMapping, CRMOutboxMessage, OutboxStatus
 from .serializers import (
     AdminCRMOverviewResponseSerializer,
     CRMConnectionSerializer,
     CRMFieldMappingSerializer,
     CRMOutboxMessageSerializer,
+    CRMOutboxRetryDeadLetterRequestSerializer,
+    CRMOutboxRetryDeadLetterResponseSerializer,
+    CRMOutboxStatusResponseSerializer,
     CRMSyncRequestSerializer,
     CRMTestConnectionResponseSerializer,
 )
 from .services import verify_crm_connection
-from .tasks import sync_batch_to_crm_task
+from .tasks import process_crm_outbox_batch, sync_batch_to_crm_task
 
 
 def resolve_tenant(request: Request | None) -> Tenant:
-    """Extrai o tenant do cabeçalho X-Tenant-ID ou recorre ao tenant padrão interno."""
-    if request is None or not hasattr(request, "headers"):
+    """Extrai o tenant autenticado da requisição ou recorre ao tenant padrão."""
+    if request is None:
         return get_internal_tenant()
-    tenant_header = request.headers.get("X-Tenant-ID")
-    if tenant_header:
-        try:
-            return Tenant.objects.get(id=UUID(tenant_header))
-        except (Tenant.DoesNotExist, ValueError) as exc:
-            raise Http404("Tenant não encontrado.") from exc
+    if hasattr(request, "tenant") and request.tenant:
+        return request.tenant
+    if hasattr(request, "headers"):
+        tenant_header = request.headers.get("X-Tenant-ID")
+        if tenant_header:
+            try:
+                return Tenant.objects.get(id=UUID(tenant_header))
+            except (Tenant.DoesNotExist, ValueError) as exc:
+                raise Http404("Tenant não encontrado.") from exc
     return get_internal_tenant()
 
 
@@ -207,3 +216,105 @@ class AdminCRMOverviewView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+@extend_schema(
+    tags=["Integrações - Outbox"],
+    summary="Status e Métricas da Fila de Outbox do Tenant",
+    responses={200: CRMOutboxStatusResponseSerializer},
+)
+class CRMOutboxStatusView(APIView):
+    """Retorna métricas em tempo real sobre mensagens pendentes, entregues e falhas no Outbox."""
+
+    permission_classes = (IsAuthenticated, IsTenantMember)
+
+    def get(self, request: Request) -> Response:
+        tenant = resolve_tenant(request)
+        messages_qs = CRMOutboxMessage.objects.filter(tenant=tenant)
+
+        counts_dict = dict(
+            messages_qs.values("status")
+            .annotate(total=Count("id"))
+            .values_list("status", "total")
+        )
+        pending = counts_dict.get(OutboxStatus.PENDING, 0)
+        processing = counts_dict.get(OutboxStatus.PROCESSING, 0)
+        delivered = counts_dict.get(OutboxStatus.DELIVERED, 0)
+        failed = counts_dict.get(OutboxStatus.FAILED, 0)
+        dead_letter = counts_dict.get(OutboxStatus.DEAD_LETTER, 0)
+
+        oldest_pending = (
+            messages_qs.filter(status=OutboxStatus.PENDING)
+            .order_by("created_at")
+            .values_list("created_at", flat=True)
+            .first()
+        )
+        oldest_pending_seconds = None
+        if oldest_pending:
+            oldest_pending_seconds = int((timezone.now() - oldest_pending).total_seconds())
+
+        is_healthy = dead_letter == 0 and (
+            oldest_pending_seconds is None or oldest_pending_seconds < 3600
+        )
+
+        return Response(
+            {
+                "tenant_id": str(tenant.id),
+                "counts": {
+                    "pending": pending,
+                    "processing": processing,
+                    "delivered": delivered,
+                    "failed": failed,
+                    "dead_letter": dead_letter,
+                },
+                "oldest_pending_seconds": oldest_pending_seconds,
+                "is_healthy": is_healthy,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+@extend_schema(
+    tags=["Integrações - Outbox"],
+    summary="Reprocessar Mensagens em Dead-Letter",
+    request=CRMOutboxRetryDeadLetterRequestSerializer,
+    responses={200: CRMOutboxRetryDeadLetterResponseSerializer},
+)
+class CRMOutboxRetryDeadLetterView(APIView):
+    """Retorna mensagens em falha definitiva (Dead-Letter) para a fila de envio pendente."""
+
+    permission_classes = (IsAuthenticated, IsTenantMember, IsWorkspaceAdmin)
+
+    def post(self, request: Request) -> Response:
+        tenant = resolve_tenant(request)
+        message_ids = (
+            request.data.get("message_ids") if isinstance(request.data, dict) else None
+        )
+
+        qs = CRMOutboxMessage.objects.filter(tenant=tenant, status=OutboxStatus.DEAD_LETTER)
+        if message_ids:
+            qs = qs.filter(id__in=message_ids)
+
+        now = timezone.now()
+        retried_count = qs.update(
+            status=OutboxStatus.PENDING,
+            retry_count=0,
+            next_retry_at=now,
+            error_code="",
+            error_message="",
+            updated_at=now,
+        )
+
+        if retried_count > 0:
+            process_crm_outbox_batch.delay()
+
+        return Response(
+            {
+                "retried_count": retried_count,
+                "message": (
+                    f"{retried_count} mensagens de dead-letter retornaram para a fila pendente."
+                ),
+            },
+            status=status.HTTP_200_OK,
+        )
+
