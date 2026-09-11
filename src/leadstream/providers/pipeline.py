@@ -150,6 +150,11 @@ def process_enrichment_chunk(
                 else:
                     locked_item.enrichment_status = BatchItem.EnrichmentStatus.FAILED
                 locked_item.save()
+                try:
+                    from leadstream.canonical.builder import CanonicalLeadBuilder
+                    CanonicalLeadBuilder(tenant=item.tenant).build_and_save(locked_item)
+                except Exception:
+                    pass
                 BatchChunk.objects.filter(pk=chunk.pk).update(
                     checkpoint_row=item.row_number,
                     leased_until=timezone.now() + timedelta(seconds=settings.BATCH_LEASE_SECONDS),
