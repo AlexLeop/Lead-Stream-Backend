@@ -159,51 +159,35 @@ REST_FRAMEWORK = {
 }
 
 API_DESCRIPTION = """
-### Bem-vindo ao LeadStream Core API (v1.0.0 Enterprise)
+### Visão Geral
 
-O **LeadStream Backend** é o núcleo independente Brasil-first para extração,
-higienização, descoberta e enriquecimento contínuo de leads corporativos B2B.
-
----
-
-### 🚀 Os 3 Modos Operacionais de Negócio
-1. **Importação de Base Própria (`/api/v1/lotes/`)**: Ingestão assíncrona de CSV,
-   higienização inteligente com detecção de duplicatas, enriquecimento em cascata
-   e exportação comercial de alta performance com **Zero Mascaramento**.
-2. **Extração do Zero via Descoberta (`/api/v1/descobertas/`)**: Filtros de mercado
-   (CNAE, UF, Município, Porte, Situação Cadastral) consultando bases públicas oficiais
-   e materialização direta em novos lotes de leads.
-3. **Busca Manual / Pontual (`/api/v1/dados/`)**: Consulta e cadastro pontual em tempo real
-   de empresas, pessoas, vínculos societários, e-mails corporativos diretos,
-   telefones com WhatsApp validado e perfis LinkedIn.
+LeadStream é uma API REST para extração, higienização, descoberta e enriquecimento
+de dados cadastrais de empresas e decisores corporativos no Brasil.
 
 ---
 
-### 🛡️ Multi-Tenancy & Segurança
-- **Isolamento por Workspace (Tenant)**: O backend aplica proteção rigorosa contra IDOR.
-  Informe o cabeçalho HTTP `X-Tenant-ID: <UUID>` em todas as requisições para operar
-  no contexto de um cliente específico.
-- **Tenant Padrão**: Se omitido, o sistema assume automaticamente o tenant operacional interno
-  (`00000000-0000-4000-8000-000000000001`).
-- **Garantia de Zero Mascaramento**: Todos os e-mails e telefones retornados em consultas
-  autorizadas ou exportações CSV são entregues em texto claro para utilização comercial plena.
+### Autenticação e Multi-tenancy
+- Requisições autenticadas devem enviar o cabeçalho HTTP `X-Tenant-ID: <UUID>`
+  especificando o workspace do cliente.
+- Na ausência do cabeçalho em ambiente de testes ou desenvolvimento, o sistema assume
+  o contexto do workspace operacional interno (`00000000-0000-4000-8000-000000000001`).
 
 ---
 
-### 🔌 Conectores de CRM & Outbox Transacional (`/api/v1/integracoes/`)
-Integração nativa com **HubSpot, Pipedrive, RD Station, Salesforce, Ploomes** e suporte a
-**Webhooks Universais** (n8n, Make, Zapier) com assinatura criptográfica HMAC-SHA256
-(`X-LeadStream-Signature`) e garantia de entrega *at-least-once* idempotente.
-
----
-
-### 📊 Cockpit do CEO & Telemetria (`/api/v1/admin/integracoes/metricas/`)
-Painel analítico consolidado para a diretoria: volume global de mensagens, monitoramento de
-Dead Letter Queue (DLQ), latência média e custos consolidados de provedores em tempo real.
+### Modos de Operação
+1. **Lotes e Enriquecimento em Massa (`/api/v1/lotes/`)**: Ingestão assíncrona de arquivos
+   CSV, validação cadastral de CNPJ, enriquecimento em cascata e exportação tabular.
+2. **Descobertas Cadastrais (`/api/v1/descobertas/`)**: Filtragem em bases públicas oficiais
+   por CNAE, localização e porte, com materialização direta em novos lotes de leads.
+3. **Consulta de Entidades (`/api/v1/dados/`)**: Consulta pontual e estruturação de empresas,
+   quadro societário, canais de contato direto e perfis profissionais de decisores.
+4. **Integrações e Webhooks (`/api/v1/integracoes/`)**: Conexões com CRMs (HubSpot,
+   Pipedrive, RD Station, Salesforce, Ploomes) e disparos com garantia de entrega transacional
+   via outbox e assinatura HMAC-SHA256 (`X-LeadStream-Signature`).
 """
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "LeadStream API — Núcleo de Inteligência B2B",
+    "TITLE": "LeadStream API Reference",
     "DESCRIPTION": API_DESCRIPTION,
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -215,35 +199,27 @@ SPECTACULAR_SETTINGS = {
         "docExpansion": "none",
         "defaultModelsExpandDepth": 2,
         "defaultModelExpandDepth": 2,
-        "showExtensions": True,
-        "showCommonExtensions": True,
-        "syntaxHighlight.theme": "monokai",
     },
     "TAGS": [
         {
             "name": "Lotes",
             "description": (
-                "Ingestão de arquivos CSV, fatiamento em chunks, controle de ciclo de vida "
-                "(pausa/retomada) e exportações comerciais."
+                "Ingestão de arquivos CSV, fatiamento em chunks, ciclo de vida e exportações."
             ),
         },
         {
             "name": "Descobertas",
             "description": (
-                "Busca por CNAE, UF, porte e situação cadastral com materialização direta "
-                "em novos lotes de leads."
+                "Busca por CNAE, UF, porte e situação cadastral com materialização em lotes."
             ),
         },
         {
             "name": "Empresas",
-            "description": (
-                "Consulta e cadastro pontual de empresas e estabelecimentos (CNPJ) com "
-                "validação de dígitos verificadores."
-            ),
+            "description": "Consulta e estruturação de empresas e estabelecimentos (CNPJ).",
         },
         {
             "name": "Pessoas",
-            "description": "Decisores, executivos, sócios e contatos normalizados.",
+            "description": "Decisores, executivos e sócios normalizados.",
         },
         {
             "name": "Vínculos",
@@ -251,35 +227,24 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Contatos",
-            "description": (
-                "Canais de contato direto (e-mails corporativos, telefones com DDD e WhatsApp)."
-            ),
+            "description": "Canais de contato direto (e-mails corporativos e telefones).",
         },
         {
             "name": "Perfis sociais",
-            "description": (
-                "Redes sociais públicas e perfis do LinkedIn atribuíveis aos decisores."
-            ),
+            "description": "Perfis profissionais e públicos de decisores.",
         },
         {
             "name": "Integrações - Conexões CRM",
-            "description": (
-                "Gestão de conexões com CRMs (HubSpot, Pipedrive, RD Station, Salesforce, Ploomes) "
-                "e Webhooks Universais."
-            ),
+            "description": "Gestão de conexões com CRMs e Webhooks Universais.",
         },
         {
-            "name": "Cockpit do CEO",
-            "description": (
-                "Telemetria consolidada da plataforma, saúde da Outbox, mensagens em DLQ "
-                "e análise agregada de custos."
-            ),
+            "name": "Cockpit do CEO - Métricas de Integrações",
+            "description": "Telemetria consolidada da outbox, DLQ e taxas de entrega.",
         },
         {
             "name": "Faturamento",
             "description": (
-                "Tabelas de preços dinâmicas por bloco de dados, auditoria de chamadas e "
-                "resumo de margem bruta por lote."
+                "Tabelas de preços por bloco de dados, auditoria de chamadas e margem por lote."
             ),
         },
         {
@@ -292,7 +257,8 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Operação interna",
             "description": (
-                "Consultas de workspace, metadados de infraestrutura e probes de saúde do sistema."
+                "Consultas de workspace, metadados de infraestrutura e "
+                "probes de saúde do sistema."
             ),
         },
     ],

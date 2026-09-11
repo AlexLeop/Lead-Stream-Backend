@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Any
+
+from django.views.generic import TemplateView
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -65,3 +68,14 @@ def dependencies(request: Request) -> Response:
 
 def _aggregate_dependency_status(results: dict[str, HealthResult]) -> str:
     return "ok" if all(result.available for result in results.values()) else "degraded"
+
+
+class ScalarDocsView(TemplateView):
+    template_name = "docs/scalar.html"
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        context["schema_url"] = "/api/v1/schema/"
+        context["title"] = "LeadStream API Reference"
+        return context
+

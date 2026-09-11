@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <title>{{ title|default:"LeadStream API Reference" }}</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230284c7'><path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/></svg>">
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0d1117;
+      }
+    </style>
+  </head>
+  <body>
+    <script
+      id="api-reference"
+      data-url="{{ schema_url|default:'/api/v1/schema/' }}"
+      data-configuration='{
+        "theme": "default",
+        "darkMode": true,
+        "showSidebar": true,
+        "searchHotKey": "k",
+        "layout": "modern",
+        "metaData": {
+          "title": "LeadStream API Reference"
+        }
+      }'></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>
