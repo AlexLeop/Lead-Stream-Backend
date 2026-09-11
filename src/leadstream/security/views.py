@@ -25,6 +25,7 @@ from leadstream.security.serializers import (
     SecurityAuditLogSerializer,
     TokenRevokeSerializer,
 )
+from leadstream.security.throttling import AuthRateThrottle, AuthRefreshRateThrottle
 from leadstream.tenancy.models import Tenant
 
 
@@ -78,6 +79,8 @@ def log_security_event(
 class TokenObtainPairAuditView(TokenObtainPairView):
     """Emissão de pares de tokens JWT (Access & Refresh) para operadores e administradores."""
 
+    throttle_classes = (AuthRateThrottle,)
+
     def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         response = super().post(request, *args, **kwargs)
         username = request.data.get("username", "")
@@ -102,6 +105,8 @@ class TokenObtainPairAuditView(TokenObtainPairView):
 @extend_schema(tags=["Autenticação"])
 class TokenRefreshAuditView(TokenRefreshView):
     """Renovação de Access Token através de um Refresh Token válido."""
+
+    throttle_classes = (AuthRefreshRateThrottle,)
 
 
 @extend_schema(
