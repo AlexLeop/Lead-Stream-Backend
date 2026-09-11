@@ -24,6 +24,8 @@ dependencies = [
   "dnspython>=2.6,<3",
   "redis>=6,<7",
   "structlog>=25,<26",
+  "django-cors-headers>=4.7,<5.0",
+  "djangorestframework-simplejwt>=5.4,<6.0",
   "uvicorn-worker>=0.4,<0.5",
 ]
 
