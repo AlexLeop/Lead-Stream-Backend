@@ -27,8 +27,10 @@ Disponível em `GET /api/v1/leads/{lead_id}/canonical/`:
 
 ---
 
-### 2. Camada de Segurança Enterprise & Autenticação Híbrida
-- **Autenticação Híbrida:**
+### 2. Camada de Segurança Enterprise, Sessão Frontend & RBAC
+- **Autenticação Híbrida & Sessão do Usuário:**
+  - **Perfil & Sessão Unificada (`GET /api/v1/auth/me/`):** Retorna os dados do operador/chave autenticado, tenant ativo, permissões de acesso e listagem de workspaces disponíveis para troca de contexto.
+  - **Troca Dinâmica de Workspace (`POST /api/v1/auth/switch-workspace/`):** Permite a operadores humanos alternar o tenant ativo em tempo real, recebendo novos tokens JWT vinculados ao workspace solicitado.
   - **Operadores Humanos (JWT):** Login via `/api/v1/auth/token/` (Access: 30 min, Refresh: 14 dias com rotação e blacklist).
   - **Sistemas & Integrações (API Keys):** Chaves prefixadas `ls_live_...` e `ls_test_...` com hash SHA-256 no banco e comparação segura contra timing attacks (`hmac.compare_digest`).
   - **Headers Suportados:** `Authorization: Bearer <token>` ou `X-API-Key: <chave>`.
@@ -45,9 +47,15 @@ Disponível em `GET /api/v1/leads/{lead_id}/canonical/`:
 
 ---
 
-### 3. Processamento em Massa & Integrações
+### 3. Processamento em Massa, Outbox Contínuo & Webhooks
 - **Ingestão de Lotes (`/api/v1/lotes/`):** Processamento assíncrono de até 100.000 CNPJs fatiados em chunks idempotentes (25–100 leads) no Celery + RabbitMQ.
-- **Transactional Outbox:** Sincronização assíncrona com CRMs (HubSpot, RD Station, Pipedrive, Webhooks) com garantia de entrega única e idempotência.
+- **Agendador Contínuo Celery Beat:**
+  - Tarefa periódica `process_crm_outbox_batch` executando a cada 30 segundos para drenar a fila transacional do Outbox e retentar falhas transitórias com backoff exponencial.
+- **Assinatura Criptográfica HMAC-SHA256 para Webhooks:**
+  - Headers `X-LeadStream-Signature` (SHA-256 direto) e `X-LeadStream-Signature-V2` (`t=<timestamp>,v1=<signature>`) com proteção ativa contra *replay attacks*.
+- **Observabilidade & Gestão de Dead-Letter:**
+  - `GET /api/v1/integracoes/outbox/status/`: Métricas em tempo real sobre mensagens `PENDING`, `DELIVERED`, `FAILED` e `DEAD_LETTER`.
+  - `POST /api/v1/integracoes/outbox/retry-dead-letter/`: Reprocessamento manual ou em lote de mensagens em falha definitiva.
 - **Documentação OpenAPI 3.1.0:** Interface interativa em `/api/v1/docs/` (Scalar e Swagger UI) com suporte a `BearerAuth`, `ApiKeyAuth` e `TenantHeader`.
 
 ---
@@ -159,7 +167,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-- **137 testes automatizados** cobrindo segurança, modelos, contratos canônicos v2.4.0, CRM outbox e pipelines de dados.
+- **151 testes automatizados** cobrindo segurança, modelos, contratos canônicos v2.4.0, CRM outbox, sessão frontend e pipelines de dados.
 - **Zero erros de lint** sob regras estritas do Ruff (`pyproject.toml`).
 
 ---

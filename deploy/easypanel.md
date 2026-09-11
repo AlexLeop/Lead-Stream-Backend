@@ -10,7 +10,7 @@ com hash SHA-256 para integrações), controle de acesso RBAC e isolamento estri
 | Serviço | Origem | Comando | Exposição |
 |---|---|---|---|
 | `leadstream-api` | imagem deste repositório | comando padrão da imagem | HTTPS, protegido por JWT / API Key |
-| `leadstream-worker` | mesma imagem | `celery -A config.celery:app worker --loglevel=INFO --concurrency=2` | somente rede privada |
+| `leadstream-worker` | mesma imagem | `celery -A config.celery:app worker -B --loglevel=INFO --concurrency=2` | somente rede privada |
 | `leadstream-release` | mesma imagem, execução manual | `sh scripts/release.sh` | nenhuma |
 | PostgreSQL | serviço já existente | padrão do provedor | somente rede privada |
 | RabbitMQ | `rabbitmq:4-management-alpine` | padrão da imagem | somente rede privada |
@@ -97,10 +97,12 @@ rotas de negócio; os health checks são isentos para permitir sondagem interna.
 
 2. Valide as rotas operacionais e a documentação:
    ```text
-   GET /health/live          -> 200
-   GET /health/ready         -> 200
-   GET /api/v1/docs/         -> 200 (Scalar / Swagger OpenAPI 3.1.0)
-   GET /api/v1/workspace/    -> 200 (Autenticado via Bearer ou X-API-Key)
+   GET /health/live                     -> 200
+   GET /health/ready                    -> 200
+   GET /api/v1/docs/                    -> 200 (Scalar / Swagger OpenAPI 3.1.0)
+   GET /api/v1/auth/me/                 -> 200 (Perfil, workspace ativo e permissões)
+   GET /api/v1/integracoes/outbox/status/ -> 200 (Métricas da fila transacional de CRM)
+   GET /api/v1/workspace/               -> 200 (Autenticado via Bearer ou X-API-Key)
    ```
 
 Em caso de falha, restaure API e worker para a tag anterior. Não reverta migrations cegamente:
