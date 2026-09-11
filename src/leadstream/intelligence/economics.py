@@ -53,7 +53,7 @@ def infer_economics(
     optante_simples: bool | None = False,
     cnae_code: str | None = None,
 ) -> dict[str, Any]:
-    cap = float(capital_social or 0.0)
+    cap = capital_social if capital_social is not None else 0.0
     is_mei = bool(optante_mei)
     is_simples = bool(optante_simples)
 

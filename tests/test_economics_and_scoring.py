@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import pytest
-
 from leadstream.intelligence.economics import (
     format_currency_brl,
     infer_economics,
-    infer_employee_count,
-    infer_revenue_range,
 )
 from leadstream.intelligence.scoring import calculate_lead_score
 

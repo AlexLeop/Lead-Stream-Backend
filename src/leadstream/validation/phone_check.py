@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
 
 def clean_phone_digits(value: str) -> str:
-    return "".join(c for c in str(value) if c.isdigit())
+    return "".join(c for c in value if c.isdigit())
 
 
 def get_phone_operator_hint(ddd: str, prefix: str) -> str:
@@ -55,9 +54,7 @@ def format_e164_br(phone: str, ddd: str = "") -> str:
     return formatted_num
 
 
-def validate_phone_technical(
-    phone: str, ddd: str = "", is_primary: bool = False
-) -> dict[str, Any]:
+def validate_phone_technical(phone: str, ddd: str = "", is_primary: bool = False) -> dict[str, Any]:
     digits = clean_phone_digits(phone)
     clean_ddd = clean_phone_digits(ddd)
 

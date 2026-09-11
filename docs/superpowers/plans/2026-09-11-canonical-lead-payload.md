@@ -36,6 +36,7 @@
 import pytest
 from leadstream.batches.models import BatchItem
 
+
 @pytest.mark.django_db
 def test_batch_item_has_canonical_payload(tenant, sample_batch):
     item = BatchItem.objects.create(
@@ -99,12 +100,14 @@ git commit -m "feat(batches): add canonical_payload JSONField to BatchItem"
 from leadstream.intelligence.cnae import lookup_cnae, format_cnae
 from leadstream.intelligence.natureza_juridica import lookup_natureza_juridica
 
+
 def test_cnae_formatting_and_lookup():
     info = lookup_cnae("8599603")
     assert info["codigo"] == "85.99-6-03"
     assert "Treinamento" in info["descricao"]
     assert info["setor"] == "Educação / Treinamento"
     assert info["grau_risco_trabalho"] in (1, 2, 3, 4)
+
 
 def test_natureza_juridica_lookup():
     nat = lookup_natureza_juridica("2135")
@@ -154,11 +157,19 @@ git commit -m "feat(intelligence): add CNAE and Natureza Juridica resolution eng
 from leadstream.intelligence.economics import infer_economics
 from leadstream.intelligence.scoring import calculate_lead_score
 
+
 def test_economics_inference_for_mei():
-    eco = infer_economics(capital_social=10.0, porte_rfb="1", optante_mei=True, optante_simples=True, cnae_code="8599603")
+    eco = infer_economics(
+        capital_social=10.0,
+        porte_rfb="1",
+        optante_mei=True,
+        optante_simples=True,
+        cnae_code="8599603",
+    )
     assert eco["porte_sebrae"] == "MEI"
     assert eco["regime_tributario"] == "SIMEI"
     assert eco["faturamento_estimado_anual"] <= 81000.00
+
 
 def test_lead_score_calculation():
     score_data = calculate_lead_score(
@@ -166,7 +177,7 @@ def test_lead_score_calculation():
         has_decision_maker=True,
         has_verified_email=True,
         has_verified_phone=True,
-        porte_sebrae="MEI"
+        porte_sebrae="MEI",
     )
     assert score_data["lead_score"] == 100
     assert score_data["lead_temperature"] == "HOT"
@@ -217,11 +228,13 @@ git commit -m "feat(intelligence): add economic inference and deterministic lead
 from leadstream.validation.email_check import validate_email_technical
 from leadstream.validation.phone_check import validate_phone_technical
 
+
 def test_email_validation():
     res = validate_email_technical("lx.leopoldo@outlook.com")
     assert res["status"] in ("ENTREGAVEL", "ENTREGAVEL_VALIDADO")
     assert res["mx_found"] is True
     assert res["disposable"] is False
+
 
 def test_phone_validation_mobile():
     res = validate_phone_technical("96260135", ddd="21")
@@ -271,6 +284,7 @@ import json
 from pathlib import Path
 from leadstream.canonical.contracts import CanonicalLeadPayload
 
+
 def test_payload_json_contract_compliance():
     payload_file = Path("payload.json")
     data = json.loads(payload_file.read_text(encoding="utf-8"))
@@ -318,6 +332,7 @@ git commit -m "feat(canonical): define Pydantic v2 contracts matching payload.js
 ```python
 import pytest
 from leadstream.canonical.builder import CanonicalLeadBuilder
+
 
 @pytest.mark.django_db
 def test_canonical_lead_builder_builds_full_payload(tenant, sample_item_with_company):
@@ -371,10 +386,13 @@ git commit -m "feat(canonical): implement CanonicalLeadBuilder compiler"
 import pytest
 from rest_framework.test import APIClient
 
+
 @pytest.mark.django_db
 def test_get_canonical_lead_endpoint(tenant, enriched_batch_item):
     client = APIClient()
-    response = client.get(f"/api/v1/leads/{enriched_batch_item.id}/canonical/", HTTP_X_TENANT_ID=tenant.slug)
+    response = client.get(
+        f"/api/v1/leads/{enriched_batch_item.id}/canonical/", HTTP_X_TENANT_ID=tenant.slug
+    )
     assert response.status_code == 200
     assert response.data["_meta"]["schema_version"] == "2.4.0"
 ```

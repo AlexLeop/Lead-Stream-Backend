@@ -152,8 +152,9 @@ def process_enrichment_chunk(
                 locked_item.save()
                 try:
                     from leadstream.canonical.builder import CanonicalLeadBuilder
+
                     CanonicalLeadBuilder(tenant=item.tenant).build_and_save(locked_item)
-                except Exception:
+                except (ValidationError, ValueError, KeyError, TypeError, AttributeError):
                     pass
                 BatchChunk.objects.filter(pk=chunk.pk).update(
                     checkpoint_row=item.row_number,

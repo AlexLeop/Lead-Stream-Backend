@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
 
-import re
 from leadstream.billing.models import DataBlock
 from leadstream.evidence.models import CaptureMethod, EvidenceStatus
 from leadstream.providers.contracts import (

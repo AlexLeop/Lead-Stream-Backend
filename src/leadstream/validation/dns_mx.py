@@ -41,6 +41,7 @@ def check_domain_mx(domain: str, timeout: float = 2.0) -> dict[str, Any]:
         return result
 
     try:
+        import dns.exception
         import dns.resolver
 
         resolver = dns.resolver.Resolver()
@@ -51,13 +52,23 @@ def check_domain_mx(domain: str, timeout: float = 2.0) -> dict[str, Any]:
             answers = resolver.resolve(dom, "MX")
             servers = [str(r.exchange).rstrip(".") for r in answers]
             mx_found = len(servers) > 0
-        except Exception:
+        except (
+            dns.resolver.NXDOMAIN,
+            dns.resolver.NoAnswer,
+            dns.resolver.NoNameservers,
+            dns.exception.DNSException,
+        ):
             # Fallback to A record if MX doesn't exist
             try:
                 answers_a = resolver.resolve(dom, "A")
                 servers = [dom] if len(answers_a) > 0 else []
                 mx_found = len(servers) > 0
-            except Exception:
+            except (
+                dns.resolver.NXDOMAIN,
+                dns.resolver.NoAnswer,
+                dns.resolver.NoNameservers,
+                dns.exception.DNSException,
+            ):
                 servers = []
                 mx_found = False
 
@@ -69,7 +80,7 @@ def check_domain_mx(domain: str, timeout: float = 2.0) -> dict[str, Any]:
         }
         _MEMORY_DNS_CACHE[dom] = result
         return result
-    except Exception as exc:
+    except (ImportError, OSError, ValueError) as exc:
         logger.debug("DNS lookup failed for %s: %s", dom, exc)
         result = {"mx_found": False, "mail_servers": [], "has_spf": False, "has_dmarc": False}
         _MEMORY_DNS_CACHE[dom] = result

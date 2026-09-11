@@ -18,9 +18,7 @@ else:
 
 CSRF_TRUSTED_ORIGINS = env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
-    default=[
-        f"https://{h}" for h in configured_hosts if h not in ("*", "127.0.0.1", "localhost")
-    ],
+    default=[f"https://{h}" for h in configured_hosts if h not in ("*", "127.0.0.1", "localhost")],
 )
 
 production_database_url = required_env("DATABASE_URL")

@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('batches', '0005_batchexport'),
+        ("batches", "0005_batchexport"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='batchitem',
-            name='canonical_payload',
-            field=models.JSONField(blank=True, default=dict, help_text='Snapshot consolidado do payload canônico v2.4.0.'),
+            model_name="batchitem",
+            name="canonical_payload",
+            field=models.JSONField(
+                blank=True,
+                default=dict,
+                help_text="Snapshot consolidado do payload canônico v2.4.0.",
+            ),
         ),
     ]

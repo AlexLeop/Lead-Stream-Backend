@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
 # Specific high-frequency CNAE details
@@ -36,7 +35,9 @@ KNOWN_CNAES: dict[str, dict[str, Any]] = {
         "grau_risco_trabalho": 1,
     },
     "6311900": {
-        "descricao": "Tratamento de dados, provedores de serviços de aplicação e hospedagem na internet",
+        "descricao": (
+            "Tratamento de dados, provedores de serviços de aplicação e hospedagem na internet"
+        ),
         "setor": "Tecnologia da Informação",
         "grau_risco_trabalho": 1,
     },
@@ -61,7 +62,9 @@ KNOWN_CNAES: dict[str, dict[str, Any]] = {
         "grau_risco_trabalho": 2,
     },
     "4772500": {
-        "descricao": "Comércio varejista de cosméticos, produtos de perfumaria e de higiene pessoal",
+        "descricao": (
+            "Comércio varejista de cosméticos, produtos de perfumaria e de higiene pessoal"
+        ),
         "setor": "Comércio",
         "grau_risco_trabalho": 2,
     },
@@ -71,7 +74,9 @@ KNOWN_CNAES: dict[str, dict[str, Any]] = {
         "grau_risco_trabalho": 2,
     },
     "4751201": {
-        "descricao": "Comércio varejista especializado de equipamentos e suprimentos de informática",
+        "descricao": (
+            "Comércio varejista especializado de equipamentos e suprimentos de informática"
+        ),
         "setor": "Comércio",
         "grau_risco_trabalho": 2,
     },
@@ -163,7 +168,11 @@ DIVISION_RULES: dict[int, tuple[str, int, str]] = {
     23: ("Indústria de Transformação", 4, "Fabricação de Produtos de Minerais Não-Metálicos"),
     24: ("Indústria de Transformação", 4, "Metalurgia"),
     25: ("Indústria de Transformação", 3, "Fabricação de Produtos de Metal"),
-    26: ("Indústria de Transformação", 3, "Fabricação de Equipamentos de Informática e Eletrônicos"),
+    26: (
+        "Indústria de Transformação",
+        3,
+        "Fabricação de Equipamentos de Informática e Eletrônicos",
+    ),
     27: ("Indústria de Transformação", 3, "Fabricação de Máquinas e Materiais Elétricos"),
     28: ("Indústria de Transformação", 3, "Fabricação de Máquinas e Equipamentos"),
     29: ("Indústria de Transformação", 3, "Fabricação de Veículos Automotores"),
@@ -198,12 +207,24 @@ DIVISION_RULES: dict[int, tuple[str, int, str]] = {
     65: ("Financeiro e Seguros", 1, "Seguros, Resseguros e Previdência Complementar"),
     66: ("Financeiro e Seguros", 1, "Atividades Auxiliares dos Serviços Financeiros"),
     68: ("Imobiliário", 1, "Atividades Imobiliárias"),
-    69: ("Serviços Profissionais e Técnicos", 1, "Atividades Jurídicas, de Contabilidade e de Auditoria"),
-    70: ("Serviços Profissionais e Técnicos", 1, "Atividades de Sedes de Empresas e de Consultoria em Gestão"),
+    69: (
+        "Serviços Profissionais e Técnicos",
+        1,
+        "Atividades Jurídicas, de Contabilidade e de Auditoria",
+    ),
+    70: (
+        "Serviços Profissionais e Técnicos",
+        1,
+        "Atividades de Sedes de Empresas e de Consultoria em Gestão",
+    ),
     71: ("Serviços Profissionais e Técnicos", 1, "Serviços de Arquitetura e Engenharia"),
     72: ("Serviços Profissionais e Técnicos", 1, "Pesquisa e Desenvolvimento Científico"),
     73: ("Publicidade e Marketing", 1, "Publicidade e Pesquisa de Mercado"),
-    74: ("Serviços Profissionais e Técnicos", 1, "Outras Atividades Profissionais, Científicas e Técnicas"),
+    74: (
+        "Serviços Profissionais e Técnicos",
+        1,
+        "Outras Atividades Profissionais, Científicas e Técnicas",
+    ),
     75: ("Serviços Veterinários", 2, "Atividades Veterinárias"),
     77: ("Serviços Administrativos", 2, "Aluguéis Não-Imobiliários e Gestão de Ativos"),
     78: ("Serviços Administrativos", 2, "Seleção, Agenciamento e Locação de Mão-de-Obra"),
@@ -214,14 +235,22 @@ DIVISION_RULES: dict[int, tuple[str, int, str]] = {
     84: ("Administração Pública", 1, "Administração Pública, Defesa e Seguridade Social"),
     85: ("Educação / Treinamento", 2, "Educação"),
     86: ("Saúde e Serviços Sociais", 3, "Atividades de Atenção à Saúde Humana"),
-    87: ("Saúde e Serviços Sociais", 3, "Atividades de Atenção à Saúde Humana Integradas com Assistência Social"),
+    87: (
+        "Saúde e Serviços Sociais",
+        3,
+        "Atividades de Atenção à Saúde Humana Integradas com Assistência Social",
+    ),
     88: ("Saúde e Serviços Sociais", 2, "Serviços de Assistência Social sem Alojamento"),
     90: ("Cultura, Esporte e Lazer", 2, "Atividades Artísticas, Criativas e de Espetáculos"),
     91: ("Cultura, Esporte e Lazer", 2, "Atividades Ligadas ao Patrimônio Cultural e Ambiental"),
     92: ("Cultura, Esporte e Lazer", 2, "Atividades de Exploração de Jogos de Azar e Apostas"),
     93: ("Cultura, Esporte e Lazer", 2, "Atividades Esportivas e de Recreação e Lazer"),
     94: ("Outros Serviços", 2, "Atividades de Organizações Associativas"),
-    95: ("Outros Serviços", 2, "Reparação e Manutenção de Equipamentos de Informática e Comunicação"),
+    95: (
+        "Outros Serviços",
+        2,
+        "Reparação e Manutenção de Equipamentos de Informática e Comunicação",
+    ),
     96: ("Outros Serviços", 2, "Outras Atividades de Serviços Pessoais"),
 }
 
@@ -253,7 +282,8 @@ def lookup_cnae(code: str) -> dict[str, Any]:
             "grau_risco_trabalho": match["grau_risco_trabalho"],
         }
     division = int(digits[:2]) if len(digits) >= 2 and digits[:2].isdigit() else 0
-    division_info = DIVISION_RULES.get(division, ("Outros Serviços", 2, "Atividades Econômicas Diversas"))
+    fallback = ("Outros Serviços", 2, "Atividades Econômicas Diversas")
+    division_info = DIVISION_RULES.get(division, fallback)
     return {
         "codigo": formatted,
         "descricao": division_info[2],

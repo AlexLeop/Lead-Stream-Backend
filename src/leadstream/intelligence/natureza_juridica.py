@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 KNOWN_NATUREZAS: dict[str, str] = {
     # 1xx - Administração Pública
     "1015": "Órgão Público do Poder Executivo Federal",

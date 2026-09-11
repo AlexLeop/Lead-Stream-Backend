@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from leadstream.batches.models import BatchItem
 from leadstream.canonical.contracts import CanonicalLeadPayload
-from leadstream.intelligence.cnae import format_cnae, lookup_cnae, parse_cnaes_list
+from leadstream.intelligence.cnae import lookup_cnae, parse_cnaes_list
 from leadstream.intelligence.economics import infer_economics
 from leadstream.intelligence.natureza_juridica import lookup_natureza_juridica
 from leadstream.intelligence.scoring import calculate_lead_score
@@ -50,7 +50,11 @@ class CanonicalLeadBuilder:
 
         # 1. CNPJ Parts
         cnpj_raw_val = (
-            norm.get("cnpj") or orig.get("cnpj") or norm.get("cnpj_raw") or orig.get("cnpj_raw") or ""
+            norm.get("cnpj")
+            or orig.get("cnpj")
+            or norm.get("cnpj_raw")
+            or orig.get("cnpj_raw")
+            or ""
         )
         digits = "".join(c for c in str(cnpj_raw_val) if c.isdigit())
         if len(digits) < 14:
@@ -132,9 +136,7 @@ class CanonicalLeadBuilder:
             or orig.get("opcao_pelo_simples")
         )
         opt_mei = bool(
-            norm.get("opcao_pelo_mei")
-            or norm.get("optante_simei")
-            or orig.get("opcao_pelo_mei")
+            norm.get("opcao_pelo_mei") or norm.get("optante_simei") or orig.get("opcao_pelo_mei")
         )
 
         eco = infer_economics(
@@ -145,7 +147,11 @@ class CanonicalLeadBuilder:
             cnae_code=str(cnae_fiscal),
         )
 
-        porte_rfb_label = "MICRO_EMPRESA" if porte_val in ("01", "1", "ME") else ("PEQUENA_EMPRESA" if porte_val in ("03", "3", "EPP") else "DEMAIS")
+        porte_rfb_label = (
+            "MICRO_EMPRESA"
+            if porte_val in ("01", "1", "ME")
+            else ("PEQUENA_EMPRESA" if porte_val in ("03", "3", "EPP") else "DEMAIS")
+        )
 
         # 6. Address
         address_dict = {
@@ -156,7 +162,8 @@ class CanonicalLeadBuilder:
             "municipio": norm.get("municipio") or orig.get("municipio"),
             "uf": (norm.get("uf") or orig.get("uf") or "").upper(),
             "cep": norm.get("cep") or orig.get("cep"),
-            "codigo_ibge_municipio": norm.get("codigo_municipio_ibge") or orig.get("codigo_municipio_ibge"),
+            "codigo_ibge_municipio": norm.get("codigo_municipio_ibge")
+            or orig.get("codigo_municipio_ibge"),
             "latitude": None,
             "longitude": None,
             "geocoding_precision": "ROOFTOP_EXACT" if norm.get("numero") else "APPROXIMATE",
@@ -211,7 +218,11 @@ class CanonicalLeadBuilder:
                     or socio.get("qualificacao")
                     or "49-Sócio-Administrador"
                 )
-                cpf_mask = socio.get("cpf_mascarado") or socio.get("cpf_representante_legal") or "***.***.***-**"
+                cpf_mask = (
+                    socio.get("cpf_mascarado")
+                    or socio.get("cpf_representante_legal")
+                    or "***.***.***-**"
+                )
                 faixa_et = socio.get("faixa_etaria") or "31-40 anos"
 
                 # If single entrepreneur, wire direct contacts if email or phone available
@@ -235,7 +246,9 @@ class CanonicalLeadBuilder:
                             "email_corporativo": email_corp,
                             "email_secundario": None,
                             "celular_whatsapp": celular_whatsapp,
-                            "whatsapp_validado": bool(telefones and telefones[0]["whatsapp_status"].get("tem_whatsapp")),
+                            "whatsapp_validado": bool(
+                                telefones and telefones[0]["whatsapp_status"].get("tem_whatsapp")
+                            ),
                             "linkedin_url": None,
                         },
                         "outras_empresas_como_socio": 0,
@@ -247,7 +260,9 @@ class CanonicalLeadBuilder:
         is_active = situacao_cadastral == "ATIVA"
         has_decision_maker = len(decision_makers_qsa) > 0
         has_verified_email = any(e.get("mx_found") for e in emails)
-        has_verified_phone = any(p.get("whatsapp_status", {}).get("tem_whatsapp") for p in telefones)
+        has_verified_phone = any(
+            p.get("whatsapp_status", {}).get("tem_whatsapp") for p in telefones
+        )
 
         scoring_data = calculate_lead_score(
             is_active=is_active,
@@ -291,7 +306,8 @@ class CanonicalLeadBuilder:
                 "nome_fantasia": nome_fantasia or None,
                 "situacao_cadastral": situacao_cadastral,
                 "data_situacao_cadastral": data_sit_str,
-                "motivo_situacao_cadastral": norm.get("motivo_situacao_cadastral") or "SEM RESTRICOES",
+                "motivo_situacao_cadastral": norm.get("motivo_situacao_cadastral")
+                or "SEM RESTRICOES",
                 "situacao_especial": norm.get("situacao_especial"),
                 "data_situacao_especial": norm.get("data_situacao_especial"),
                 "data_abertura": data_abertura_str,
@@ -311,8 +327,15 @@ class CanonicalLeadBuilder:
                 "faixa_faturamento": eco["faixa_faturamento"],
                 "faixa_funcionarios": eco["faixa_funcionarios"],
                 "quantidade_funcionarios_estimada": eco["quantidade_funcionarios_estimada"],
-                "website": norm.get("website") or (f"https://{emails[0]['endereco'].split('@')[1]}" if emails and emails[0]['tipo'] != 'GRATUITO' else None),
-                "dominio": emails[0]['endereco'].split('@')[1] if emails and emails[0]['tipo'] != 'GRATUITO' else None,
+                "website": norm.get("website")
+                or (
+                    f"https://{emails[0]['endereco'].split('@')[1]}"
+                    if emails and emails[0]["tipo"] != "GRATUITO"
+                    else None
+                ),
+                "dominio": emails[0]["endereco"].split("@")[1]
+                if emails and emails[0]["tipo"] != "GRATUITO"
+                else None,
             },
             "cnae": {
                 "principal": cnae_principal_dict,
@@ -326,7 +349,9 @@ class CanonicalLeadBuilder:
             "decision_makers_qsa": decision_makers_qsa,
             "financial_and_banking": {
                 "bancos_relacionamento_detectados": [],
-                "linhas_credito_ativas": ["CAPITAL_DE_GIRO"] if eco["porte_sebrae"] in ("MEDIA_EMPRESA", "GRANDE_EMPRESA") else [],
+                "linhas_credito_ativas": ["CAPITAL_DE_GIRO"]
+                if eco["porte_sebrae"] in ("MEDIA_EMPRESA", "GRANDE_EMPRESA")
+                else [],
                 "risco_credito_score": 750,
                 "risco_credito_classificacao": "BAIXO_RISCO_A",
                 "limite_credito_estimado": eco["faturamento_estimado_anual"] * 0.1,
@@ -364,8 +389,12 @@ class CanonicalLeadBuilder:
             "foreign_trade_and_logistics": {
                 "radar_siscomex": {
                     "habilitado": eco["porte_sebrae"] in ("MEDIA_EMPRESA", "GRANDE_EMPRESA"),
-                    "modalidade": "LIMITADA_50K" if eco["porte_sebrae"] in ("MEDIA_EMPRESA", "GRANDE_EMPRESA") else "INEXISTENTE",
-                    "status": "ATIVO" if eco["porte_sebrae"] in ("MEDIA_EMPRESA", "GRANDE_EMPRESA") else "INATIVO",
+                    "modalidade": "LIMITADA_50K"
+                    if eco["porte_sebrae"] in ("MEDIA_EMPRESA", "GRANDE_EMPRESA")
+                    else "INEXISTENTE",
+                    "status": "ATIVO"
+                    if eco["porte_sebrae"] in ("MEDIA_EMPRESA", "GRANDE_EMPRESA")
+                    else "INATIVO",
                     "data_habilitacao": None,
                 },
                 "historico_importacao": {
@@ -404,8 +433,12 @@ class CanonicalLeadBuilder:
                     "emissor_ssl": None,
                     "dns_seguranca": {
                         "mx_records": [emails[0]["endereco"].split("@")[1]] if emails else [],
-                        "spf_status": "VALIDO" if emails and emails[0]["mx_found"] else "INEXISTENTE",
-                        "dmarc_status": "MONITORING" if emails and emails[0]["mx_found"] else "INEXISTENTE",
+                        "spf_status": "VALIDO"
+                        if emails and emails[0]["mx_found"]
+                        else "INEXISTENTE",
+                        "dmarc_status": "MONITORING"
+                        if emails and emails[0]["mx_found"]
+                        else "INEXISTENTE",
                     },
                 },
             },

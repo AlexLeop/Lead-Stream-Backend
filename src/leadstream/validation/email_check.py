@@ -103,7 +103,7 @@ def validate_email_technical(email: str) -> dict[str, Any]:
             "score_confiabilidade": 0.0,
         }
 
-    local_part, domain = clean.split("@", 1)
+    _, domain = clean.split("@", 1)
     disposable = is_disposable_domain(domain)
     if disposable:
         return {

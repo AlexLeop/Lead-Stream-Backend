@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from leadstream.validation.email_check import (
     classify_email_type,
     is_disposable_domain,
@@ -10,7 +8,6 @@ from leadstream.validation.email_check import (
 )
 from leadstream.validation.phone_check import (
     format_e164_br,
-    get_phone_operator_hint,
     validate_phone_technical,
 )
 
@@ -44,7 +41,10 @@ def test_email_technical_validation():
 
 
 def test_format_e164_br():
-    assert format_e164_br("2196260135") == "+55 21 99626-0135" or format_e164_br("21996260135") == "+55 21 99626-0135"
+    assert (
+        format_e164_br("2196260135") == "+55 21 99626-0135"
+        or format_e164_br("21996260135") == "+55 21 99626-0135"
+    )
     assert format_e164_br("1132908800") == "+55 11 3290-8800"
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -79,7 +80,11 @@ class FiscalAndTaxIntelligencePayload(BasePayloadModel):
     situacao_pgfn_divida_ativa: str = "NADA_CONSTA"
     valor_divida_ativa_uniao: float = 0.0
     certidao_negativa_debito_cnd: dict[str, Any] = Field(
-        default_factory=lambda: {"status": "EMITIDA_VALIDA", "numero_certidao": None, "validade": None}
+        default_factory=lambda: {
+            "status": "EMITIDA_VALIDA",
+            "numero_certidao": None,
+            "validade": None,
+        }
     )
     certidao_fgts_crf: dict[str, Any] = Field(
         default_factory=lambda: {"status": "REGULAR", "numero_crf": None, "validade": None}
@@ -150,8 +155,8 @@ class EmailPayload(BasePayloadModel):
 
 
 class ContactsPayload(BasePayloadModel):
-    telefones: list[PhonePayload | dict[str, Any]] = Field(default_factory=list)
-    emails: list[EmailPayload | dict[str, Any]] = Field(default_factory=list)
+    telefones: list[PhonePayload] = Field(default_factory=list)
+    emails: list[EmailPayload] = Field(default_factory=list)
 
 
 class DecisionMakerDirectContacts(BasePayloadModel):
@@ -174,7 +179,9 @@ class DecisionMakerPayload(BasePayloadModel):
     cargo_executivo_mercado: str = "Administrador"
     nivel_hierarquico: str = "C_LEVEL"
     poder_decisao: str = "FINAL_SIGNER"
-    contatos_diretos: DecisionMakerDirectContacts | dict[str, Any] = Field(default_factory=dict)
+    contatos_diretos: DecisionMakerDirectContacts = Field(
+        default_factory=DecisionMakerDirectContacts
+    )
     outras_empresas_como_socio: int = 0
     pep_pessoa_politicamente_exposta: bool = False
 
@@ -272,9 +279,7 @@ class CanonicalLeadPayload(BasePayloadModel):
     foreign_trade_and_logistics: ForeignTradeAndLogisticsPayload = Field(
         default_factory=ForeignTradeAndLogisticsPayload
     )
-    legal_and_judicial: LegalAndJudicialPayload = Field(
-        default_factory=LegalAndJudicialPayload
-    )
+    legal_and_judicial: LegalAndJudicialPayload = Field(default_factory=LegalAndJudicialPayload)
     digital_presence_and_tech_stack: DigitalPresenceAndTechStackPayload = Field(
         default_factory=DigitalPresenceAndTechStackPayload
     )

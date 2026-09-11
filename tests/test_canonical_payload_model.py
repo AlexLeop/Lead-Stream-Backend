@@ -20,7 +20,10 @@ def test_batch_item_has_canonical_payload_field() -> None:
         batch=batch,
         row_number=1,
         hygiene_state=BatchItem.HygieneState.UNCHANGED,
-        canonical_payload={"_meta": {"schema_version": "2.4.0"}, "identification": {"status": "QUALIFIED"}},
+        canonical_payload={
+            "_meta": {"schema_version": "2.4.0"},
+            "identification": {"status": "QUALIFIED"},
+        },
     )
     item.refresh_from_db()
     assert item.canonical_payload["_meta"]["schema_version"] == "2.4.0"

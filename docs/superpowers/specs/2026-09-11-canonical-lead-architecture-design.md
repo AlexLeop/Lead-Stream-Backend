@@ -132,9 +132,7 @@ Compilador central que:
 Adicionar ao modelo `BatchItem`:
 ```python
 canonical_payload = models.JSONField(
-    default=dict,
-    blank=True,
-    help_text="Snapshot consolidado do payload canônico v2.4.0."
+    default=dict, blank=True, help_text="Snapshot consolidado do payload canônico v2.4.0."
 )
 ```
 Índice de busca:

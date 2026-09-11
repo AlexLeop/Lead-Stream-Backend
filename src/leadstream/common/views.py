@@ -78,4 +78,3 @@ class ScalarDocsView(TemplateView):
         context["schema_url"] = "/api/v1/schema/"
         context["title"] = "LeadStream API Reference"
         return context
-

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from leadstream.intelligence.cnae import format_cnae, lookup_cnae, parse_cnaes_list
 from leadstream.intelligence.natureza_juridica import (
     format_natureza_juridica,

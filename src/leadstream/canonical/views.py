@@ -31,7 +31,10 @@ def resolve_request_tenant(request: Request) -> Tenant:
 class CanonicalLeadDetailView(APIView):
     @extend_schema(
         summary="Consulta do Lead Canônico",
-        description="Retorna o payload canônico v2.4.0 consolidado com todas as seções e inteligência do lead.",
+        description=(
+            "Retorna o payload canônico v2.4.0 consolidado com todas as seções e "
+            "inteligência do lead."
+        ),
         tags=["Leads Canônicos"],
     )
     def get(self, request: Request, item_id: UUID) -> Response:

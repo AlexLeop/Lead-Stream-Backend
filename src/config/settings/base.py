@@ -278,8 +278,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Operação interna",
             "description": (
-                "Consultas de workspace, metadados de infraestrutura e "
-                "probes de saúde do sistema."
+                "Consultas de workspace, metadados de infraestrutura e probes de saúde do sistema."
             ),
         },
     ],
