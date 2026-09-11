@@ -46,8 +46,15 @@ DATABASES = {
 if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
     raise ImproperlyConfigured("DATABASE_URL deve apontar para PostgreSQL em produção.")
 
-if APPWRITE_ENDPOINT and not APPWRITE_ENDPOINT.startswith("https://"):  # noqa: F405
-    raise ImproperlyConfigured("APPWRITE_ENDPOINT deve usar HTTPS em produção.")
+appwrite_ep = str(APPWRITE_ENDPOINT) if APPWRITE_ENDPOINT else ""  # noqa: F405
+if appwrite_ep and not (
+    appwrite_ep.startswith("https://")
+    or appwrite_ep.startswith("http://lead_stream_")
+    or appwrite_ep.startswith("http://appwrite")
+):
+    raise ImproperlyConfigured(
+        "APPWRITE_ENDPOINT deve usar HTTPS em produção ou apontar para a rede interna privada."
+    )
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=True)

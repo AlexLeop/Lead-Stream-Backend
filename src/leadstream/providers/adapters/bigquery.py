@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -61,7 +62,33 @@ class BigQueryOpenCNPJAdapter:
             maximum_bytes_billed=settings.BIGQUERY_MAXIMUM_BYTES_BILLED or None,
             use_query_cache=True,
         )
-        client = bigquery.Client(project=settings.BIGQUERY_PROJECT_ID)
+        client_kwargs: dict[str, Any] = {"project": settings.BIGQUERY_PROJECT_ID}
+        creds_json = getattr(settings, "GOOGLE_CREDENTIALS_JSON", None)
+        creds_file = getattr(settings, "GOOGLE_APPLICATION_CREDENTIALS", None)
+        if creds_json:
+            from google.oauth2 import service_account
+
+            try:
+                info = json.loads(creds_json) if isinstance(creds_json, str) else creds_json
+                client_kwargs["credentials"] = (
+                    service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
+                        info
+                    )
+                )
+            except (ValueError, TypeError, json.JSONDecodeError, OSError):
+                pass
+        elif creds_file:
+            from google.oauth2 import service_account
+
+            try:
+                client_kwargs["credentials"] = (
+                    service_account.Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
+                        creds_file
+                    )
+                )
+            except (ValueError, TypeError, OSError):
+                pass
+        client = bigquery.Client(**client_kwargs)
         job = client.query(sql, job_config=job_config)
         rows = tuple(
             dict(row.items()) for row in job.result(timeout=settings.BIGQUERY_TIMEOUT_SECONDS)
