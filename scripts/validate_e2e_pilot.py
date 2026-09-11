@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# ruff: noqa: E402, E501
 """LeadStream Backend — Validador Operacional do Piloto Ponta a Ponta.
 
 Executa os 3 modos reais de uso da plataforma:

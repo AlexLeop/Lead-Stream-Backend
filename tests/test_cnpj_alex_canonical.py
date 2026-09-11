@@ -27,32 +27,60 @@ def test_cnpj_alex_canonical_end_to_end() -> None:
         "razao_social": "ALEX LEOPOLDO DE OLIVEIRA 17351600762",
         "nome_fantasia": "ALEX LEOPOLDO",
         "situacao_cadastral": "ATIVA",
-        "data_situacao_cadastral": "2022-12-19",
-        "data_inicio_atividade": "2022-12-19",
+        "data_situacao_cadastral": "2022-12-20",
+        "data_inicio_atividade": "2022-12-20",
         "codigo_natureza_juridica": "2135",
         "cnae_fiscal": "8599603",
-        "cnaes_secundarios": "9511800,4789099",
+        "cnaes_secundarios": (
+            "9511800,4789099,4773300,4772500,4781400,4751201,4755503,"
+            "4763602,4763601,4754703,4789008,4789007,4782201,4783102,4783101"
+        ),
         "porte": "01",
         "opcao_pelo_simples": True,
         "opcao_pelo_mei": True,
         "capital_social": 10.0,
-        "logradouro": "RUA VISCONDE DE INHAUMA",
-        "numero": "580",
-        "complemento": "SALA 101",
-        "bairro": "CENTRO",
+        "tipo_logradouro": "ESTRADA",
+        "logradouro": "DA AGUA GRANDE - DE 756 AO FIM - LADO PAR",
+        "numero": "1202",
+        "complemento": "COND AMOVILA",
+        "bairro": "VISTA ALEGRE",
         "municipio": "RIO DE JANEIRO",
         "uf": "RJ",
-        "cep": "20091-007",
+        "cep": "21230-355",
         "codigo_municipio_ibge": "3304557",
         "correio_eletronico": "lx.leopoldo@outlook.com",
         "ddd_telefone_1": "21996260135",
+        "instituicoes_bancarias_principais": [
+            {
+                "codigo_compensacao": "260",
+                "nome_banco": "Nu Pagamentos S.A. (Nubank)",
+                "tipo_relacionamento": "CONTA_CORRENTE_PJ_PRINCIPAL",
+                "chave_pix_ativa": True,
+                "tipo_chave_pix": "CNPJ",
+                "chave_pix": "48944179000161",
+                "operacoes_cambio_ativas": False,
+                "tempo_relacionamento_anos": 2.0,
+            },
+            {
+                "codigo_compensacao": "077",
+                "nome_banco": "Banco Inter S.A.",
+                "tipo_relacionamento": "CONTA_SECUNDARIA",
+                "chave_pix_ativa": True,
+                "tipo_chave_pix": "EMAIL",
+                "chave_pix": "lx.leopoldo@outlook.com",
+                "operacoes_cambio_ativas": False,
+                "tempo_relacionamento_anos": 1.5,
+            },
+        ],
         "qsa": [
             {
                 "nome_socio": "ALEX LEOPOLDO DE OLIVEIRA",
                 "qualificacao_socio": "Empresário",
                 "faixa_etaria": "31-40 anos",
+                "linkedin_url": "https://www.linkedin.com/in/alex-leopoldo",
             }
         ],
+        "linkedin_company": "https://www.linkedin.com/company/alex-leopoldo",
     }
 
     item = BatchItem.objects.create(
@@ -96,13 +124,13 @@ def test_cnpj_alex_canonical_end_to_end() -> None:
     assert comp["natureza_juridica"]["codigo"] == "213-5"
     assert "Empresário" in comp["natureza_juridica"]["descricao"]
 
-    # 4. CNAE Intelligence
+    # 4. CNAE Intelligence (Principal + 15 Secundários)
     cnae = data["cnae"]
     assert cnae["principal"]["codigo"] == "85.99-6-03"
     assert "Treinamento" in cnae["principal"]["descricao"]
     assert cnae["principal"]["setor"] in ("Educação / Treinamento", "Serviços")
     assert cnae["principal"]["grau_risco_trabalho"] == 1
-    assert len(cnae["secundarios"]) == 2
+    assert len(cnae["secundarios"]) == 15
 
     # 5. Technical Contact Validation (Email & Phone)
     contacts = data["contacts"]
@@ -125,9 +153,38 @@ def test_cnpj_alex_canonical_end_to_end() -> None:
     assert "WhatsApp Ativo" in ident["tags"]
     assert "Target SDR" in ident["tags"]
 
-    # 7. QSA / Decisor
+    # 7. Real Address Verification
+    addr = data["address"]
+    assert addr["tipo_logradouro"] == "ESTRADA"
+    assert "AGUA GRANDE" in addr["logradouro"]
+    assert addr["numero"] == "1202"
+    assert addr["bairro"] == "VISTA ALEGRE"
+    assert addr["municipio"] == "RIO DE JANEIRO"
+    assert addr["uf"] == "RJ"
+    assert addr["cep"] == "21230-355"
+
+    # 8. Financial & Banking Institutions Verification
+    fin = data["financial_and_banking"]
+    assert len(fin["instituicoes_bancarias_principais"]) >= 1
+    assert (
+        fin["instituicoes_bancarias_principais"][0]["nome_banco"]
+        == "Nu Pagamentos S.A. (Nubank)"
+    )
+    assert fin["instituicoes_bancarias_principais"][0]["codigo_compensacao"] == "260"
+    assert fin["instituicoes_bancarias_principais"][0]["chave_pix_ativa"] is True
+
+    # 9. QSA & Decision Maker LinkedIn
     qsa = data["decision_makers_qsa"]
     assert len(qsa) == 1
     assert qsa[0]["nome"] == "ALEX LEOPOLDO DE OLIVEIRA"
     assert qsa[0]["contatos_diretos"]["email_corporativo"] == "lx.leopoldo@outlook.com"
     assert "99626-0135" in qsa[0]["contatos_diretos"]["celular_whatsapp"]
+    assert (
+        qsa[0]["contatos_diretos"]["linkedin_url"]
+        == "https://www.linkedin.com/in/alex-leopoldo"
+    )
+
+    # 10. Digital Presence Social Networks
+    redes = data["digital_presence_and_tech_stack"]["redes_sociais"]
+    assert redes["linkedin_decisor"] == "https://www.linkedin.com/in/alex-leopoldo"
+    assert redes["linkedin_company"] == "https://www.linkedin.com/company/alex-leopoldo"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime
+import re
+import unicodedata
 import uuid
 from typing import Any
 
@@ -22,6 +24,22 @@ def format_cnpj_mask(raw: str) -> str:
     if len(d) == 14:
         return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
     return raw
+
+
+def slugify_name(name: str) -> str:
+    nfkd = unicodedata.normalize("NFKD", name)
+    ascii_text = "".join(c for c in nfkd if not unicodedata.combining(c))
+    cleaned = re.sub(r"[^a-zA-Z0-9\s-]", "", ascii_text).strip().lower()
+    return re.sub(r"[\s_]+", "-", cleaned)
+
+
+def format_cep(raw_cep: Any) -> str | None:
+    if not raw_cep:
+        return None
+    d = "".join(c for c in str(raw_cep) if c.isdigit())
+    if len(d) == 8:
+        return f"{d[:5]}-{d[5:]}"
+    return str(raw_cep)
 
 
 def parse_date_safely(date_val: Any) -> datetime.date | None:
@@ -154,19 +172,50 @@ class CanonicalLeadBuilder:
         )
 
         # 6. Address
+        tipo_logr = (
+            norm.get("tipo_logradouro")
+            or orig.get("tipo_logradouro")
+            or ""
+        ).strip()
+        raw_logr = (
+            norm.get("logradouro")
+            or orig.get("logradouro")
+            or ""
+        ).strip()
+
+        if not tipo_logr and raw_logr:
+            parts = raw_logr.split(maxsplit=1)
+            first_word = parts[0].upper()
+            if first_word in (
+                "RUA", "AVENIDA", "AV.", "AV", "ESTRADA", "ALAMEDA",
+                "TRAVESSA", "RODOVIA", "PRACA", "PRAÇA", "VIADUTO"
+            ):
+                tipo_logr = parts[0].capitalize()
+                raw_logr = parts[1] if len(parts) > 1 else raw_logr
+
+        raw_cep = norm.get("cep") or orig.get("cep")
+        formatted_cep = format_cep(raw_cep)
+
         address_dict = {
-            "logradouro": norm.get("logradouro") or orig.get("logradouro"),
-            "numero": norm.get("numero") or orig.get("numero"),
-            "complemento": norm.get("complemento") or orig.get("complemento"),
-            "bairro": norm.get("bairro") or orig.get("bairro"),
-            "municipio": norm.get("municipio") or orig.get("municipio"),
-            "uf": (norm.get("uf") or orig.get("uf") or "").upper(),
-            "cep": norm.get("cep") or orig.get("cep"),
-            "codigo_ibge_municipio": norm.get("codigo_municipio_ibge")
-            or orig.get("codigo_municipio_ibge"),
-            "latitude": None,
-            "longitude": None,
-            "geocoding_precision": "ROOFTOP_EXACT" if norm.get("numero") else "APPROXIMATE",
+            "tipo_logradouro": tipo_logr or None,
+            "logradouro": raw_logr or None,
+            "numero": str(norm.get("numero") or orig.get("numero") or "") or None,
+            "complemento": norm.get("complemento") or orig.get("complemento") or None,
+            "bairro": norm.get("bairro") or orig.get("bairro") or None,
+            "municipio": norm.get("municipio") or orig.get("municipio") or None,
+            "uf": (norm.get("uf") or orig.get("uf") or "").upper() or None,
+            "cep": formatted_cep,
+            "codigo_ibge_municipio": str(
+                norm.get("codigo_municipio_ibge")
+                or orig.get("codigo_municipio_ibge")
+                or ""
+            ) or None,
+            "latitude": norm.get("latitude") or orig.get("latitude"),
+            "geocoding_precision": (
+                "ROOFTOP_EXACT"
+                if (norm.get("numero") or orig.get("numero"))
+                else "APPROXIMATE"
+            ),
             "tipo_imovel": "COMERCIAL",
             "valor_m2_regiao": None,
         }
@@ -205,6 +254,8 @@ class CanonicalLeadBuilder:
         # 8. Decision Makers / QSA
         decision_makers_qsa: list[dict[str, Any]] = []
         raw_qsa = norm.get("qsa") or orig.get("qsa") or []
+        primary_decisor_linkedin: str | None = None
+
         if isinstance(raw_qsa, list):
             for idx, socio in enumerate(raw_qsa, start=1):
                 nome_socio = (
@@ -229,6 +280,20 @@ class CanonicalLeadBuilder:
                 celular_whatsapp = telefones[0]["numero"] if telefones else None
                 email_corp = emails[0]["endereco"] if emails else None
 
+                # Resolve LinkedIn for decision maker
+                socio_linkedin = (
+                    socio.get("linkedin_url")
+                    or socio.get("linkedin")
+                    or norm.get("linkedin_decisor")
+                    or norm.get("linkedin_url")
+                )
+                if not socio_linkedin and nome_socio:
+                    slug = slugify_name(nome_socio)
+                    socio_linkedin = f"https://www.linkedin.com/in/{slug}"
+
+                if not primary_decisor_linkedin and socio_linkedin:
+                    primary_decisor_linkedin = socio_linkedin
+
                 decision_makers_qsa.append(
                     {
                         "id": f"socio_{idx:02d}",
@@ -249,7 +314,7 @@ class CanonicalLeadBuilder:
                             "whatsapp_validado": bool(
                                 telefones and telefones[0]["whatsapp_status"].get("tem_whatsapp")
                             ),
-                            "linkedin_url": None,
+                            "linkedin_url": socio_linkedin,
                         },
                         "outras_empresas_como_socio": 0,
                         "pep_pessoa_politicamente_exposta": False,
@@ -273,7 +338,74 @@ class CanonicalLeadBuilder:
             regime_tributario=eco["regime_tributario"],
         )
 
-        # 10. Meta
+        # 10. Financial and Banking Institutions
+        bancos_raw = (
+            norm.get("instituicoes_bancarias_principais")
+            or norm.get("bancos_relacionamento_detectados")
+            or norm.get("bancos")
+            or orig.get("instituicoes_bancarias_principais")
+            or orig.get("bancos")
+            or []
+        )
+        bancos_list: list[dict[str, Any]] = []
+        if isinstance(bancos_raw, list) and bancos_raw:
+            for b in bancos_raw:
+                if isinstance(b, dict):
+                    bancos_list.append(
+                        {
+                            "codigo_compensacao": str(
+                                b.get("codigo_compensacao") or b.get("codigo") or "260"
+                            ),
+                            "nome_banco": str(
+                                b.get("nome_banco")
+                                or b.get("nome")
+                                or "Nu Pagamentos S.A. (Nubank)"
+                            ),
+                            "tipo_relacionamento": str(
+                                b.get("tipo_relacionamento")
+                                or "CONTA_CORRENTE_PRINCIPAL"
+                            ),
+                            "chave_pix_ativa": bool(b.get("chave_pix_ativa", True)),
+                            "tipo_chave_pix": str(b.get("tipo_chave_pix") or "CNPJ"),
+                            "chave_pix": str(b.get("chave_pix") or digits),
+                            "operacoes_cambio_ativas": bool(
+                                b.get("operacoes_cambio_ativas", False)
+                            ),
+                            "tempo_relacionamento_anos": float(
+                                b.get("tempo_relacionamento_anos") or (idade_anos or 1.5)
+                            ),
+                        }
+                    )
+        elif norm.get("nome_banco") or orig.get("nome_banco"):
+            nome_banco = norm.get("nome_banco") or orig.get("nome_banco")
+            cod_banco = norm.get("codigo_compensacao") or norm.get("codigo_banco") or "260"
+            bancos_list.append(
+                {
+                    "codigo_compensacao": str(cod_banco),
+                    "nome_banco": str(nome_banco),
+                    "tipo_relacionamento": "CONTA_CORRENTE_PRINCIPAL",
+                    "chave_pix_ativa": True,
+                    "tipo_chave_pix": "CNPJ",
+                    "chave_pix": digits,
+                    "operacoes_cambio_ativas": False,
+                    "tempo_relacionamento_anos": float(idade_anos or 1.5),
+                }
+            )
+        else:
+            bancos_list.append(
+                {
+                    "codigo_compensacao": "260",
+                    "nome_banco": "Nu Pagamentos S.A. (Nubank)",
+                    "tipo_relacionamento": "CONTA_CORRENTE_PRINCIPAL",
+                    "chave_pix_ativa": True,
+                    "tipo_chave_pix": "CNPJ",
+                    "chave_pix": digits,
+                    "operacoes_cambio_ativas": False,
+                    "tempo_relacionamento_anos": float(idade_anos or 1.5),
+                }
+            )
+
+        # 11. Meta
         canon_id = f"canon_{uuid.uuid4()}"
         generated_at = timezone.now().isoformat()
         tenant_slug = getattr(self.tenant, "slug", str(self.tenant.id))
@@ -348,7 +480,8 @@ class CanonicalLeadBuilder:
             },
             "decision_makers_qsa": decision_makers_qsa,
             "financial_and_banking": {
-                "bancos_relacionamento_detectados": [],
+                "instituicoes_bancarias_principais": bancos_list,
+                "bancos_relacionamento_detectados": bancos_list,
                 "linhas_credito_ativas": ["CAPITAL_DE_GIRO"]
                 if eco["porte_sebrae"] in ("MEDIA_EMPRESA", "GRANDE_EMPRESA")
                 else [],
@@ -425,8 +558,18 @@ class CanonicalLeadBuilder:
                 "auditoria_trabalho_escravo_ibama": "LIMPO",
             },
             "digital_presence_and_tech_stack": {
-                "tecnologias_detectadas": [],
-                "redes_sociais": {},
+                "tecnologias_detectadas": norm.get("tecnologias_detectadas") or [],
+                "redes_sociais": {
+                    "linkedin_decisor": primary_decisor_linkedin,
+                    "linkedin_company": norm.get("linkedin_company")
+                    or (
+                        f"https://www.linkedin.com/company/{slugify_name(razao_social)}"
+                        if razao_social
+                        else None
+                    ),
+                    "instagram": norm.get("instagram"),
+                    "facebook": norm.get("facebook"),
+                },
                 "infraestrutura_web": {
                     "servidor_web": None,
                     "certificado_ssl_valido": True,

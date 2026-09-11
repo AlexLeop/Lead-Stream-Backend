@@ -43,32 +43,60 @@ def run_canonical_test(cnpj_input: str = "48.944.179/0001-61") -> dict:
             "razao_social": "ALEX LEOPOLDO DE OLIVEIRA 17351600762",
             "nome_fantasia": "ALEX LEOPOLDO",
             "situacao_cadastral": "ATIVA",
-            "data_situacao_cadastral": "2022-12-19",
-            "data_inicio_atividade": "2022-12-19",
+            "data_situacao_cadastral": "2022-12-20",
+            "data_inicio_atividade": "2022-12-20",
             "codigo_natureza_juridica": "2135",
             "cnae_fiscal": "8599603",
-            "cnaes_secundarios": "9511800,4789099",
+            "cnaes_secundarios": (
+                "9511800,4789099,4773300,4772500,4781400,4751201,4755503,"
+                "4763602,4763601,4754703,4789008,4789007,4782201,4783102,4783101"
+            ),
             "porte": "01",
             "opcao_pelo_simples": True,
             "opcao_pelo_mei": True,
             "capital_social": 10.0,
-            "logradouro": "RUA VISCONDE DE INHAUMA",
-            "numero": "580",
-            "complemento": "SALA 101",
-            "bairro": "CENTRO",
+            "tipo_logradouro": "ESTRADA",
+            "logradouro": "DA AGUA GRANDE - DE 756 AO FIM - LADO PAR",
+            "numero": "1202",
+            "complemento": "COND AMOVILA",
+            "bairro": "VISTA ALEGRE",
             "municipio": "RIO DE JANEIRO",
             "uf": "RJ",
-            "cep": "20091-007",
+            "cep": "21230-355",
             "codigo_municipio_ibge": "3304557",
             "correio_eletronico": "lx.leopoldo@outlook.com",
             "ddd_telefone_1": "21996260135",
+            "instituicoes_bancarias_principais": [
+                {
+                    "codigo_compensacao": "260",
+                    "nome_banco": "Nu Pagamentos S.A. (Nubank)",
+                    "tipo_relacionamento": "CONTA_CORRENTE_PJ_PRINCIPAL",
+                    "chave_pix_ativa": True,
+                    "tipo_chave_pix": "CNPJ",
+                    "chave_pix": "48944179000161",
+                    "operacoes_cambio_ativas": False,
+                    "tempo_relacionamento_anos": 2.0,
+                },
+                {
+                    "codigo_compensacao": "077",
+                    "nome_banco": "Banco Inter S.A.",
+                    "tipo_relacionamento": "CONTA_SECUNDARIA",
+                    "chave_pix_ativa": True,
+                    "tipo_chave_pix": "EMAIL",
+                    "chave_pix": "lx.leopoldo@outlook.com",
+                    "operacoes_cambio_ativas": False,
+                    "tempo_relacionamento_anos": 1.5,
+                },
+            ],
             "qsa": [
                 {
                     "nome_socio": "ALEX LEOPOLDO DE OLIVEIRA",
                     "qualificacao_socio": "Empresário",
                     "faixa_etaria": "31-40 anos",
+                    "linkedin_url": "https://www.linkedin.com/in/alex-leopoldo",
                 }
             ],
+            "linkedin_company": "https://www.linkedin.com/company/alex-leopoldo",
         }
     else:
         # Fallback for custom CNPJ test
@@ -101,10 +129,10 @@ def run_canonical_test(cnpj_input: str = "48.944.179/0001-61") -> dict:
 
 def main() -> None:
     cnpj_arg = sys.argv[1] if len(sys.argv) > 1 else "48.944.179/0001-61"
-    print(f"\n=======================================================")
-    print(f"🚀 TESTANDO GERADOR DE CANONICAL LEAD PAYLOAD v2.4.0")
+    print("\n=======================================================")
+    print("🚀 TESTANDO GERADOR DE CANONICAL LEAD PAYLOAD v2.4.0")
     print(f"🏢 CNPJ: {cnpj_arg}")
-    print(f"=======================================================\n")
+    print("=======================================================\n")
 
     payload = run_canonical_test(cnpj_arg)
 

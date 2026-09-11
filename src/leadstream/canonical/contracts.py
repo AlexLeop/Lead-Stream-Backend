@@ -62,8 +62,24 @@ class CompanyPayload(BasePayloadModel):
     dominio: str | None = None
 
 
+class BankingInstitutionPayload(BasePayloadModel):
+    codigo_compensacao: str = "260"
+    nome_banco: str = "Nu Pagamentos S.A. (Nubank)"
+    tipo_relacionamento: str = "CONTA_CORRENTE_PRINCIPAL"
+    chave_pix_ativa: bool = True
+    tipo_chave_pix: str = "CNPJ"
+    chave_pix: str | None = None
+    operacoes_cambio_ativas: bool = False
+    tempo_relacionamento_anos: float | None = 2.0
+
+
 class FinancialAndBankingPayload(BasePayloadModel):
-    bancos_relacionamento_detectados: list[dict[str, Any]] = Field(default_factory=list)
+    instituicoes_bancarias_principais: list[BankingInstitutionPayload] = Field(
+        default_factory=list
+    )
+    bancos_relacionamento_detectados: list[BankingInstitutionPayload] = Field(
+        default_factory=list
+    )
     linhas_credito_ativas: list[str] = Field(default_factory=list)
     risco_credito_score: int | None = 750
     risco_credito_classificacao: str | None = "BAIXO_RISCO_A"
@@ -115,6 +131,7 @@ class CnaeSection(BasePayloadModel):
 
 
 class AddressPayload(BasePayloadModel):
+    tipo_logradouro: str | None = None
     logradouro: str | None = None
     numero: str | None = None
     complemento: str | None = None

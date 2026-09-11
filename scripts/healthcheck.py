@@ -11,7 +11,7 @@ def is_live() -> bool:
         with urllib.request.urlopen("http://127.0.0.1:8000/health/live", timeout=2) as resp:
             if resp.status == 200:
                 return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     # 2. Se não houver HTTP, verifica processo Celery ativo (para container worker)
@@ -25,7 +25,7 @@ def is_live() -> bool:
                             return True
                 except OSError:
                     continue
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     return False
