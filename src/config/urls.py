@@ -28,6 +28,7 @@ urlpatterns = [
         SpectacularRedocView.as_view(url_name="schema"),
         name="redoc",
     ),
+    path("api/v1/", include("leadstream.security.urls")),
     path("api/v1/", include("leadstream.tenancy.urls")),
     path("api/v1/dados/", include("leadstream.entities.urls")),
     path("api/v1/dados/", include("leadstream.evidence.urls")),
