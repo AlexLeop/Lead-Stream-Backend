@@ -268,17 +268,22 @@ class CanonicalLeadBuilder:
         decision_makers_qsa: list[dict[str, Any]] = []
         raw_qsa = norm.get("qsa") or orig.get("qsa") or []
         if not raw_qsa and item.entity_id:
-            from leadstream.entities.models import Relationship
+            from leadstream.entities.models import Relationship, SocialProfile
 
             db_rels = Relationship.objects.filter(
                 company__entity=item.entity
-            ).select_related("person")
+            ).select_related("person__entity")
             for r in db_rels:
+                sp = SocialProfile.objects.filter(
+                    owner=r.person.entity,
+                    network=SocialProfile.Network.LINKEDIN,
+                ).first()
                 raw_qsa.append(
                     {
                         "nome_socio": r.person.full_name,
                         "qualificacao_socio": r.qualification,
                         "cargo": r.observed_title,
+                        "linkedin_url": sp.profile_url if sp else None,
                     }
                 )
         primary_decisor_linkedin: str | None = None
@@ -314,6 +319,23 @@ class CanonicalLeadBuilder:
                     or norm.get("linkedin_decisor")
                     or None
                 )
+                if not socio_linkedin and item.entity_id:
+                    from leadstream.entities.models import Relationship, SocialProfile
+
+                    rels = Relationship.objects.filter(
+                        company__entity=item.entity
+                    ).select_related("person__entity")
+                    for r in rels:
+                        r_name = r.person.full_name.casefold()
+                        s_name = str(nome_socio).casefold()
+                        if r_name in s_name or s_name in r_name or len(rels) == 1:
+                            sp = SocialProfile.objects.filter(
+                                owner=r.person.entity,
+                                network=SocialProfile.Network.LINKEDIN,
+                            ).first()
+                            if sp and sp.profile_url:
+                                socio_linkedin = sp.profile_url
+                                break
 
                 if not primary_decisor_linkedin and socio_linkedin:
                     primary_decisor_linkedin = socio_linkedin

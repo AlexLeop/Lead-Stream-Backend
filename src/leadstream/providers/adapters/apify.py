@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from decimal import ROUND_CEILING, Decimal
 from typing import Any
@@ -18,7 +19,7 @@ from leadstream.providers.exceptions import (
     ProviderSubmissionUncertain,
 )
 
-from .mapping import person_candidates
+from .mapping import google_serp_linkedin_candidates, person_candidates
 
 
 class ApifyDecisionMakerAdapter:
@@ -82,7 +83,9 @@ class ApifyDecisionMakerAdapter:
         elapsed = (timezone.now() - call.started_at).total_seconds()
         if elapsed > settings.APIFY_RUN_TIMEOUT_SECONDS + 600:
             raise ProviderSubmissionUncertain("Apify excedeu o prazo de reconciliação automática.")
-        client = self._client or httpx.Client(timeout=min(settings.APIFY_TIMEOUT_SECONDS, 30))
+        client = self._client or httpx.Client(
+            timeout=min(max(settings.APIFY_TIMEOUT_SECONDS, 10), 90)
+        )
         try:
             return self._advance(context, call, state, client, submit=submit)
         finally:
@@ -100,24 +103,73 @@ class ApifyDecisionMakerAdapter:
     ) -> ProviderResult:
         headers = {"Authorization": f"Bearer {settings.APIFY_TOKEN}"}
         base = state["base_url"]
+        is_google_scraper = "google-search-scraper" in state["actor"].lower()
         try:
             if submit:
-                # Contrato do actor configurado: cnpj, companyName e maxResults.
-                response = client.post(
-                    f"{base}/actors/{quote(state['actor'], safe='~')}/runs",
-                    headers=headers,
-                    json={
+                if is_google_scraper:
+                    # Construct search queries for LinkedIn decision maker
+                    names: list[str] = []
+                    qsa = context.item.normalized_data.get("qsa")
+                    if isinstance(qsa, list):
+                        for member in qsa:
+                            if isinstance(member, dict):
+                                n = (
+                                    member.get("nome_socio")
+                                    or member.get("nome")
+                                    or member.get("razao_social")
+                                )
+                                if n and str(n).strip():
+                                    names.append(str(n).strip())
+                    legal_name = str(context.item.normalized_data.get("legal_name", "")).strip()
+                    clean_legal = re.sub(
+                        r"^\d{2}\.?\d{3}\.?\d{3}[-/]?\d{4}[-]?\d{2}\s*", "", legal_name
+                    ).strip()
+                    if (
+                        clean_legal
+                        and clean_legal not in names
+                        and not clean_legal.endswith("LTDA")
+                        and not clean_legal.endswith("S.A.")
+                    ):
+                        names.append(clean_legal)
+
+                    city = context.item.normalized_data.get("municipio", "")
+                    queries: list[str] = []
+                    if names:
+                        for name in names[:3]:
+                            queries.append(
+                                f'site:br.linkedin.com/in OR site:linkedin.com/in "{name}"'
+                            )
+                    else:
+                        trade_name = context.item.normalized_data.get("trade_name") or ""
+                        comp_name = trade_name or clean_legal or legal_name
+                        loc = f'"{city}"' if city else ""
+                        queries.append(f'site:linkedin.com/in "{comp_name}" {loc}'.strip())
+
+                    payload_json = {
+                        "queries": "\n".join(queries),
+                        "maxPagesPerQuery": 1,
+                        "resultsPerPage": min(state["max_results"], 5),
+                    }
+                else:
+                    # Contrato do actor configurado: cnpj, companyName e maxResults.
+                    payload_json = {
                         "cnpj": context.cnpj,
                         "companyName": context.item.normalized_data.get("legal_name", ""),
                         "maxResults": state["max_results"],
-                    },
+                    }
+
+                charge_usd = Decimal(call.estimated_cost_cents) / Decimal(state["fx_cents"])
+                # Apify exige maxTotalChargeUsd >= $0.50
+                wait_sec = min(max(getattr(settings, "APIFY_WAIT_FOR_FINISH_SECONDS", 60), 0), 60)
+                response = client.post(
+                    f"{base}/actors/{quote(state['actor'], safe='~')}/runs",
+                    headers=headers,
+                    json=payload_json,
                     params={
-                        "waitForFinish": 0,
+                        "waitForFinish": wait_sec,
                         "timeout": settings.APIFY_RUN_TIMEOUT_SECONDS,
                         "maxItems": state["max_results"],
-                        "maxTotalChargeUsd": str(
-                            Decimal(call.estimated_cost_cents) / Decimal(state["fx_cents"])
-                        ),
+                        "maxTotalChargeUsd": str(max(Decimal("0.50"), charge_usd)),
                     },
                 )
             else:
@@ -189,11 +241,36 @@ class ApifyDecisionMakerAdapter:
             self._save(context, state, wait=True)
             raise ProviderPending("Coleta do dataset Apify será retomada.") from exc
         confidence = getattr(settings, "APIFY_CONFIDENCE", 70)
-        people = person_candidates(
-            rows,
-            source_url=f"https://console.apify.com/actors/runs/{state['run_id']}",
-            confidence=confidence,
-        )
+        has_organic = any("organicResults" in row for row in rows if isinstance(row, dict))
+        if is_google_scraper or has_organic:
+            expected_names: list[str] = []
+            qsa = context.item.normalized_data.get("qsa")
+            if isinstance(qsa, list):
+                for member in qsa:
+                    if isinstance(member, dict):
+                        n = member.get("nome_socio") or member.get("nome")
+                        if n and str(n).strip():
+                            expected_names.append(str(n).strip())
+            clean_legal = re.sub(
+                r"^\d{2}\.?\d{3}\.?\d{3}[-/]?\d{4}[-]?\d{2}\s*",
+                "",
+                str(context.item.normalized_data.get("legal_name", "")),
+            ).strip()
+            if clean_legal and clean_legal not in expected_names:
+                expected_names.append(clean_legal)
+
+            people = google_serp_linkedin_candidates(
+                rows,
+                source_url=f"https://console.apify.com/actors/runs/{state['run_id']}",
+                confidence=confidence,
+                expected_names=expected_names,
+            )
+        else:
+            people = person_candidates(
+                rows,
+                source_url=f"https://console.apify.com/actors/runs/{state['run_id']}",
+                confidence=confidence,
+            )
         return ProviderResult(
             outcome="SUCCEEDED" if people else "ABSENT",
             confirmed_cost_cents=cost,

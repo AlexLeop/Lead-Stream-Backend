@@ -361,6 +361,72 @@ def test_adapter_apify_usa_actor_configurado_e_dataset_limpo() -> None:
     assert result.external_request_id == "run-test-001"
 
 
+@override_settings(
+    APIFY_TOKEN="test-token",
+    APIFY_DECISION_MAKER_ACTOR_ID="apify/google-search-scraper",
+    APIFY_BASE_URL="https://api.apify.com/v2",
+    APIFY_USD_RATE_CENTS=600,
+    APIFY_COST_CENTS=25,
+)
+def test_apify_google_search_scraper_resolve_decisor_e_linkedin() -> None:
+    context = make_context(suffix="006b")
+    call = ProviderCall.objects.create(
+        tenant=context.tenant,
+        batch=context.batch,
+        item=context.item,
+        provider="apify-decision-maker",
+        operation="enrich",
+        block=DataBlock.DECISION_MAKER,
+        idempotency_key="apify-test-call-006b",
+        estimated_cost_cents=100,
+        status="REQUESTED",
+        execution_token="token-006b",
+        started_at=timezone.now(),
+    )
+    context = replace(context, call_id=str(call.pk), execution_token="token-006b")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        assert request.headers["Authorization"] == "Bearer test-token"
+        if "/actors/apify~google-search-scraper/runs" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "run-google-001",
+                        "defaultDatasetId": "dataset-google-001",
+                        "status": "SUCCEEDED",
+                        "usageTotalUsd": "0.005",
+                    }
+                },
+            )
+        if "/datasets/dataset-google-001/items" in url_str:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "organicResults": [
+                            {
+                                "title": "Alex Leopoldo Da Silva - Diretor Executivo | LinkedIn",
+                                "url": "https://br.linkedin.com/in/alexleop/en",
+                                "description": "Alex Leopoldo. Especialista em dados.",
+                            }
+                        ]
+                    }
+                ],
+            )
+        raise AssertionError(f"URL inesperada: {url_str}")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = ApifyDecisionMakerAdapter(client=client).enrich(context)
+    assert len(result.people) == 1
+    assert result.people[0].full_name == "Alex Leopoldo Da Silva"
+    assert result.people[0].socials[0].network == SocialProfile.Network.LINKEDIN
+    assert result.people[0].socials[0].profile_url == "https://br.linkedin.com/in/alexleop/en"
+    assert result.confirmed_cost_cents == 3
+    assert result.external_request_id == "run-google-001"
+
+
 def test_api_expoe_politicas_sem_credenciais_e_inicia_enriquecimento(
     api_client: Any,
     django_capture_on_commit_callbacks: Any,

@@ -94,7 +94,7 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
     )
     policies = []
     for slug, name, priority, cost, blocks in defaults:
-        policy, _ = ProviderPolicy.objects.get_or_create(
+        policy, created = ProviderPolicy.objects.get_or_create(
             tenant=tenant,
             provider=slug,
             defaults={
@@ -105,5 +105,10 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
                 "allowed_blocks": blocks,
             },
         )
+        if not created:
+            configured = adapters[slug].is_configured()
+            if policy.enabled != configured:
+                policy.enabled = configured
+                policy.save(update_fields=("enabled",))
         policies.append(policy)
     return policies

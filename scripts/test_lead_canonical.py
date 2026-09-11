@@ -30,13 +30,14 @@ def _load_dotenv() -> None:
                         value.startswith("'") and value.endswith("'")
                     ):
                         value = value[1:-1]
-                    if key and key not in os.environ:
+                    if key:
                         os.environ[key] = value
         except OSError:
             pass
 
 
 _load_dotenv()
+os.environ["DJANGO_SETTINGS_MODULE"] = "config.settings.test"
 
 import django
 
