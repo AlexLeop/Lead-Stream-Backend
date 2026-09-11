@@ -9,7 +9,19 @@ from .base import *  # noqa: F403
 
 DEBUG = False
 SECRET_KEY = required_env("DJANGO_SECRET_KEY")
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", required=True)
+configured_hosts = env_list("DJANGO_ALLOWED_HOSTS", required=True)
+if "*" in configured_hosts:
+    ALLOWED_HOSTS = ["*"]
+else:
+    # Garante 127.0.0.1 e localhost para as sondagens de saúde internas do EasyPanel/Docker
+    ALLOWED_HOSTS = list(dict.fromkeys(["127.0.0.1", "localhost", *configured_hosts]))
+
+CSRF_TRUSTED_ORIGINS = env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    default=[
+        f"https://{h}" for h in configured_hosts if h not in ("*", "127.0.0.1", "localhost")
+    ],
+)
 
 production_database_url = required_env("DATABASE_URL")
 CELERY_BROKER_URL = required_env("CELERY_BROKER_URL")

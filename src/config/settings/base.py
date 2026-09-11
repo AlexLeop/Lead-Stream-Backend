@@ -11,7 +11,11 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-only-unsafe-secret-key")
 DEBUG = env_bool("DJANGO_DEBUG", default=False)
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+configured_hosts = env_list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+if "*" in configured_hosts:
+    ALLOWED_HOSTS = ["*"]
+else:
+    ALLOWED_HOSTS = list(dict.fromkeys(["localhost", "127.0.0.1", *configured_hosts]))
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
