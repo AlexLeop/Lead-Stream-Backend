@@ -89,7 +89,7 @@ def classify_email_type(email: str) -> str:
     return "DIRETO_DECISOR"
 
 
-def validate_email_technical(email: str) -> dict[str, Any]:
+def validate_email_technical(email: str, deep_smtp: bool = False) -> dict[str, Any]:
     clean = (email or "").strip().lower()
     if not validate_email_syntax(clean):
         return {
@@ -117,9 +117,33 @@ def validate_email_technical(email: str) -> dict[str, Any]:
             "score_confiabilidade": 0.0,
         }
 
+    tipo = classify_email_type(clean)
+
+    if deep_smtp:
+        from leadstream.validation.smtp_probe import DeliverabilityStatus, verify_email_smtp_deep
+
+        smtp_res = verify_email_smtp_deep(clean)
+        is_deliv = bool(smtp_res["is_deliverable"])
+        if is_deliv:
+            status = "ENTREGAVEL_VALIDADO" if tipo == "DIRETO_DECISOR" else "ENTREGAVEL"
+        elif smtp_res["status"] == DeliverabilityStatus.UNDELIVERABLE_MAILBOX_NOT_FOUND:
+            status = "INDELIVERAVEL"
+        else:
+            status = "RISCO_CATCH_ALL"
+        return {
+            "endereco": clean,
+            "tipo": tipo,
+            "status": status,
+            "mx_found": smtp_res["mx_server"] is not None,
+            "smtp_check": is_deliv,
+            "disposable": False,
+            "catch_all": smtp_res["is_catch_all"],
+            "score_confiabilidade": smtp_res["score_confiabilidade"],
+            "smtp_details": smtp_res,
+        }
+
     mx_info = check_domain_mx(domain)
     mx_found = mx_info["mx_found"]
-    tipo = classify_email_type(clean)
 
     status = "ENTREGAVEL" if mx_found else "INDELIVERAVEL"
     if tipo == "DIRETO_DECISOR" and mx_found:
