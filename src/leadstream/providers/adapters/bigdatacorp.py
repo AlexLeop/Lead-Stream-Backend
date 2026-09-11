@@ -52,7 +52,8 @@ class BigDataCorpAdapter:
             raise ProviderPermanentError("Consulta BigDataCorp rejeitada.") from exc
         if not isinstance(body, (dict, list)):
             raise ProviderPermanentError("Resposta BigDataCorp fora do contrato esperado.")
-        people = person_candidates(body, source_url=url, confidence=80)
+        confidence = getattr(settings, "BIGDATACORP_CONFIDENCE", 80)
+        people = person_candidates(body, source_url=url, confidence=confidence)
         root = body if isinstance(body, dict) else {}
         observations: list[FieldObservation] = []
         company_fields = {
@@ -67,7 +68,7 @@ class BigDataCorpAdapter:
                     FieldObservation(
                         field_path=field_path,
                         value=value,
-                        confidence=80,
+                        confidence=confidence,
                         evidence_status=EvidenceStatus.OBSERVED,
                         method=CaptureMethod.API,
                         source_url=url,

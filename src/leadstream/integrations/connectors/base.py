@@ -30,6 +30,12 @@ class SyncResult:
 class BaseCRMConnector(ABC):
     connector_type: str
 
+    @property
+    def timeout(self) -> float:
+        from django.conf import settings
+
+        return float(getattr(settings, "CRM_CONNECTOR_DEFAULT_TIMEOUT_SECONDS", 10))
+
     def apply_mapping(
         self,
         data: dict[str, Any],

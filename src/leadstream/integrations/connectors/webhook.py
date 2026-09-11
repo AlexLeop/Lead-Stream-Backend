@@ -60,7 +60,7 @@ class WebhookConnector(BaseCRMConnector):
         headers = self._get_headers(connection, body, "leadstream.ping")
 
         try:
-            with httpx.Client(timeout=10.0) as client:
+            with httpx.Client(timeout=self.timeout) as client:
                 response = client.post(webhook_url, content=body, headers=headers)
                 latency = (time.perf_counter() - start) * 1000.0
 
@@ -130,7 +130,7 @@ class WebhookConnector(BaseCRMConnector):
         headers = self._get_headers(connection, body, event_name)
 
         try:
-            with httpx.Client(timeout=15.0) as client:
+            with httpx.Client(timeout=self.timeout) as client:
                 response = client.post(webhook_url, content=body, headers=headers)
 
                 if 200 <= response.status_code < 300:

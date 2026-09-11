@@ -138,6 +138,7 @@ class BigQueryOpenCNPJAdapter:
                 qualification = str(
                     pick(partner, "qualificacao_socio", "qualificacao", "role", default="SOCIO")
                 )
+                confidence = getattr(settings, "BIGQUERY_CONFIDENCE", 100)
                 people.append(
                     PersonCandidate(
                         full_name=name,
@@ -146,7 +147,7 @@ class BigQueryOpenCNPJAdapter:
                         ),
                         qualification=qualification[:80],
                         observed_title=qualification[:160],
-                        confidence=100,
+                        confidence=confidence,
                         evidence_status=EvidenceStatus.CONFIRMED,
                     )
                 )

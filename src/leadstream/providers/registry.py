@@ -23,12 +23,16 @@ def default_adapters() -> dict[str, ProviderAdapter]:
             base_url=settings.OPEN_ENRICH_URL or "",
             token=settings.OPEN_ENRICH_TOKEN or "",
             cost_cents=settings.OPEN_ENRICH_COST_CENTS,
+            timeout_seconds=float(settings.OPEN_ENRICH_TIMEOUT_SECONDS),
+            confidence=settings.OPEN_ENRICH_CONFIDENCE,
         ),
         GenericPeopleEnrichmentAdapter(
             slug="premium-enrich",
             base_url=settings.PREMIUM_ENRICH_URL or "",
             token=settings.PREMIUM_ENRICH_TOKEN or "",
             cost_cents=settings.PREMIUM_ENRICH_COST_CENTS,
+            timeout_seconds=float(settings.PREMIUM_ENRICH_TIMEOUT_SECONDS),
+            confidence=settings.PREMIUM_ENRICH_CONFIDENCE,
         ),
     )
     return {adapter.slug: adapter for adapter in adapters}
@@ -40,21 +44,21 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
         (
             "open-cnpj-bigquery",
             "OpenCNPJ / BigQuery",
-            10,
-            0,
+            settings.BIGQUERY_PROVIDER_PRIORITY,
+            settings.BIGQUERY_COST_CENTS,
             [DataBlock.COMPANY_REGISTRY, DataBlock.DECISION_MAKER],
         ),
         (
             "bigdatacorp",
             "BigDataCorp",
-            20,
+            settings.BIGDATACORP_PROVIDER_PRIORITY,
             settings.BIGDATACORP_COST_CENTS,
             [DataBlock.DECISION_MAKER, DataBlock.DIRECT_EMAIL, DataBlock.DIRECT_PHONE],
         ),
         (
             "apify-decision-maker",
             "Apify — decisores públicos",
-            30,
+            settings.APIFY_PROVIDER_PRIORITY,
             settings.APIFY_COST_CENTS,
             [
                 DataBlock.DECISION_MAKER,
@@ -66,14 +70,14 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
         (
             "open-enrich",
             "Open Enrich",
-            40,
+            settings.OPEN_ENRICH_PROVIDER_PRIORITY,
             settings.OPEN_ENRICH_COST_CENTS,
             [DataBlock.DECISION_MAKER, DataBlock.DIRECT_EMAIL, DataBlock.DIRECT_PHONE],
         ),
         (
             "premium-enrich",
             "Fallback premium",
-            50,
+            settings.PREMIUM_ENRICH_PROVIDER_PRIORITY,
             settings.PREMIUM_ENRICH_COST_CENTS,
             [
                 DataBlock.DECISION_MAKER,

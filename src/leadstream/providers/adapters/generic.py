@@ -19,12 +19,16 @@ class GenericPeopleEnrichmentAdapter:
         base_url: str,
         token: str,
         cost_cents: int,
+        timeout_seconds: float = 30.0,
+        confidence: int = 75,
         client: httpx.Client | None = None,
     ) -> None:
         self.slug = slug
         self.base_url = base_url
         self.token = token
         self.cost_cents = cost_cents
+        self.timeout_seconds = timeout_seconds
+        self.confidence = confidence
         self._client = client
 
     def is_configured(self) -> bool:
@@ -33,7 +37,7 @@ class GenericPeopleEnrichmentAdapter:
     def enrich(self, context: ProviderContext) -> ProviderResult:
         if not self.is_configured():
             raise ProviderNotConfigured(f"{self.slug} não configurado.")
-        client = self._client or httpx.Client(timeout=30)
+        client = self._client or httpx.Client(timeout=self.timeout_seconds)
         try:
             response = client.post(
                 self.base_url,
@@ -44,7 +48,7 @@ class GenericPeopleEnrichmentAdapter:
             body: Any = response.json()
         except httpx.HTTPError as exc:
             raise ProviderTemporaryError(f"Falha ao consultar {self.slug}.") from exc
-        people = person_candidates(body, source_url=self.base_url, confidence=75)
+        people = person_candidates(body, source_url=self.base_url, confidence=self.confidence)
         delivered: set[str] = set()
         if people:
             delivered.add(DataBlock.DECISION_MAKER)

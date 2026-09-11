@@ -188,10 +188,11 @@ class ApifyDecisionMakerAdapter:
         except (httpx.HTTPError, ValueError, TypeError) as exc:
             self._save(context, state, wait=True)
             raise ProviderPending("Coleta do dataset Apify será retomada.") from exc
+        confidence = getattr(settings, "APIFY_CONFIDENCE", 70)
         people = person_candidates(
             rows,
             source_url=f"https://console.apify.com/actors/runs/{state['run_id']}",
-            confidence=70,
+            confidence=confidence,
         )
         return ProviderResult(
             outcome="SUCCEEDED" if people else "ABSENT",

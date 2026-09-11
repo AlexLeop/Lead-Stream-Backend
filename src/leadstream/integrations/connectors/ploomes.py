@@ -34,7 +34,7 @@ class PloomesConnector(BaseCRMConnector):
         start = time.perf_counter()
         headers = self._get_headers(connection)
         try:
-            with httpx.Client(timeout=10.0) as client:
+            with httpx.Client(timeout=self.timeout) as client:
                 resp = client.get(f"{self.BASE_URL}/Self", headers=headers)
                 latency = (time.perf_counter() - start) * 1000.0
 
@@ -110,7 +110,7 @@ class PloomesConnector(BaseCRMConnector):
         headers = self._get_headers(connection)
         url = f"{self.BASE_URL}{endpoint}"
         try:
-            with httpx.Client(timeout=15.0) as client:
+            with httpx.Client(timeout=self.timeout) as client:
                 resp = client.post(url, json=payload, headers=headers)
                 if 200 <= resp.status_code < 300:
                     res = resp.json()

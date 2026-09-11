@@ -46,7 +46,7 @@ DATABASES = {
 if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
     raise ImproperlyConfigured("DATABASE_URL deve apontar para PostgreSQL em produção.")
 
-appwrite_ep = str(APPWRITE_ENDPOINT) if APPWRITE_ENDPOINT else ""  # noqa: F405
+appwrite_ep = APPWRITE_ENDPOINT or ""  # noqa: F405
 if appwrite_ep and not (
     appwrite_ep.startswith("https://")
     or appwrite_ep.startswith("http://lead_stream_")
