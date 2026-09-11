@@ -390,6 +390,22 @@ def refresh_batch_progress(batch_id: UUID | str) -> Batch:
         else:
             batch.status = Batch.Status.COMPLETED
         batch.completed_at = timezone.now()
+
+        from django.db.models import Sum
+        from django.db.models.functions import Coalesce
+
+        from leadstream.billing.models import BillableEvent, CreditReservation
+        from leadstream.billing.services import capture_and_release
+
+        active_res = CreditReservation.objects.filter(
+            batch=batch, status=CreditReservation.Status.ACTIVE
+        ).first()
+        if active_res:
+            actual_delivered = BillableEvent.objects.filter(batch=batch).aggregate(
+                total=Coalesce(Sum("unit_price_cents"), 0)
+            )["total"]
+            capture_and_release(active_res, actual_delivered)
+
     batch.save()
     return batch
 

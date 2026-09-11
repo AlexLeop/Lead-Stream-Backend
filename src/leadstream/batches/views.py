@@ -12,7 +12,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from leadstream.common.api import reject_tenant_override
+from leadstream.common.api import reject_tenant_override, resolve_tenant
 from leadstream.common.pagination import StandardPagination
 from leadstream.tenancy.services import get_internal_tenant
 
@@ -31,9 +31,10 @@ from .storage import open_export
 from .tasks import generate_export_task
 
 
-def _get_batch(batch_id: UUID) -> Batch:
+def _get_batch(batch_id: UUID, request: Request | None = None) -> Batch:
+    tenant = resolve_tenant(request)
     try:
-        return Batch.objects.get(pk=batch_id, tenant=get_internal_tenant())
+        return Batch.objects.get(pk=batch_id, tenant=tenant)
     except Batch.DoesNotExist as exc:
         raise Http404("Lote não encontrado.") from exc
 
@@ -49,7 +50,8 @@ class BatchCollectionView(APIView):
 
     @extend_schema(responses=BatchSerializer(many=True), tags=["Lotes"])
     def get(self, request: Request) -> Response:
-        queryset = Batch.objects.filter(tenant=get_internal_tenant())
+        tenant = resolve_tenant(request)
+        queryset = Batch.objects.filter(tenant=tenant)
         requested_status = request.query_params.get("status")
         if requested_status:
             queryset = queryset.filter(status=requested_status)
@@ -76,9 +78,19 @@ class BatchCollectionView(APIView):
         serializer = BatchUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        tenant = resolve_tenant(request)
+
+        from leadstream.billing.services import get_or_create_wallet, hold_credits
+
+        wallet = get_or_create_wallet(tenant)
+        if not wallet.is_unlimited and wallet.available_balance <= 0:
+            raise ValidationError(
+                {"carteira": "Saldo insuficiente na carteira. Por favor recarregue seus créditos."}
+            )
+
         try:
             result = create_csv_batch(
-                tenant=get_internal_tenant(),
+                tenant=tenant,
                 name=data.get("name", ""),
                 upload=data["arquivo"],
                 idempotency_key=request.headers.get("Idempotency-Key", ""),
@@ -86,6 +98,22 @@ class BatchCollectionView(APIView):
             )
         except DjangoValidationError as exc:
             raise _domain_error(exc) from exc
+
+        if result.created and not wallet.is_unlimited:
+            estimated_hold = min(
+                wallet.available_balance, max(50, int(result.batch.total_rows or 50))
+            )
+            if estimated_hold > 0:
+                try:
+                    hold_credits(
+                        wallet=wallet,
+                        amount=estimated_hold,
+                        batch=result.batch,
+                        description=f"Reserva para lote {result.batch.name}",
+                    )
+                except DjangoValidationError:
+                    pass
+
         response_status = status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
         return Response(BatchSerializer(result.batch).data, status=response_status)
 
