@@ -1,13 +1,11 @@
 import pytest
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from leadstream.security.crypto import generate_api_key
 from leadstream.security.models import WorkspaceMembership, WorkspaceRole
 from leadstream.tenancy.models import Tenant
-
-User = get_user_model()
 
 
 @pytest.mark.django_db

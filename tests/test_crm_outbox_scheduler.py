@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import pytest
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -16,8 +16,6 @@ from leadstream.integrations.models import (
 )
 from leadstream.security.models import WorkspaceMembership, WorkspaceRole
 from leadstream.tenancy.models import Tenant
-
-User = get_user_model()
 
 
 @pytest.mark.django_db

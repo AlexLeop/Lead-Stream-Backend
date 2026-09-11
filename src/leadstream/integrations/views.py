@@ -39,8 +39,9 @@ def resolve_tenant(request: Request | None) -> Tenant:
     """Extrai o tenant autenticado da requisição ou recorre ao tenant padrão."""
     if request is None:
         return get_internal_tenant()
-    if hasattr(request, "tenant") and request.tenant:
-        return request.tenant
+    req_tenant = getattr(request, "tenant", None)
+    if isinstance(req_tenant, Tenant):
+        return req_tenant
     if hasattr(request, "headers"):
         tenant_header = request.headers.get("X-Tenant-ID")
         if tenant_header:
