@@ -174,13 +174,16 @@ def main() -> None:
         print(f"  • E-mail:    {email['endereco']} [{email['tipo']}] -> {email['status']} ({mx_status})")
     for tel in contacts.get("telefones", []):
         wa_status = "🟢 WhatsApp Ativo" if tel.get("whatsapp_status", {}).get("tem_whatsapp") else "⚪ Fixo"
-        print(f"  • Telefone:  {tel['numero']} [{tel['operadora']}] -> {wa_status}")
+        print(f"  • Telefone:  DDD {tel.get('ddd')} | Número: {tel.get('numero')} [{tel['operadora']}] -> {wa_status}")
 
     print("\n👥 DECISORES / QSA:")
     if qsa:
         for socio in qsa:
             linkedin_str = socio["contatos_diretos"].get("linkedin_url") or "(Não localizado pelos provedores)"
+            ddd_cel = socio["contatos_diretos"].get("ddd_celular")
+            num_cel = socio["contatos_diretos"].get("celular_whatsapp")
             print(f"  • {socio['nome']} ({socio['qualificacao_socio']}) - {socio['cargo_executivo_mercado']}")
+            print(f"    Telefone Direto: DDD {ddd_cel} | Número: {num_cel}")
             print(f"    LinkedIn: {linkedin_str}")
     else:
         print("  • Nenhum sócio ou decisor identificado")

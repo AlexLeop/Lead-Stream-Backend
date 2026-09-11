@@ -61,6 +61,12 @@ def validate_phone_technical(phone: str, ddd: str = "", is_primary: bool = False
     if digits.startswith("55") and len(digits) in (12, 13):
         digits = digits[2:]
 
+    if clean_ddd.startswith("0") and len(clean_ddd) == 3:
+        clean_ddd = clean_ddd[1:]
+
+    if digits.startswith("0") and len(digits) in (11, 12):
+        digits = digits[1:]
+
     if len(digits) in (10, 11):
         detected_ddd = digits[:2]
         number_part = digits[2:]
@@ -74,7 +80,6 @@ def validate_phone_technical(phone: str, ddd: str = "", is_primary: bool = False
     is_mobile = len(number_part) == 9 and number_part.startswith("9")
     is_fixed = len(number_part) == 8 and number_part[0] in ("2", "3", "4", "5")
 
-    formatted = format_e164_br(number_part, ddd=detected_ddd)
     operadora = get_phone_operator_hint(detected_ddd, number_part)
 
     if is_mobile:
@@ -95,7 +100,8 @@ def validate_phone_technical(phone: str, ddd: str = "", is_primary: bool = False
 
     return {
         "tipo": tipo,
-        "numero": formatted,
+        "ddd": detected_ddd or None,
+        "numero": number_part,
         "ramal": None,
         "operadora": operadora,
         "status_linha": "ATIVA",

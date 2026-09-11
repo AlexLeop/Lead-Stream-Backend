@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BasePayloadModel(BaseModel):
@@ -149,6 +149,7 @@ class AddressPayload(BasePayloadModel):
 
 class PhonePayload(BasePayloadModel):
     tipo: str = "FIXO_RECEITA"
+    ddd: str | None = None
     numero: str
     ramal: str | None = None
     operadora: str = "DESCONHECIDA"
@@ -157,6 +158,36 @@ class PhonePayload(BasePayloadModel):
     validado: bool = True
     whatsapp_status: dict[str, Any] = Field(default_factory=dict)
     confianca: float = 0.95
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_phone(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        raw_num = str(data.get("numero") or "")
+        raw_ddd = str(data.get("ddd") or "")
+
+        digits_num = "".join(c for c in raw_num if c.isdigit())
+        digits_ddd = "".join(c for c in raw_ddd if c.isdigit())
+
+        if digits_num.startswith("55") and len(digits_num) in (12, 13):
+            digits_num = digits_num[2:]
+
+        if digits_ddd.startswith("0") and len(digits_ddd) == 3:
+            digits_ddd = digits_ddd[1:]
+
+        if digits_num.startswith("0") and len(digits_num) in (11, 12):
+            digits_num = digits_num[1:]
+
+        if not digits_ddd and len(digits_num) in (10, 11):
+            digits_ddd = digits_num[:2]
+            digits_num = digits_num[2:]
+        elif digits_ddd and len(digits_num) in (10, 11) and digits_num.startswith(digits_ddd):
+            digits_num = digits_num[len(digits_ddd):]
+
+        data["ddd"] = digits_ddd or None
+        data["numero"] = digits_num
+        return data
 
 
 class EmailPayload(BasePayloadModel):
@@ -179,9 +210,46 @@ class ContactsPayload(BasePayloadModel):
 class DecisionMakerDirectContacts(BasePayloadModel):
     email_corporativo: str | None = None
     email_secundario: str | None = None
+    ddd_celular: str | None = None
     celular_whatsapp: str | None = None
     whatsapp_validado: bool = False
     linkedin_url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_direct_phone(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        raw_cel = str(data.get("celular_whatsapp") or "")
+        raw_ddd = str(data.get("ddd_celular") or "")
+
+        if raw_cel:
+            digits_cel = "".join(c for c in raw_cel if c.isdigit())
+            digits_ddd = "".join(c for c in raw_ddd if c.isdigit())
+
+            if digits_cel.startswith("55") and len(digits_cel) in (12, 13):
+                digits_cel = digits_cel[2:]
+
+            if digits_ddd.startswith("0") and len(digits_ddd) == 3:
+                digits_ddd = digits_ddd[1:]
+
+            if digits_cel.startswith("0") and len(digits_cel) in (11, 12):
+                digits_cel = digits_cel[1:]
+
+            if not digits_ddd and len(digits_cel) in (10, 11):
+                digits_ddd = digits_cel[:2]
+                digits_cel = digits_cel[2:]
+            elif digits_ddd and len(digits_cel) in (10, 11) and digits_cel.startswith(digits_ddd):
+                digits_cel = digits_cel[len(digits_ddd):]
+
+            data["ddd_celular"] = digits_ddd or None
+            data["celular_whatsapp"] = digits_cel or None
+        elif raw_ddd:
+            digits_ddd = "".join(c for c in raw_ddd if c.isdigit())
+            if digits_ddd.startswith("0") and len(digits_ddd) == 3:
+                digits_ddd = digits_ddd[1:]
+            data["ddd_celular"] = digits_ddd or None
+        return data
 
 
 class DecisionMakerPayload(BasePayloadModel):

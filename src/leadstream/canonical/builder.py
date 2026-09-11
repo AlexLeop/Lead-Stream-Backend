@@ -309,6 +309,7 @@ class CanonicalLeadBuilder:
                 faixa_et = socio.get("faixa_etaria") or "31-40 anos"
 
                 # If single entrepreneur, wire direct contacts if email or phone available
+                ddd_celular = telefones[0].get("ddd") if telefones else None
                 celular_whatsapp = telefones[0]["numero"] if telefones else None
                 email_corp = emails[0]["endereco"] if emails else None
 
@@ -361,6 +362,7 @@ class CanonicalLeadBuilder:
                         "contatos_diretos": {
                             "email_corporativo": email_corp,
                             "email_secundario": None,
+                            "ddd_celular": ddd_celular,
                             "celular_whatsapp": celular_whatsapp,
                             "whatsapp_validado": bool(
                                 telefones and telefones[0]["whatsapp_status"].get("tem_whatsapp")

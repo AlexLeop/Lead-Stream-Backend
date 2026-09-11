@@ -51,7 +51,11 @@ def test_format_e164_br():
 def test_phone_validation_mobile():
     res = validate_phone_technical("996260135", ddd="21")
     assert res["tipo"] in ("MOVEL_WHATSAPP_EMPRESA", "MOVEL")
-    assert "99626-0135" in res["numero"]
+    assert res["ddd"] == "21"
+    assert res["numero"] == "996260135"
+    assert "-" not in res["numero"]
+    assert "+" not in res["numero"]
+    assert " " not in res["numero"]
     assert res["whatsapp_status"]["tem_whatsapp"] is True
     assert res["status_linha"] == "ATIVA"
 
@@ -59,5 +63,22 @@ def test_phone_validation_mobile():
 def test_phone_validation_fixed():
     res = validate_phone_technical("32908800", ddd="11")
     assert res["tipo"] == "FIXO_RECEITA"
-    assert "3290-8800" in res["numero"]
+    assert res["ddd"] == "11"
+    assert res["numero"] == "32908800"
+    assert "-" not in res["numero"]
+    assert "+" not in res["numero"]
+    assert " " not in res["numero"]
     assert res["whatsapp_status"]["tem_whatsapp"] is False
+
+
+def test_phone_validation_no_special_chars():
+    # Test with formatted/dirty strings (+55, parentheses, hyphens, spaces)
+    res = validate_phone_technical("+55 (21) 9626-0135")
+    assert res["ddd"] == "21"
+    assert res["numero"] == "96260135"
+    assert "-" not in res["numero"]
+    assert "+" not in res["numero"]
+    assert " " not in res["numero"]
+    assert "-" not in res["ddd"]
+    assert "+" not in res["ddd"]
+    assert " " not in res["ddd"]

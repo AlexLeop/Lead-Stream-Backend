@@ -80,7 +80,11 @@ def test_canonical_lead_builder_builds_and_saves() -> None:
     assert validated.contacts.emails[0].endereco == "lx.leopoldo@outlook.com"
     assert validated.contacts.emails[0].mx_found is True
     assert len(validated.contacts.telefones) >= 1
-    assert "99626-0135" in validated.contacts.telefones[0].numero
+    assert validated.contacts.telefones[0].ddd == "21"
+    assert validated.contacts.telefones[0].numero == "996260135"
+    assert "-" not in validated.contacts.telefones[0].numero
+    assert "+" not in validated.contacts.telefones[0].numero
+    assert " " not in validated.contacts.telefones[0].numero
 
     # 5. Check QSA
     assert len(validated.decision_makers_qsa) == 1

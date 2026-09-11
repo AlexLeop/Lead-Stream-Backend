@@ -163,7 +163,14 @@ def test_cnpj_alex_canonical_end_to_end() -> None:
 
     assert len(contacts["telefones"]) >= 1
     phone_entry = contacts["telefones"][0]
-    assert "9626-0135" in phone_entry["numero"]
+    assert phone_entry["ddd"] == "21"
+    assert phone_entry["numero"] == "96260135"
+    assert "-" not in phone_entry["numero"]
+    assert "+" not in phone_entry["numero"]
+    assert " " not in phone_entry["numero"]
+    assert "-" not in phone_entry["ddd"]
+    assert "+" not in phone_entry["ddd"]
+    assert " " not in phone_entry["ddd"]
 
     # 13. Real Address Verification from RFB
     addr = data["address"]
@@ -178,6 +185,12 @@ def test_cnpj_alex_canonical_end_to_end() -> None:
     qsa = data["decision_makers_qsa"]
     assert len(qsa) == 1
     assert qsa[0]["nome"] == "ALEX LEOPOLDO DA SILVA"
+    direct = qsa[0]["contatos_diretos"]
+    assert direct["ddd_celular"] == "21"
+    assert direct["celular_whatsapp"] == "96260135"
+    assert "-" not in direct["celular_whatsapp"]
+    assert "+" not in direct["celular_whatsapp"]
+    assert " " not in direct["celular_whatsapp"]
     assert qsa[0]["qualificacao_socio"] == "PROPRIETARIO"
     # LinkedIn is not fabricated when absent
     assert qsa[0]["contatos_diretos"]["linkedin_url"] is None
