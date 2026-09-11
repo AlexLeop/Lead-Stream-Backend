@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 !deploy/env.production.example
+*.json
+!**/.planning/*.json
+*.pem
+*.key
 
 # Python
 __pycache__/
