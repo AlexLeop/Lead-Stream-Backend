@@ -76,5 +76,5 @@ class ScalarDocsView(TemplateView):
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
         context["schema_url"] = "/api/v1/schema/"
-        context["title"] = "LeadStream API Reference"
+        context["title"] = "LeadStream API Reference — Inteligência Cadastral B2B"
         return context

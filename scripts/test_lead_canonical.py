@@ -14,6 +14,7 @@ if sys.platform == "win32":
 # Ensure Django environment is configured
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.test")
 
+
 def _load_dotenv() -> None:
     env_file = Path(__file__).resolve().parent.parent / ".env"
     if env_file.is_file():
@@ -149,7 +150,9 @@ def main() -> None:
     print(f"  • Nome Fantasia:      {comp.get('nome_fantasia') or '(Nenhum / Ausente na RFB)'}")
     print(f"  • Situação:           {comp['situacao_cadastral']}")
     print(f"  • Data de Abertura:   {comp.get('data_abertura')}")
-    print(f"  • Natureza Jurídica:  {comp['natureza_juridica']['codigo']} - {comp['natureza_juridica']['descricao']}")
+    print(
+        f"  • Natureza Jurídica:  {comp['natureza_juridica']['codigo']} - {comp['natureza_juridica']['descricao']}"
+    )
     print(f"  • CNAE Principal:     {cnae['codigo']} - {cnae['descricao']}")
     print(f"  • CNAEs Secundários:  {len(cnaes_sec)} atividades cadastradas")
     print(f"  • Porte Sebrae:       {comp['porte_sebrae']}")
@@ -171,18 +174,28 @@ def main() -> None:
     print("\n📞 CONTATOS & VALIDAÇÃO TÉCNICA:")
     for email in contacts.get("emails", []):
         mx_status = "✅ MX Ativo" if email.get("mx_found") else "❌ Sem MX"
-        print(f"  • E-mail:    {email['endereco']} [{email['tipo']}] -> {email['status']} ({mx_status})")
+        print(
+            f"  • E-mail:    {email['endereco']} [{email['tipo']}] -> {email['status']} ({mx_status})"
+        )
     for tel in contacts.get("telefones", []):
-        wa_status = "🟢 WhatsApp Ativo" if tel.get("whatsapp_status", {}).get("tem_whatsapp") else "⚪ Fixo"
-        print(f"  • Telefone:  DDD {tel.get('ddd')} | Número: {tel.get('numero')} [{tel['operadora']}] -> {wa_status}")
+        wa_status = (
+            "🟢 WhatsApp Ativo" if tel.get("whatsapp_status", {}).get("tem_whatsapp") else "⚪ Fixo"
+        )
+        print(
+            f"  • Telefone:  DDD {tel.get('ddd')} | Número: {tel.get('numero')} [{tel['operadora']}] -> {wa_status}"
+        )
 
     print("\n👥 DECISORES / QSA:")
     if qsa:
         for socio in qsa:
-            linkedin_str = socio["contatos_diretos"].get("linkedin_url") or "(Não localizado pelos provedores)"
+            linkedin_str = (
+                socio["contatos_diretos"].get("linkedin_url") or "(Não localizado pelos provedores)"
+            )
             ddd_cel = socio["contatos_diretos"].get("ddd_celular")
             num_cel = socio["contatos_diretos"].get("celular_whatsapp")
-            print(f"  • {socio['nome']} ({socio['qualificacao_socio']}) - {socio['cargo_executivo_mercado']}")
+            print(
+                f"  • {socio['nome']} ({socio['qualificacao_socio']}) - {socio['cargo_executivo_mercado']}"
+            )
             print(f"    Telefone Direto: DDD {ddd_cel} | Número: {num_cel}")
             print(f"    LinkedIn: {linkedin_str}")
     else:
@@ -202,7 +215,9 @@ def main() -> None:
     print(f"  • Tags:        {', '.join(ident['tags'])}")
 
     output_path = Path("output_lead_canonical.json")
-    print(f"\n💾 Payload JSON completo (14 seções) gerado pelo backend em: {output_path.resolve()}\n")
+    print(
+        f"\n💾 Payload JSON completo (14 seções) gerado pelo backend em: {output_path.resolve()}\n"
+    )
 
 
 if __name__ == "__main__":

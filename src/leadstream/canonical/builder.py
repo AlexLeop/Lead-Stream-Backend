@@ -185,23 +185,24 @@ class CanonicalLeadBuilder:
         )
 
         # 6. Address
-        tipo_logr = (
-            norm.get("tipo_logradouro")
-            or orig.get("tipo_logradouro")
-            or ""
-        ).strip()
-        raw_logr = (
-            norm.get("logradouro")
-            or orig.get("logradouro")
-            or ""
-        ).strip()
+        tipo_logr = (norm.get("tipo_logradouro") or orig.get("tipo_logradouro") or "").strip()
+        raw_logr = (norm.get("logradouro") or orig.get("logradouro") or "").strip()
 
         if not tipo_logr and raw_logr:
             parts = raw_logr.split(maxsplit=1)
             first_word = parts[0].upper()
             if first_word in (
-                "RUA", "AVENIDA", "AV.", "AV", "ESTRADA", "ALAMEDA",
-                "TRAVESSA", "RODOVIA", "PRACA", "PRAÇA", "VIADUTO"
+                "RUA",
+                "AVENIDA",
+                "AV.",
+                "AV",
+                "ESTRADA",
+                "ALAMEDA",
+                "TRAVESSA",
+                "RODOVIA",
+                "PRACA",
+                "PRAÇA",
+                "VIADUTO",
             ):
                 tipo_logr = parts[0].capitalize()
                 raw_logr = parts[1] if len(parts) > 1 else raw_logr
@@ -219,15 +220,12 @@ class CanonicalLeadBuilder:
             "uf": (norm.get("uf") or orig.get("uf") or "").upper() or None,
             "cep": formatted_cep,
             "codigo_ibge_municipio": str(
-                norm.get("codigo_municipio_ibge")
-                or orig.get("codigo_municipio_ibge")
-                or ""
-            ) or None,
+                norm.get("codigo_municipio_ibge") or orig.get("codigo_municipio_ibge") or ""
+            )
+            or None,
             "latitude": norm.get("latitude") or orig.get("latitude"),
             "geocoding_precision": (
-                "ROOFTOP_EXACT"
-                if (norm.get("numero") or orig.get("numero"))
-                else "APPROXIMATE"
+                "ROOFTOP_EXACT" if (norm.get("numero") or orig.get("numero")) else "APPROXIMATE"
             ),
             "tipo_imovel": "COMERCIAL",
             "valor_m2_regiao": None,
@@ -270,9 +268,9 @@ class CanonicalLeadBuilder:
         if not raw_qsa and item.entity_id:
             from leadstream.entities.models import Relationship, SocialProfile
 
-            db_rels = Relationship.objects.filter(
-                company__entity=item.entity
-            ).select_related("person__entity")
+            db_rels = Relationship.objects.filter(company__entity=item.entity).select_related(
+                "person__entity"
+            )
             for r in db_rels:
                 sp = SocialProfile.objects.filter(
                     owner=r.person.entity,
@@ -323,9 +321,9 @@ class CanonicalLeadBuilder:
                 if not socio_linkedin and item.entity_id:
                     from leadstream.entities.models import Relationship, SocialProfile
 
-                    rels = Relationship.objects.filter(
-                        company__entity=item.entity
-                    ).select_related("person__entity")
+                    rels = Relationship.objects.filter(company__entity=item.entity).select_related(
+                        "person__entity"
+                    )
                     for r in rels:
                         r_name = r.person.full_name.casefold()
                         s_name = str(nome_socio).casefold()
@@ -415,8 +413,7 @@ class CanonicalLeadBuilder:
                                 or "Nu Pagamentos S.A. (Nubank)"
                             ),
                             "tipo_relacionamento": str(
-                                b.get("tipo_relacionamento")
-                                or "CONTA_CORRENTE_PRINCIPAL"
+                                b.get("tipo_relacionamento") or "CONTA_CORRENTE_PRINCIPAL"
                             ),
                             "chave_pix_ativa": bool(b.get("chave_pix_ativa", True)),
                             "tipo_chave_pix": str(b.get("tipo_chave_pix") or "CNPJ"),

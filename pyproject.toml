@@ -59,6 +59,8 @@ ignore = ["DJ001"]
 [tool.ruff.lint.per-file-ignores]
 "src/**/migrations/*.py" = ["E501", "RUF012"]
 "scripts/*" = ["E402", "BLE001", "E501"]
+"src/config/settings/base.py" = ["E501", "RUF001"]
+"src/leadstream/canonical/views.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.13"

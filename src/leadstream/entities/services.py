@@ -253,9 +253,7 @@ def create_social_profile(
 ) -> SocialProfile:
     _ensure_tenant(tenant, owner)
     normalized_url = _normalize_social_url(profile_url)
-    clean_profile_url = (
-        normalized_url if network == SocialProfile.Network.LINKEDIN else profile_url
-    )
+    clean_profile_url = normalized_url if network == SocialProfile.Network.LINKEDIN else profile_url
     profile, _ = SocialProfile.objects.get_or_create(
         tenant=tenant,
         owner=owner,

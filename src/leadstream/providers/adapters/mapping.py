@@ -168,9 +168,7 @@ def google_serp_linkedin_candidates(
                     organic_list.append(item)
     elif isinstance(payload, dict):
         if "organicResults" in payload and isinstance(payload["organicResults"], list):
-            organic_list.extend(
-                res for res in payload["organicResults"] if isinstance(res, dict)
-            )
+            organic_list.extend(res for res in payload["organicResults"] if isinstance(res, dict))
 
     for record in organic_list:
         url = str(record.get("url") or "").strip()
@@ -241,4 +239,3 @@ def google_serp_linkedin_candidates(
         )
 
     return tuple(people)
-

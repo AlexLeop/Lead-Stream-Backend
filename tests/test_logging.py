@@ -50,8 +50,19 @@ def test_openapi_documenta_workspace_e_health(client: Client) -> None:
     response = client.get("/api/v1/schema/", headers={"Accept": "application/json"})
 
     assert response.status_code == 200
-    paths = response.json()["paths"]
+    data = response.json()
+    paths = data["paths"]
     assert "/api/v1/workspace/" in paths
+    assert "/api/v1/leads/{item_id}/canonical/" in paths
     assert "/health/live" in paths
     assert "/health/ready" in paths
-    assert client.get("/api/v1/docs/").status_code == 200
+
+    components = data.get("components", {})
+    assert "CanonicalLeadPayload" in components.get("schemas", {})
+    assert "TenantHeader" in components.get("securitySchemes", {})
+
+    docs_response = client.get("/api/v1/docs/")
+    assert docs_response.status_code == 200
+    docs_html = docs_response.content.decode("utf-8")
+    assert "LeadStream" in docs_html
+    assert "Scalar Docs" in docs_html

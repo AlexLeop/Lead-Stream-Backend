@@ -74,12 +74,8 @@ class BankingInstitutionPayload(BasePayloadModel):
 
 
 class FinancialAndBankingPayload(BasePayloadModel):
-    instituicoes_bancarias_principais: list[BankingInstitutionPayload] = Field(
-        default_factory=list
-    )
-    bancos_relacionamento_detectados: list[BankingInstitutionPayload] = Field(
-        default_factory=list
-    )
+    instituicoes_bancarias_principais: list[BankingInstitutionPayload] = Field(default_factory=list)
+    bancos_relacionamento_detectados: list[BankingInstitutionPayload] = Field(default_factory=list)
     linhas_credito_ativas: list[str] = Field(default_factory=list)
     risco_credito_score: int | None = 750
     risco_credito_classificacao: str | None = "BAIXO_RISCO_A"
@@ -183,7 +179,7 @@ class PhonePayload(BasePayloadModel):
             digits_ddd = digits_num[:2]
             digits_num = digits_num[2:]
         elif digits_ddd and len(digits_num) in (10, 11) and digits_num.startswith(digits_ddd):
-            digits_num = digits_num[len(digits_ddd):]
+            digits_num = digits_num[len(digits_ddd) :]
 
         data["ddd"] = digits_ddd or None
         data["numero"] = digits_num
@@ -240,7 +236,7 @@ class DecisionMakerDirectContacts(BasePayloadModel):
                 digits_ddd = digits_cel[:2]
                 digits_cel = digits_cel[2:]
             elif digits_ddd and len(digits_cel) in (10, 11) and digits_cel.startswith(digits_ddd):
-                digits_cel = digits_cel[len(digits_ddd):]
+                digits_cel = digits_cel[len(digits_ddd) :]
 
             data["ddd_celular"] = digits_ddd or None
             data["celular_whatsapp"] = digits_cel or None

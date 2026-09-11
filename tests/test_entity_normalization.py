@@ -78,4 +78,3 @@ def test_fingerprint_json_independe_da_ordem_das_chaves() -> None:
 )
 def test_normaliza_linkedin_url_remove_siglas_pais_e_lingua(raw: str, expected: str) -> None:
     assert normalize_linkedin_url(raw) == expected
-

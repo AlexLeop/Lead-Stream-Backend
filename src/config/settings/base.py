@@ -180,38 +180,99 @@ REST_FRAMEWORK = {
 }
 
 API_DESCRIPTION = """
-### Visão Geral
+# LeadStream API — Plataforma Enterprise de Inteligência Cadastral & Leads B2B
 
-LeadStream é uma API REST para extração, higienização, descoberta e enriquecimento
-de dados cadastrais de empresas e decisores corporativos no Brasil.
+O **LeadStream Backend** é o núcleo analítico e operacional independente, *Brasil-first*, desenvolvido para extração, higienização, descoberta, enriquecimento e governança de dados empresariais e decisores corporativos.
 
----
-
-### Autenticação e Multi-tenancy
-- Requisições autenticadas devem enviar o cabeçalho HTTP `X-Tenant-ID: <UUID>`
-  especificando o workspace do cliente.
-- Na ausência do cabeçalho em ambiente de testes ou desenvolvimento, o sistema assume
-  o contexto do workspace operacional interno (`00000000-0000-4000-8000-000000000001`).
+A API parte de uma empresa brasileira real (CNPJ), resolve seus estabelecimentos, quadro societário (QSA), descobre seus decisores e executivos C-level, identifica canais diretos de contato atribuíveis e perfis profissionais públicos (LinkedIn), consolidando todas as evidências com proveniência de fontes, score de confiança, tarifação por bloco útil e conformidade LGPD.
 
 ---
 
-### Modos de Operação
-1. **Lotes e Enriquecimento em Massa (`/api/v1/lotes/`)**: Ingestão assíncrona de arquivos
-   CSV, validação cadastral de CNPJ, enriquecimento em cascata e exportação tabular.
-2. **Descobertas Cadastrais (`/api/v1/descobertas/`)**: Filtragem em bases públicas oficiais
-   por CNAE, localização e porte, com materialização direta em novos lotes de leads.
-3. **Consulta de Entidades (`/api/v1/dados/`)**: Consulta pontual e estruturação de empresas,
-   quadro societário, canais de contato direto e perfis profissionais de decisores.
-4. **Integrações e Webhooks (`/api/v1/integracoes/`)**: Conexões com CRMs (HubSpot,
-   Pipedrive, RD Station, Salesforce, Ploomes) e disparos com garantia de entrega transacional
-   via outbox e assinatura HMAC-SHA256 (`X-LeadStream-Signature`).
+### 🔑 Autenticação & Multi-tenancy
+
+O LeadStream opera com arquitetura multi-tenant isolada por workspace:
+- **Cabeçalho Obrigatório:** Toda requisição à API deve incluir o header HTTP `X-Tenant-ID`.
+- **Formato Aceito:** O valor pode ser o `UUID` ou o `slug` do workspace do cliente (ex: `00000000-0000-4000-8000-000000000001` ou `interno`).
+- **Workspace Operacional Interno:** Em ambiente de desenvolvimento ou testes na ausência do cabeçalho, o sistema assume automaticamente o tenant operacional interno para testes locais imediatos.
+
+---
+
+### 🚀 Ciclo Operacional & Arquitetura de Dados
+
+O processamento no LeadStream segue um fluxo em 6 estágios de alta confiabilidade:
+
+1. **Ingestão & Fatiamento (`/api/v1/lotes/`):**
+   Upload de arquivos CSV com até 100.000 CNPJs. Os arquivos são fatiados em chunks idempotentes (25–100 leads) e distribuídos para workers assíncronos (Celery + RabbitMQ), tolerantes a reinícios e falhas transitórias de rede.
+2. **Higienização & Deduplicação:**
+   Normalização rigorosa de CNPJs (com separação de raiz, ordem e dígito verificador módulo 11), padronização de razões sociais, nomes de sócios, formatação de CEP e endereços, e separação estrita de DDD e número de telefone (dígitos puros, sem hífens, sinais de soma ou espaços).
+3. **Enriquecimento em Cascata de Provedores:**
+   Orquestração inteligente com fallback automático e teto orçamentário configurável por lead:
+   - **Camada 1 (Bases Públicas Oficiais / OpenCNPJ BigQuery):** Dados cadastrais da RFB, QSA oficial, CNAEs secundários, capital social, porte e situação cadastral em milissegundos.
+   - **Camada 2 (BigDataCorp):** Enriquecimento aprofundado com inteligência de crédito, processos judiciais, presença digital e telefones operacionais.
+   - **Camada 3 (Apify / Google Search & LinkedIn):** Descoberta de perfis profissionais públicos de decisores com higienização de URLs (eliminação de subdomínios geográficos e sufixos de idioma como `/en` ou `/pt`).
+4. **Resolução de Entidades & Governança LGPD (`/api/v1/dados/`):**
+   Separação clara entre fatos observados, evidências e dados inferidos. Gestão de bases legais (Art. 7º, IX da LGPD — Legítimo Interesse para prospecção B2B comercial), canal de supressão (*opt-out* de titulares) e política estrita de retenção de dados temporais.
+5. **Materialização Canônica v2.4.0 (`/api/v1/leads/{lead_id}/canonical/`):**
+   Estrutura consolidada unificada de 14 blocos de inteligência pronta para consumo analítico e operacional por equipes de SDRs, pré-vendas e inteligência de mercado.
+6. **Integrações & Outbox Transacional (`/api/v1/integracoes/`):**
+   Sincronização assíncrona com CRMs líderes (HubSpot, Pipedrive, Salesforce, RD Station, Ploomes) com padrão Transactional Outbox, reentregas exponenciais, Dead Letter Queue (DLQ) e assinatura criptográfica HMAC-SHA256 (`X-LeadStream-Signature`).
+
+---
+
+### 📦 Estrutura do Payload Canônico v2.4.0 (14 Blocos)
+
+| Bloco | Chave no Payload | Descrição dos Dados |
+| :--- | :--- | :--- |
+| **01. Metadados** | `_meta` | UUID canônico, timestamp ISO 8601, tenant e score global de confiança da consolidação. |
+| **02. Identificação & ICP** | `identification` | Lead score comercial (0 a 100), temperatura do lead (`COLD`/`WARM`/`HOT`), fit percentual de ICP e tags. |
+| **03. Dados da Empresa** | `company` | CNPJ formatado e partes separadas, Razão Social, Nome Fantasia, data de abertura, idade, porte Sebrae, regime tributário (Simples/Simei), capital social, faturamento anual estimado, colaboradores e website. |
+| **04. Inteligência Financeira & Bancária** | `financial_and_banking` | Bancos de relacionamento identificados (ex: Nu Pagamentos/Nubank, Itaú), linhas de crédito ativas, score de risco de crédito, capacidade de pagamento e protestos em cartório. |
+| **05. Inteligência Fiscal & Tributária** | `fiscal_and_tax_intelligence` | Situação fiscal federal, dívida ativa na PGFN, certidão negativa de débitos (CND), certidão de regularidade do FGTS (CRF), Inscrição Estadual (SINTEGRA) e Inscrição Municipal. |
+| **06. CNAE & Atividades Econômicas** | `cnae` | CNAE Principal detalhado (com classificação setorial e grau de risco de trabalho 1-4) e lista completa de CNAEs secundários. |
+| **07. Endereço & Localização** | `address` | Endereço higienizado com tipo de logradouro, número, complemento, bairro, município, UF, CEP formatado, código IBGE e precisão de geocodificação. |
+| **08. Contatos Validados** | `contacts` | Telefones com DDD separado e número em dígitos puros (sem `-`, `+` ou espaços, status WhatsApp e operadora ANATEL) e e-mails com status de entregabilidade, MX ativo e verificação anti-descarte. |
+| **09. Decisores & QSA** | `decision_makers_qsa` | Sócios e administradores mapeados com qualificação, cargo executivo de mercado, contatos diretos higienizados (DDD celular, número WhatsApp) e URL de perfil LinkedIn público validado. |
+| **10. Comércio Exterior & Logística** | `foreign_trade_and_logistics` | Habilitação no Radar SISCOMEX, histórico de importação/exportação nos últimos 12 meses e frota de veículos cadastrada por tipo. |
+| **11. Jurídico & Judicial** | `legal_and_judicial` | Contagem de processos ativos como réu/autor (cíveis, trabalhistas, fiscais), índice de judicialização, recuperação judicial e auditoria de trabalho escravo / IBAMA. |
+| **12. Presença Digital & Stack Tecnológico** | `digital_presence_and_tech_stack` | Tecnologias detectadas no domínio, redes sociais da empresa, servidores web e certificados SSL válidos. |
+| **13. Governança LGPD & Compliance** | `governance_lgpd_and_compliance` | Base legal de prospecção comercial B2B (art. 7º IX), canal de opt-out, prazo de retenção e hash de rastreabilidade. |
+| **14. Integrações CRM** | `crm_outbox_integration` | Status de sincronização com CRMs externos, identificadores remotos e chave de idempotência. |
+
+---
+
+### 🛡️ Tratamento de Erros e Códigos HTTP
+
+A API adota os códigos padronizados do protocolo HTTP:
+- `200 OK`: Consulta realizada com sucesso e corpo retornado.
+- `201 Created`: Recurso cadastrado ou lote inicializado com sucesso.
+- `202 Accepted`: Requisição assíncrona aceita e enfileirada para processamento.
+- `400 Bad Request`: Parâmetros inválidos, corpo JSON malformatado ou CNPJ inconsistente.
+- `401 Unauthorized / 403 Forbidden`: Workspace (tenant) ausente, inválido ou inativo.
+- `404 Not Found`: Recurso não localizado para o workspace informado.
+- `422 Unprocessable Entity`: Regra de negócio ou integridade violada (ex: teto orçamentário estourado).
+- `503 Service Unavailable`: Serviço temporariamente indisponível ou dependência essencial inacessível.
 """
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "LeadStream API Reference",
+    "TITLE": "LeadStream API Reference — Inteligência Cadastral B2B",
     "DESCRIPTION": API_DESCRIPTION,
-    "VERSION": "1.0.0",
+    "VERSION": "2.4.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "SECURITY": [{"TenantHeader": []}],
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+            "TenantHeader": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-Tenant-ID",
+                "description": (
+                    "UUID ou slug identificador do workspace do cliente (ex: "
+                    "`00000000-0000-4000-8000-000000000001` ou `interno`). "
+                    "Necessário para roteamento de dados isolados por tenant."
+                ),
+            }
+        }
+    },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
         "persistAuthorization": True,
@@ -223,62 +284,170 @@ SPECTACULAR_SETTINGS = {
     },
     "TAGS": [
         {
+            "name": "Leads Canônicos",
+            "description": (
+                "Consulta do Lead Canônico v2.4.0 consolidado com 14 blocos de inteligência de dados, "
+                "incluindo identificação, empresa, inteligência bancária, fiscal, CNAEs, contatos validados "
+                "com DDD separado, QSA com LinkedIn público e outbox CRM."
+            ),
+        },
+        {
             "name": "Lotes",
             "description": (
-                "Ingestão de arquivos CSV, fatiamento em chunks, ciclo de vida e exportações."
+                "Ingestão assíncrona de arquivos CSV com até 100 mil empresas, fatiamento em chunks idempotentes, "
+                "monitoramento de progresso e geração de exportações tabulares."
             ),
         },
         {
-            "name": "Descobertas",
+            "name": "Descoberta",
             "description": (
-                "Busca por CNAE, UF, porte e situação cadastral com materialização em lotes."
+                "Prospecção orientada a filtros em bases públicas oficiais da Receita Federal por CNAE fiscal, "
+                "unidade federativa (UF), município e porte, com materialização direta em lotes de leads."
             ),
         },
         {
-            "name": "Empresas",
-            "description": "Consulta e estruturação de empresas e estabelecimentos (CNPJ).",
+            "name": "Enriquecimento",
+            "description": (
+                "Disparo manual ou sob demanda de enriquecimento em cascata para leads e itens de lote."
+            ),
         },
         {
-            "name": "Pessoas",
-            "description": "Decisores, executivos e sócios normalizados.",
+            "name": "Provedores",
+            "description": (
+                "Gerenciamento de provedores externos (BigQuery OpenCNPJ, BigDataCorp, Apify), políticas de cascata, "
+                "prioridades e controle de orçamento por chamada."
+            ),
         },
         {
-            "name": "Vínculos",
-            "description": "Relações societárias e profissionais entre pessoas e empresas.",
+            "name": "Provedores — métricas",
+            "description": (
+                "Telemetria de provedores: tempo de resposta, taxas de sucesso, erros e custos faturados."
+            ),
         },
         {
-            "name": "Contatos",
-            "description": "Canais de contato direto (e-mails corporativos e telefones).",
+            "name": "Dados — empresas",
+            "description": (
+                "Cadastro operacional de empresas e estabelecimentos (matrizes e filiais) por CNPJ."
+            ),
         },
         {
-            "name": "Perfis sociais",
-            "description": "Perfis profissionais e públicos de decisores.",
+            "name": "Dados — pessoas",
+            "description": (
+                "Pessoas físicas mapeadas, decisores de mercado, executivos C-level e sócios normalizados."
+            ),
         },
         {
-            "name": "Integrações - Conexões CRM",
-            "description": "Gestão de conexões com CRMs e Webhooks Universais.",
+            "name": "Dados — vínculos",
+            "description": (
+                "Relações societárias, administrativas e profissionais entre pessoas e empresas."
+            ),
         },
         {
-            "name": "Cockpit do CEO - Métricas de Integrações",
-            "description": "Telemetria consolidada da outbox, DLQ e taxas de entrega.",
+            "name": "Dados — contatos",
+            "description": (
+                "Pontos de contato corporativos (e-mails corporativos e telefones com DDD separado e dígitos limpos)."
+            ),
+        },
+        {
+            "name": "Dados — perfis sociais",
+            "description": (
+                "Perfis profissionais públicos comprováveis (LinkedIn verificado sem sufixos de país)."
+            ),
+        },
+        {
+            "name": "Dados — governança",
+            "description": (
+                "Definição de finalidades de uso legítimo e políticas de retenção temporal de dados."
+            ),
+        },
+        {
+            "name": "Dados — fontes",
+            "description": (
+                "Catálogo de fontes de dados públicas e privadas com termos de uso e prioridade."
+            ),
+        },
+        {
+            "name": "Dados — evidências",
+            "description": (
+                "Trilha de auditoria e proveniência detalhada de cada informação coletada de fontes externas."
+            ),
+        },
+        {
+            "name": "Dados — observações",
+            "description": (
+                "Valores observados em fontes com instante de coleta, estado de validação e confiança."
+            ),
+        },
+        {
+            "name": "Dados — canonização",
+            "description": (
+                "Decisões automáticas de canonização de atributos com resolução de fontes conflitantes."
+            ),
+        },
+        {
+            "name": "Dados — conflitos",
+            "description": (
+                "Gestão de divergências entre fontes com histórico de resolução e auditoria."
+            ),
+        },
+        {
+            "name": "Dados — supressão",
+            "description": (
+                "Gestão de supressões e opt-out de titulares de dados em conformidade com a LGPD."
+            ),
+        },
+        {
+            "name": "Dados — retenção",
+            "description": (
+                "Execuções periódicas de expiração e purga de dados conforme políticas de retenção."
+            ),
         },
         {
             "name": "Faturamento",
             "description": (
-                "Tabelas de preços por bloco de dados, auditoria de chamadas e margem por lote."
+                "Tabelas de preços por bloco de dados entregue, auditoria de chamadas tarifadas e margem bruta por lote."
             ),
         },
         {
-            "name": "Evidências e governança",
+            "name": "Integrações - Conexões CRM",
             "description": (
-                "Proveniência de dados, cálculo de confiança, resolução de conflitos, "
-                "supressões e políticas LGPD."
+                "Gerenciamento de conexões com CRMs parceiros (HubSpot, Pipedrive, Salesforce, RD Station, Ploomes)."
+            ),
+        },
+        {
+            "name": "Integrações - Mapeamento de Campos",
+            "description": (
+                "Configuração de equivalência de campos entre o modelo canônico do LeadStream e os objetos do CRM."
+            ),
+        },
+        {
+            "name": "Integrações - Outbox Transacional",
+            "description": (
+                "Fila transacional outbox garantindo entrega exatamente-uma-vez e resiliência a falhas no CRM."
+            ),
+        },
+        {
+            "name": "Integrações - Disparo para CRM",
+            "description": (
+                "Disparos imediatos e reprocessamento de eventos com assinatura HMAC-SHA256."
+            ),
+        },
+        {
+            "name": "Cockpit do CEO - Métricas de Integrações",
+            "description": (
+                "Telemetria em tempo real das integrações: volume de eventos, taxa de sucesso, latência e DLQ."
+            ),
+        },
+        {
+            "name": "Saúde",
+            "description": (
+                "Endpoints operacionais de liveness, readiness e diagnóstico de dependências de infraestrutura."
             ),
         },
         {
             "name": "Operação interna",
             "description": (
-                "Consultas de workspace, metadados de infraestrutura e probes de saúde do sistema."
+                "Consultas de workspace, metadados de infraestrutura e parâmetros internos de execução."
             ),
         },
     ],
