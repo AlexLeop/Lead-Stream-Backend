@@ -14,6 +14,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from leadstream.common.api import resolve_tenant
 from leadstream.security.authentication import ApiKeyUser, CombinedAuthentication
 from leadstream.security.crypto import generate_api_key
 from leadstream.security.models import APIKey, SecurityAuditLog
@@ -31,9 +32,12 @@ from leadstream.tenancy.models import Tenant
 
 def get_client_ip(request: Request) -> str | None:
     x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
+    if isinstance(x_forwarded_for, str) and x_forwarded_for:
         return x_forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
+    remote_addr = request.META.get("REMOTE_ADDR")
+    if isinstance(remote_addr, str) and remote_addr:
+        return remote_addr
+    return None
 
 
 def log_security_event(
@@ -83,7 +87,9 @@ class TokenObtainPairAuditView(TokenObtainPairView):
 
     def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         response = super().post(request, *args, **kwargs)
-        username = request.data.get("username", "")
+        username = ""
+        if isinstance(request.data, dict):
+            username = str(request.data.get("username", ""))
 
         if response.status_code == status.HTTP_200_OK:
             log_security_event(
@@ -169,18 +175,19 @@ class APIKeyListCreateView(APIView):
     permission_classes = (IsAuthenticated, IsTenantMember, IsWorkspaceAdmin)
 
     def get(self, request: Request) -> Response:
-        tenant = request.tenant
+        tenant = resolve_tenant(request)
         keys = APIKey.objects.filter(tenant=tenant).order_by("-created_at")
         serializer = APIKeyReadSerializer(keys, many=True)
         return Response({"results": serializer.data, "count": keys.count()})
 
     def post(self, request: Request) -> Response:
+        tenant = resolve_tenant(request)
         serializer = APIKeyCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
         api_key, raw_key = generate_api_key(
-            tenant=request.tenant,
+            tenant=tenant,
             name=data["name"],
             role=data.get("role", "OPERATOR"),
             env=data.get("env", "live"),
@@ -192,7 +199,7 @@ class APIKeyListCreateView(APIView):
             request=request,
             action="KEY_CREATE",
             status_code=status.HTTP_201_CREATED,
-            tenant=request.tenant,
+            tenant=tenant,
             details={
                 "key_id": str(api_key.id),
                 "name": api_key.name,
@@ -224,7 +231,8 @@ class APIKeyDetailView(APIView):
     permission_classes = (IsAuthenticated, IsTenantMember, IsWorkspaceAdmin)
 
     def delete(self, request: Request, pk: uuid.UUID) -> Response:
-        api_key = APIKey.objects.filter(tenant=request.tenant, pk=pk).first()
+        tenant = resolve_tenant(request)
+        api_key = APIKey.objects.filter(tenant=tenant, pk=pk).first()
         if not api_key:
             return Response(
                 {"detail": "Chave de API não encontrada."},
@@ -238,7 +246,7 @@ class APIKeyDetailView(APIView):
             request=request,
             action="KEY_REVOKE",
             status_code=status.HTTP_204_NO_CONTENT,
-            tenant=request.tenant,
+            tenant=tenant,
             details={"key_id": str(api_key.id), "name": api_key.name},
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -256,6 +264,7 @@ class SecurityAuditLogListView(APIView):
     permission_classes = (IsAuthenticated, IsTenantMember, IsWorkspaceAdmin)
 
     def get(self, request: Request) -> Response:
-        logs = SecurityAuditLog.objects.filter(tenant=request.tenant).order_by("-timestamp")
+        tenant = resolve_tenant(request)
+        logs = SecurityAuditLog.objects.filter(tenant=tenant).order_by("-timestamp")
         serializer = SecurityAuditLogSerializer(logs[:200], many=True)
         return Response({"results": serializer.data, "count": logs.count()})

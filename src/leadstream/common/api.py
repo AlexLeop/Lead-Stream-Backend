@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 from rest_framework.exceptions import ValidationError
 
+from leadstream.tenancy.models import Tenant
+
 if TYPE_CHECKING:
     from rest_framework.request import Request
-
-    from leadstream.tenancy.models import Tenant
 
 
 def reject_tenant_override(data: object) -> None:
@@ -20,9 +20,10 @@ def reject_tenant_override(data: object) -> None:
 
 def resolve_tenant(request: Request) -> Tenant:
     tenant = getattr(request, "tenant", None)
-    if tenant:
+    if isinstance(tenant, Tenant):
         return tenant
 
     from leadstream.tenancy.services import get_internal_tenant
 
     return get_internal_tenant()
+

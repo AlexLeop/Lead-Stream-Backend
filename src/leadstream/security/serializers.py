@@ -37,7 +37,7 @@ class APIKeyCreateSerializer(serializers.Serializer[dict[str, Any]]):
 
 
 class APIKeyReadSerializer(serializers.ModelSerializer[APIKey]):
-    class Meta:
+    class Meta:  # type: ignore[override]
         model = APIKey
         fields = (
             "id",
@@ -79,7 +79,7 @@ class TokenRevokeSerializer(serializers.Serializer[dict[str, Any]]):
 
 
 class SecurityAuditLogSerializer(serializers.ModelSerializer[SecurityAuditLog]):
-    class Meta:
+    class Meta:  # type: ignore[override]
         model = SecurityAuditLog
         fields = (
             "id",

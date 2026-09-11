@@ -65,7 +65,7 @@ def test_workspace_membership_creation_and_unique_constraint() -> None:
 
     assert membership.role == WorkspaceRole.ADMIN
     assert membership.is_active is True
-    assert user.workspace_memberships.count() == 1
+    assert user.workspace_memberships.count() == 1  # type: ignore[attr-defined]
 
     # Nao pode permitir associacao duplicada do mesmo user e tenant
     with pytest.raises(IntegrityError):

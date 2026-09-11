@@ -5,6 +5,7 @@ from typing import ClassVar
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class WorkspaceRole(models.TextChoices):
@@ -83,6 +84,10 @@ class APIKey(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.prefix}...) [{self.tenant.slug}]"
+
+    @property
+    def is_expired(self) -> bool:
+        return bool(self.expires_at and self.expires_at <= timezone.now())
 
 
 class SecurityAuditLog(models.Model):

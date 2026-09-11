@@ -21,7 +21,7 @@ def _get_user_role(request: Request) -> str | None:
     from leadstream.security.authentication import ApiKeyUser
 
     if isinstance(request.user, ApiKeyUser):
-        return request.user.role
+        return str(request.user.role)
 
     membership = getattr(request, "workspace_membership", None)
     if membership:
@@ -47,11 +47,11 @@ class IsTenantMember(BasePermission):
         from leadstream.security.authentication import ApiKeyUser
 
         if isinstance(request.user, ApiKeyUser):
-            return request.user.tenant.pk == tenant.pk and request.user.api_key.is_active
+            return bool(request.user.tenant.pk == tenant.pk and request.user.api_key.is_active)
 
         membership = getattr(request, "workspace_membership", None)
         if membership:
-            return membership.is_active and membership.tenant.pk == tenant.pk
+            return bool(membership.is_active and membership.tenant.pk == tenant.pk)
 
         return False
 

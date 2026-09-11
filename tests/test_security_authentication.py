@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import datetime
-
 import pytest
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -35,7 +33,7 @@ def test_authentication_with_valid_api_key_bearer() -> None:
     user, key_instance = auth_result
     assert user.is_authenticated is True
     assert key_instance.id == api_key_obj.id
-    assert request.tenant == tenant
+    assert request.tenant == tenant  # type: ignore[attr-defined]
     assert request.auth == api_key_obj
 
     # Valida atualizacao de last_used_at
@@ -61,7 +59,7 @@ def test_authentication_with_valid_x_api_key_header() -> None:
     assert auth_result is not None
     user, _ = auth_result
     assert user.is_authenticated is True
-    assert request.tenant == tenant
+    assert request.tenant == tenant  # type: ignore[attr-defined]
 
 
 @pytest.mark.django_db
@@ -70,23 +68,22 @@ def test_authentication_with_invalid_api_key() -> None:
     request = factory.get("/api/v1/test/", HTTP_AUTHORIZATION="Bearer ls_live_invalidkey123456789")
 
     auth = CombinedAuthentication()
-    with pytest.raises(AuthenticationFailed, match="API Key inválida"):
+    with pytest.raises(AuthenticationFailed, match="inválida ou inativa"):
         auth.authenticate(request)
 
 
 @pytest.mark.django_db
 def test_authentication_with_expired_api_key() -> None:
     tenant = Tenant.objects.create(name="Tenant Exp", slug="tenant-exp")
-    api_key_obj, raw_key = generate_api_key(
+    _, raw_key = generate_api_key(
         tenant=tenant,
-        name="Chave Exp",
+        name="Chave Expirada",
         role=WorkspaceRole.OPERATOR,
+        expires_at=timezone.now() - timezone.timedelta(days=1),
     )
-    api_key_obj.expires_at = timezone.now() - datetime.timedelta(days=1)
-    api_key_obj.save(update_fields=["expires_at"])
 
     factory = APIRequestFactory()
-    request = factory.get("/api/v1/test/", HTTP_X_API_KEY=raw_key)
+    request = factory.get("/api/v1/test/", HTTP_AUTHORIZATION=f"Bearer {raw_key}")
 
     auth = CombinedAuthentication()
     with pytest.raises(AuthenticationFailed, match="expirada"):
@@ -94,9 +91,9 @@ def test_authentication_with_expired_api_key() -> None:
 
 
 @pytest.mark.django_db
-def test_authentication_with_jwt_for_workspace_member() -> None:
-    tenant = Tenant.objects.create(name="Tenant Gamma", slug="tenant-gamma")
-    user = User.objects.create_user(username="member_gamma", password="password123")
+def test_authentication_with_jwt_valid_member() -> None:
+    tenant = Tenant.objects.create(name="Tenant JWT", slug="tenant-jwt")
+    user = User.objects.create_user(username="operador_jwt", password="password123")
     WorkspaceMembership.objects.create(user=user, tenant=tenant, role=WorkspaceRole.OPERATOR)
 
     refresh = RefreshToken.for_user(user)
@@ -111,8 +108,8 @@ def test_authentication_with_jwt_for_workspace_member() -> None:
     assert auth_result is not None
     auth_user, _ = auth_result
     assert auth_user.id == user.id
-    assert request.tenant == tenant
-    assert request.workspace_membership.role == WorkspaceRole.OPERATOR
+    assert request.tenant == tenant  # type: ignore[attr-defined]
+    assert request.workspace_membership.role == WorkspaceRole.OPERATOR  # type: ignore[attr-defined]
 
 
 @pytest.mark.django_db
@@ -134,7 +131,7 @@ def test_authentication_with_jwt_superuser_tenant_switching() -> None:
     auth_result = auth.authenticate(request)
 
     assert auth_result is not None
-    assert request.tenant == tenant_target
+    assert request.tenant == tenant_target  # type: ignore[attr-defined]
 
 
 @pytest.mark.django_db
@@ -155,10 +152,14 @@ def test_authentication_with_jwt_user_without_workspace_fails() -> None:
 def test_permissions_role_hierarchy() -> None:
     tenant = Tenant.objects.create(name="Tenant Perm", slug="tenant-perm")
     user_ro = User.objects.create_user(username="user_ro", password="password123")
-    WorkspaceMembership.objects.create(user=user_ro, tenant=tenant, role=WorkspaceRole.READ_ONLY)
+    membership_ro = WorkspaceMembership.objects.create(
+        user=user_ro, tenant=tenant, role=WorkspaceRole.READ_ONLY
+    )
 
     user_op = User.objects.create_user(username="user_op", password="password123")
-    WorkspaceMembership.objects.create(user=user_op, tenant=tenant, role=WorkspaceRole.OPERATOR)
+    membership_op = WorkspaceMembership.objects.create(
+        user=user_op, tenant=tenant, role=WorkspaceRole.OPERATOR
+    )
 
     perm_op = HasWorkspaceRole(WorkspaceRole.OPERATOR)
     perm_admin = HasWorkspaceRole(WorkspaceRole.ADMIN)
@@ -168,15 +169,15 @@ def test_permissions_role_hierarchy() -> None:
     # Usuario READ_ONLY tentando acessar rota OPERATOR -> negado
     req_ro = factory.get("/")
     req_ro.user = user_ro
-    req_ro.tenant = tenant
-    req_ro.workspace_membership = user_ro.workspace_memberships.first()
+    req_ro.tenant = tenant  # type: ignore[attr-defined]
+    req_ro.workspace_membership = membership_ro  # type: ignore[attr-defined]
     assert perm_op.has_permission(req_ro, None) is False
 
     # Usuario OPERATOR tentando acessar rota OPERATOR -> permitido
     req_op = factory.get("/")
     req_op.user = user_op
-    req_op.tenant = tenant
-    req_op.workspace_membership = user_op.workspace_memberships.first()
+    req_op.tenant = tenant  # type: ignore[attr-defined]
+    req_op.workspace_membership = membership_op  # type: ignore[attr-defined]
     assert perm_op.has_permission(req_op, None) is True
 
     # Usuario OPERATOR tentando acessar rota ADMIN -> negado
