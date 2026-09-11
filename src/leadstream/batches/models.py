@@ -126,6 +126,9 @@ class BatchItem(TenantOwnedModel):
     delivered_blocks = models.JSONField(default=list)
     missing_blocks = models.JSONField(default=list)
     enrichment_errors = models.JSONField(default=list)
+    canonical_payload = models.JSONField(
+        default=dict, blank=True, help_text="Snapshot consolidado do payload canônico v2.4.0."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
