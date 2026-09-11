@@ -46,7 +46,12 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
             "OpenCNPJ / BigQuery",
             settings.BIGQUERY_PROVIDER_PRIORITY,
             settings.BIGQUERY_COST_CENTS,
-            [DataBlock.COMPANY_REGISTRY, DataBlock.DECISION_MAKER],
+            [
+                DataBlock.COMPANY_REGISTRY,
+                DataBlock.DECISION_MAKER,
+                DataBlock.DIRECT_EMAIL,
+                DataBlock.DIRECT_PHONE,
+            ],
         ),
         (
             "bigdatacorp",

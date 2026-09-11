@@ -392,6 +392,15 @@ def persist_provider_result(
                 observation.confidence,
                 observation.value,
             )
+            if observation.field_path == "company.legal_name" and observation.value:
+                company.legal_name = str(observation.value)
+                company.save(update_fields=["legal_name", "updated_at"])
+            elif observation.field_path == "company.trade_name" and observation.value:
+                company.trade_name = str(observation.value)
+                company.save(update_fields=["trade_name", "updated_at"])
+            elif observation.field_path == "company.registration_status" and observation.value:
+                company.registration_status = str(observation.value)
+                company.save(update_fields=["registration_status", "updated_at"])
     for candidate in result.people:
         _persist_person(
             item=item,

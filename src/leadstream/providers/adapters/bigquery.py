@@ -8,9 +8,11 @@ from typing import Any
 
 from django.conf import settings
 
+import re
 from leadstream.billing.models import DataBlock
 from leadstream.evidence.models import CaptureMethod, EvidenceStatus
 from leadstream.providers.contracts import (
+    ContactCandidate,
     FieldObservation,
     PersonCandidate,
     ProviderContext,
@@ -126,6 +128,36 @@ class BigQueryOpenCNPJAdapter:
                         external_id=context.cnpj,
                     )
                 )
+
+        contacts: list[ContactCandidate] = []
+        email = pick(row, "email")
+        if email and "@" in str(email):
+            contacts.append(
+                ContactCandidate(
+                    kind="EMAIL",
+                    value=str(email).strip().lower(),
+                    confidence=getattr(settings, "BIGQUERY_CONFIDENCE", 100),
+                    evidence_status=EvidenceStatus.CONFIRMED,
+                    source_url="",
+                    external_id=context.cnpj,
+                )
+            )
+        ddd = str(pick(row, "ddd_1", "ddd", default="") or "").strip()
+        phone = str(pick(row, "telefone_1", "telefone", default="") or "").strip()
+        if phone:
+            phone_clean = "".join(c for c in f"{ddd}{phone}" if c.isdigit())
+            if len(phone_clean) in (10, 11):
+                contacts.append(
+                    ContactCandidate(
+                        kind="PHONE",
+                        value=phone_clean,
+                        confidence=getattr(settings, "BIGQUERY_CONFIDENCE", 100),
+                        evidence_status=EvidenceStatus.CONFIRMED,
+                        source_url="",
+                        external_id=context.cnpj,
+                    )
+                )
+
         people: list[PersonCandidate] = []
         partners = pick(row, "socios", "qsa", "partners", default=[])
         if isinstance(partners, list):
@@ -151,9 +183,49 @@ class BigQueryOpenCNPJAdapter:
                         evidence_status=EvidenceStatus.CONFIRMED,
                     )
                 )
+
+        if not people:
+            natureza = str(pick(row, "natureza_juridica", default=""))
+            legal_name = str(pick(row, "razao_social", "legal_name", default=""))
+            if (natureza == "2135" or str(pick(row, "porte", default="")) == "1") and legal_name:
+                clean_name = re.sub(r"^[0-9.\/\-\s]+", "", legal_name).strip()
+                if clean_name:
+                    people.append(
+                        PersonCandidate(
+                            full_name=clean_name,
+                            external_key=f"{context.cnpj}:titular",
+                            qualification="PROPRIETARIO",
+                            observed_title="Empresário / Titular",
+                            confidence=getattr(settings, "BIGQUERY_CONFIDENCE", 100),
+                            evidence_status=EvidenceStatus.CONFIRMED,
+                        )
+                    )
+
+        if contacts and people:
+            primary = people[0]
+            people[0] = PersonCandidate(
+                full_name=primary.full_name,
+                external_key=primary.external_key,
+                qualification=primary.qualification,
+                observed_title=primary.observed_title,
+                seniority=primary.seniority,
+                buying_role=primary.buying_role,
+                buying_role_is_inferred=primary.buying_role_is_inferred,
+                confidence=primary.confidence,
+                evidence_status=primary.evidence_status,
+                contacts=tuple(contacts),
+                socials=primary.socials,
+                source_url=primary.source_url,
+            )
+
         delivered = {DataBlock.COMPANY_REGISTRY}
         if people:
             delivered.add(DataBlock.DECISION_MAKER)
+        if any(c.kind == "EMAIL" for c in contacts):
+            delivered.add(DataBlock.DIRECT_EMAIL)
+        if any(c.kind == "PHONE" for c in contacts):
+            delivered.add(DataBlock.DIRECT_PHONE)
+
         return ProviderResult(
             outcome="SUCCEEDED",
             confirmed_cost_cents=self._cost(response),
