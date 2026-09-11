@@ -1,14 +1,15 @@
 # Implantação no EasyPanel
 
-Este runbook instala somente a fundação do novo backend. A API, o worker, o PostgreSQL,
-o RabbitMQ e o Redis ficam na rede privada do projeto. Como a primeira versão não possui
-login no produto, o domínio da API **não deve ficar público sem uma barreira de acesso**.
+Este runbook instala o núcleo de produção do **LeadStream Backend**. A API, o worker Celery,
+o PostgreSQL, o RabbitMQ e o Redis residem na rede privada do projeto. A API conta com
+autenticação híbrida nativa (JWT com rotação/blacklist para operadores e API Keys criptográficas
+com hash SHA-256 para integrações), controle de acesso RBAC e isolamento estrito multi-tenant.
 
 ## Topologia recomendada
 
 | Serviço | Origem | Comando | Exposição |
 |---|---|---|---|
-| `leadstream-api` | imagem deste repositório | comando padrão da imagem | HTTPS, protegido no gateway |
+| `leadstream-api` | imagem deste repositório | comando padrão da imagem | HTTPS, protegido por JWT / API Key |
 | `leadstream-worker` | mesma imagem | `celery -A config.celery:app worker --loglevel=INFO --concurrency=2` | somente rede privada |
 | `leadstream-release` | mesma imagem, execução manual | `sh scripts/release.sh` | nenhuma |
 | PostgreSQL | serviço já existente | padrão do provedor | somente rede privada |
@@ -18,12 +19,13 @@ login no produto, o domínio da API **não deve ficar público sem uma barreira 
 O Appwrite é uma dependência complementar para serviços da plataforma. O banco canônico
 do Django continua sendo o PostgreSQL; o Appwrite não substitui o ORM nem recebe migrations.
 
-## 1. Proteja a entrada
+## 1. Proteja a entrada e configure a segurança
 
-Antes de publicar o domínio, aplique no proxy uma allowlist de IP, VPN ou uma camada como
-Cloudflare Access. A ausência de autenticação interna foi uma decisão consciente para uso
-próprio, mas não autoriza exposição anônima na internet. Não publique as portas do PostgreSQL,
-RabbitMQ, Redis ou Appwrite pela aplicação.
+A API adota padrão Zero Trust: todas as rotas de dados exigem token JWT ou API Key válidos
+(retornando `401 Unauthorized` para anônimos). No EasyPanel:
+1. Configure `CORS_ALLOWED_ORIGINS` com os domínios reais do frontend (ex: `https://app.leadstream.com.br`).
+2. Certifique-se de que o proxy force HTTPS e repasse o cabeçalho `X-Forwarded-Proto: https`.
+3. Nunca exponha as portas diretas de PostgreSQL (5432), RabbitMQ (5672) ou Redis (6379) para a internet.
 
 ## 2. Configure os serviços de estado
 
@@ -85,16 +87,21 @@ réplicas e torna falhas de implantação explícitas.
 O proxy deve terminar HTTPS e enviar `X-Forwarded-Proto: https`. A aplicação força HTTPS nas
 rotas de negócio; os health checks são isentos para permitir sondagem interna.
 
-## 6. Valide e reverta
+## 6. Provisione o Super Administrador e Valide
 
-Após a publicação, confirme:
+1. No terminal do container `leadstream-api` ou via tarefa de release, execute:
+   ```bash
+   python manage.py setup_security_admin --username admin --email contato@leadstream.com.br
+   ```
+   *Guarde com segurança a senha temporária e a Master API Key geradas.*
 
-```text
-GET /health/live          -> 200
-GET /health/ready         -> 200
-GET /api/v1/workspace/    -> 200 e tenant interno
-GET /api/v1/schema/       -> 200
-```
+2. Valide as rotas operacionais e a documentação:
+   ```text
+   GET /health/live          -> 200
+   GET /health/ready         -> 200
+   GET /api/v1/docs/         -> 200 (Scalar / Swagger OpenAPI 3.1.0)
+   GET /api/v1/workspace/    -> 200 (Autenticado via Bearer ou X-API-Key)
+   ```
 
 Em caso de falha, restaure API e worker para a tag anterior. Não reverta migrations cegamente:
 primeiro confirme se a migration é compatível com a versão anterior e restaure um backup do
