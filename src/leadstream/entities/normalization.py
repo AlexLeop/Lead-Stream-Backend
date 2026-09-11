@@ -110,3 +110,27 @@ def canonical_json(value: Any) -> str:
 
 def fingerprint_value(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def normalize_linkedin_url(value: str) -> str:
+    candidate = (value or "").strip()
+    if not candidate:
+        return ""
+    candidate = candidate.split("?")[0].split("#")[0].rstrip("/")
+    match_person = re.search(
+        r"^https?://(?:[a-zA-Z0-9-]+\.)*linkedin\.com/in/([^/]+)(?:/[^/]+)?/?$",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    if match_person:
+        handle = match_person.group(1).strip()
+        return f"https://linkedin.com/in/{handle}"
+    match_company = re.search(
+        r"^https?://(?:[a-zA-Z0-9-]+\.)*linkedin\.com/company/([^/]+)(?:/[^/]+)?/?$",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    if match_company:
+        comp_handle = match_company.group(1).strip()
+        return f"https://linkedin.com/company/{comp_handle}"
+    return candidate

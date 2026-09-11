@@ -422,7 +422,7 @@ def test_apify_google_search_scraper_resolve_decisor_e_linkedin() -> None:
     assert len(result.people) == 1
     assert result.people[0].full_name == "Alex Leopoldo Da Silva"
     assert result.people[0].socials[0].network == SocialProfile.Network.LINKEDIN
-    assert result.people[0].socials[0].profile_url == "https://br.linkedin.com/in/alexleop/en"
+    assert result.people[0].socials[0].profile_url == "https://linkedin.com/in/alexleop"
     assert result.confirmed_cost_cents == 3
     assert result.external_request_id == "run-google-001"
 

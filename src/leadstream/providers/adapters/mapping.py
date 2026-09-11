@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from leadstream.entities.models import ContactPoint, SocialProfile
+from leadstream.entities.normalization import normalize_linkedin_url
 from leadstream.evidence.models import EvidenceStatus
 from leadstream.providers.contracts import ContactCandidate, PersonCandidate, SocialCandidate
 
@@ -108,10 +109,15 @@ def person_candidates(
         )
         for network, aliases in networks:
             for url in strings(pick(record, *aliases, default=[])):
+                clean_url = (
+                    normalize_linkedin_url(url)
+                    if network == SocialProfile.Network.LINKEDIN
+                    else url
+                )
                 socials.append(
                     SocialCandidate(
                         network=network,
-                        profile_url=url,
+                        profile_url=clean_url,
                         confidence=confidence,
                         evidence_status=evidence_status,
                         source_url=source_url,
@@ -170,8 +176,8 @@ def google_serp_linkedin_candidates(
         url = str(record.get("url") or "").strip()
         if not url or "linkedin.com/in/" not in url:
             continue
-        clean_url = url.split("?")[0].rstrip("/")
-        if clean_url in seen_urls:
+        clean_url = normalize_linkedin_url(url)
+        if not clean_url or clean_url in seen_urls:
             continue
         seen_urls.add(clean_url)
 

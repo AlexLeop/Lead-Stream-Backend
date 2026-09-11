@@ -9,6 +9,7 @@ from leadstream.entities.normalization import (
     normalize_cnpj,
     normalize_domain,
     normalize_email,
+    normalize_linkedin_url,
     normalize_phone_br,
 )
 
@@ -57,3 +58,24 @@ def test_normaliza_telefone_sem_inferir_whatsapp(raw: str, expected: str) -> Non
 
 def test_fingerprint_json_independe_da_ordem_das_chaves() -> None:
     assert fingerprint_value({"b": 2, "a": 1}) == fingerprint_value({"a": 1, "b": 2})
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://br.linkedin.com/in/alexleop/en", "https://linkedin.com/in/alexleop"),
+        ("https://br.linkedin.com/in/alexleop/en/", "https://linkedin.com/in/alexleop"),
+        ("https://www.linkedin.com/in/alexleop/pt-br", "https://linkedin.com/in/alexleop"),
+        ("https://linkedin.com/in/alexleop/es?trk=profile", "https://linkedin.com/in/alexleop"),
+        ("https://br.linkedin.com/in/alexleop", "https://linkedin.com/in/alexleop"),
+        ("http://LinkedIn.com/in/joao/", "https://linkedin.com/in/joao"),
+        ("https://linkedin.com/in/carlos", "https://linkedin.com/in/carlos"),
+        (
+            "https://br.linkedin.com/company/leadstream/about",
+            "https://linkedin.com/company/leadstream",
+        ),
+    ],
+)
+def test_normaliza_linkedin_url_remove_siglas_pais_e_lingua(raw: str, expected: str) -> None:
+    assert normalize_linkedin_url(raw) == expected
+

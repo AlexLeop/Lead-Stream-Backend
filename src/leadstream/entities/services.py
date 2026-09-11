@@ -28,6 +28,7 @@ from .normalization import (
     cnpj_root,
     normalize_cnpj,
     normalize_email,
+    normalize_linkedin_url,
     normalize_phone_br,
     only_digits,
 )
@@ -52,6 +53,10 @@ def _normalize_name(value: str) -> str:
 
 def _normalize_social_url(value: str) -> str:
     candidate = (value or "").strip()
+    if "linkedin.com" in candidate.casefold():
+        norm = normalize_linkedin_url(candidate)
+        if norm:
+            return norm
     parsed = urlsplit(candidate)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise DataValidationError("URL de perfil social inválida.")
@@ -248,12 +253,18 @@ def create_social_profile(
 ) -> SocialProfile:
     _ensure_tenant(tenant, owner)
     normalized_url = _normalize_social_url(profile_url)
+    clean_profile_url = (
+        normalized_url if network == SocialProfile.Network.LINKEDIN else profile_url
+    )
     profile, _ = SocialProfile.objects.get_or_create(
         tenant=tenant,
         owner=owner,
         network=network,
         normalized_url=normalized_url,
-        defaults={"profile_url": profile_url, "handle": re.sub(r"^@", "", handle.strip())},
+        defaults={
+            "profile_url": clean_profile_url,
+            "handle": re.sub(r"^@", "", handle.strip()),
+        },
     )
     profile.full_clean()
     return profile

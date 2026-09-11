@@ -340,6 +340,11 @@ class CanonicalLeadBuilder:
                 if not primary_decisor_linkedin and socio_linkedin:
                     primary_decisor_linkedin = socio_linkedin
 
+                if socio_linkedin:
+                    from leadstream.entities.normalization import normalize_linkedin_url
+
+                    socio_linkedin = normalize_linkedin_url(socio_linkedin)
+
                 decision_makers_qsa.append(
                     {
                         "id": f"socio_{idx:02d}",
