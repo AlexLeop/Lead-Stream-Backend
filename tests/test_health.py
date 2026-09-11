@@ -59,3 +59,18 @@ def test_dependencias_opcionais_degradam_sem_bloquear_api(client: Client) -> Non
             "appwrite": {"status": "degraded"},
         },
     }
+
+
+def test_documentation_endpoints_accessible_without_auth(client: Client) -> None:
+    import json
+
+    resp_docs = client.get("/api/v1/docs/")
+    assert resp_docs.status_code == 200
+    assert "LeadStream" in resp_docs.content.decode()
+
+    resp_schema = client.get("/api/v1/schema/?format=json")
+    assert resp_schema.status_code == 200
+    schema_json = json.loads(resp_schema.content)
+    assert schema_json["openapi"] == "3.1.0"
+    assert "BearerAuth" in schema_json["components"]["securitySchemes"]
+    assert "ApiKeyAuth" in schema_json["components"]["securitySchemes"]

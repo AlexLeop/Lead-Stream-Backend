@@ -4,7 +4,7 @@ import uuid
 from typing import Any
 
 from django.utils import timezone
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -112,7 +112,10 @@ class TokenRefreshAuditView(TokenRefreshView):
 @extend_schema(
     tags=["Autenticação"],
     request=TokenRevokeSerializer,
-    responses={200: dict, 400: dict},
+    responses={
+        200: OpenApiResponse(description="Token revogado com sucesso."),
+        400: OpenApiResponse(description="Token inválido ou já revogado."),
+    },
 )
 class TokenRevokeView(APIView):
     """Revogação e invalidação imediata de um Refresh Token via Blacklist."""
@@ -209,7 +212,10 @@ class APIKeyListCreateView(APIView):
 @extend_schema(
     tags=["Segurança & Chaves"],
     summary="Revogar Chave de API",
-    responses={204: None, 404: dict},
+    responses={
+        204: OpenApiResponse(description="Chave de API revogada com sucesso."),
+        404: OpenApiResponse(description="Chave de API não encontrada."),
+    },
 )
 class APIKeyDetailView(APIView):
     """Revogação de chave de API por ID."""

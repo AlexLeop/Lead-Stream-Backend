@@ -4,6 +4,7 @@ import uuid
 from typing import Any
 
 from django.utils import timezone
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.request import Request
@@ -169,3 +170,19 @@ class CombinedAuthentication(BaseAuthentication):
 
         request.auth = validated_token
         return user, validated_token
+
+
+class CombinedAuthenticationScheme(OpenApiAuthenticationExtension):
+    target_class = "leadstream.security.authentication.CombinedAuthentication"
+    name = "BearerAuth"
+
+    def get_security_definition(self, auto_schema: Any) -> dict[str, Any]:
+        return {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT / APIKey",
+            "description": (
+                "Autenticação híbrida enterprise. Forneça um token JWT de acesso "
+                "(Bearer <token>) ou uma chave de API direta (Bearer ls_live_...)."
+            ),
+        }

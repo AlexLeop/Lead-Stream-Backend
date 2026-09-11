@@ -224,12 +224,14 @@ A API parte de uma empresa brasileira real (CNPJ), resolve seus estabelecimentos
 
 ---
 
-### 🔑 Autenticação & Multi-tenancy
+### 🔑 Autenticação Híbrida & Multi-tenancy Enterprise
 
-O LeadStream opera com arquitetura multi-tenant isolada por workspace:
-- **Cabeçalho Obrigatório:** Toda requisição à API deve incluir o header HTTP `X-Tenant-ID`.
-- **Formato Aceito:** O valor pode ser o `UUID` ou o `slug` do workspace do cliente (ex: `00000000-0000-4000-8000-000000000001` ou `interno`).
-- **Workspace Operacional Interno:** Em ambiente de desenvolvimento ou testes na ausência do cabeçalho, o sistema assume automaticamente o tenant operacional interno para testes locais imediatos.
+O LeadStream opera com arquitetura multi-tenant com autenticação híbrida e controle de acesso RBAC estrito:
+- **Autenticação Humana (JWT):** Login através de `/api/v1/auth/token/` (Access token: 30m, Refresh token: 14 dias) com rotação e blacklist.
+- **Autenticação Máquina / Integrações (API Keys):** Chaves criptográficas prefixadas (`ls_live_...` e `ls_test_...`) com hash SHA-256 no banco e timing-safe comparison.
+- **Headers Aceitos:** `Authorization: Bearer <token_jwt_ou_api_key>` ou `X-API-Key: <api_key>`.
+- **Prevenção Total de IDOR:** Cada requisição amarra-se ao tenant autorizado da credencial; Super Administradores podem chavear contexto com `X-Tenant-ID`.
+- **Proteção Anti-Abuso:** Throttling no Redis com limite de 5 req/min no login e 120 req/min por tenant.
 
 ---
 
@@ -293,10 +295,24 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "LeadStream API Reference — Inteligência Cadastral B2B",
     "DESCRIPTION": API_DESCRIPTION,
     "VERSION": "2.4.0",
+    "OAS_VERSION": "3.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
-    "SECURITY": [{"TenantHeader": []}],
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
+    "SECURITY": [{"BearerAuth": []}, {"ApiKeyAuth": []}],
     "APPEND_COMPONENTS": {
         "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Token JWT de acesso ou API Key (formato Bearer ls_live_...)",
+            },
+            "ApiKeyAuth": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-API-Key",
+                "description": "Chave de API criptográfica (formato ls_live_... ou ls_test_...)",
+            },
             "TenantHeader": {
                 "type": "apiKey",
                 "in": "header",
@@ -304,9 +320,9 @@ SPECTACULAR_SETTINGS = {
                 "description": (
                     "UUID ou slug identificador do workspace do cliente (ex: "
                     "`00000000-0000-4000-8000-000000000001` ou `interno`). "
-                    "Necessário para roteamento de dados isolados por tenant."
+                    "Utilizado para chaveamento de tenant por Super Administradores."
                 ),
-            }
+            },
         }
     },
     "SWAGGER_UI_SETTINGS": {
