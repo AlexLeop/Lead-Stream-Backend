@@ -53,9 +53,7 @@ class DiscoveryExecution:
 def normalize_discovery_filters(value: dict[str, Any]) -> dict[str, Any]:
     unknown = set(value).difference(ALLOWED_FILTERS)
     if unknown:
-        raise ValidationError(
-            {"filters": f"Filtros não suportados: {', '.join(sorted(unknown))}."}
-        )
+        raise ValidationError({"filters": f"Filtros não suportados: {', '.join(sorted(unknown))}."})
     normalized: dict[str, Any] = {}
     for key, raw in value.items():
         if key == "matriz":
@@ -67,9 +65,7 @@ def normalize_discovery_filters(value: dict[str, Any]) -> dict[str, Any]:
             raise ValidationError({f"filters.{key}": "Informe uma lista não vazia."})
         values = sorted({str(item).strip().upper() for item in raw if str(item).strip()})
         if not values or len(values) > 100:
-            raise ValidationError(
-                {f"filters.{key}": "Informe entre 1 e 100 valores distintos."}
-            )
+            raise ValidationError({f"filters.{key}": "Informe entre 1 e 100 valores distintos."})
         if key == "ufs" and any(len(item) != 2 for item in values):
             raise ValidationError({"filters.ufs": "UF deve possuir duas letras."})
         normalized[key] = values
@@ -81,24 +77,22 @@ def normalize_discovery_filters(value: dict[str, Any]) -> dict[str, Any]:
 def _validate_idempotency_key(value: str) -> str:
     key = value.strip()
     if len(key) < 8 or len(key) > 128:
-        raise ValidationError(
-            {"Idempotency-Key": "Informe uma chave entre 8 e 128 caracteres."}
-        )
+        raise ValidationError({"Idempotency-Key": "Informe uma chave entre 8 e 128 caracteres."})
     return key
 
 
 def _publish_discovery(search_id: UUID | str) -> None:
     from .tasks import process_discovery_search_task
 
-    DiscoverySearch.objects.filter(
-        pk=search_id, status=DiscoverySearch.Status.QUEUED
-    ).update(dispatched_at=timezone.now())
+    DiscoverySearch.objects.filter(pk=search_id, status=DiscoverySearch.Status.QUEUED).update(
+        dispatched_at=timezone.now()
+    )
     try:
         process_discovery_search_task.delay(str(search_id))
     except Exception:
-        DiscoverySearch.objects.filter(
-            pk=search_id, status=DiscoverySearch.Status.QUEUED
-        ).update(dispatched_at=None)
+        DiscoverySearch.objects.filter(pk=search_id, status=DiscoverySearch.Status.QUEUED).update(
+            dispatched_at=None
+        )
         logger.exception("discovery_dispatch_failed", extra={"search_id": str(search_id)})
 
 
@@ -119,9 +113,7 @@ def create_discovery_search(
     key = _validate_idempotency_key(idempotency_key)
     normalized_filters = normalize_discovery_filters(filters)
     if not 1 <= max_results <= settings.BATCH_MAX_ROWS:
-        raise ValidationError(
-            {"max_results": f"Informe entre 1 e {settings.BATCH_MAX_ROWS:,}."}
-        )
+        raise ValidationError({"max_results": f"Informe entre 1 e {settings.BATCH_MAX_ROWS:,}."})
     if not 100 <= query_page_size <= 10_000:
         raise ValidationError({"query_page_size": "Informe entre 100 e 10.000."})
     existing = DiscoverySearch.objects.filter(tenant=tenant, idempotency_key=key).first()
@@ -164,9 +156,7 @@ def _result_from_row(
         cnpj=cnpj,
         legal_name=str(pick(row, "razao_social", "legal_name", "nome_empresarial"))[:255],
         trade_name=str(pick(row, "nome_fantasia", "trade_name"))[:255],
-        registration_status=str(
-            pick(row, "situacao_cadastral", "registration_status")
-        )[:64],
+        registration_status=str(pick(row, "situacao_cadastral", "registration_status"))[:64],
         primary_cnae=str(pick(row, "cnae_fiscal", "cnae_principal", "primary_cnae"))[:16],
         company_size=str(pick(row, "porte", "company_size"))[:80],
         state=str(pick(row, "uf", "estado", "state"))[:2].upper(),
@@ -190,9 +180,7 @@ def execute_discovery_search(
     now = timezone.now()
     with transaction.atomic():
         search = (
-            DiscoverySearch.objects.select_for_update()
-            .select_related("tenant")
-            .get(pk=search_id)
+            DiscoverySearch.objects.select_for_update().select_related("tenant").get(pk=search_id)
         )
         if search.status in {
             DiscoverySearch.Status.COMPLETED,
@@ -235,8 +223,7 @@ def execute_discovery_search(
                 candidates = [
                     candidate
                     for row in rows
-                    if (candidate := _result_from_row(search=search, row=row, rank=0))
-                    is not None
+                    if (candidate := _result_from_row(search=search, row=row, rank=0)) is not None
                 ]
                 known_cnpjs = set(
                     search.results.filter(
@@ -345,9 +332,7 @@ def create_discovery_batch(
                 current_stage=BatchChunk.Stage.HYGIENE,
                 input_backend="DISCOVERY",
                 input_original_name=search.name,
-                input_sha256=fingerprint_value(
-                    [result.source_fingerprint for result in results]
-                ),
+                input_sha256=fingerprint_value([result.source_fingerprint for result in results]),
                 chunk_size=chunk_size,
                 total_rows=len(results),
             )

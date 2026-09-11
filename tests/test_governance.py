@@ -58,9 +58,7 @@ def test_supressao_e_hmac_idempotente_sem_valor_bruto() -> None:
     assert first.value_digest != "decisor@example.com"
     assert not hasattr(first, "raw_value")
     assert contact.status == ContactPoint.Status.SUPPRESSED
-    assert is_suppressed(
-        tenant=tenant, scope=Suppression.Scope.EMAIL, value="decisor@example.com"
-    )
+    assert is_suppressed(tenant=tenant, scope=Suppression.Scope.EMAIL, value="decisor@example.com")
 
 
 @override_settings(
@@ -81,9 +79,7 @@ def test_consulta_chave_anterior_e_isolamento_por_tenant() -> None:
     assert is_suppressed(
         tenant=internal, scope=Suppression.Scope.DOMAIN, value="https://www.example.com"
     )
-    assert not is_suppressed(
-        tenant=other, scope=Suppression.Scope.DOMAIN, value="example.com"
-    )
+    assert not is_suppressed(tenant=other, scope=Suppression.Scope.DOMAIN, value="example.com")
 
 
 @override_settings(DATA_HASH_KEY="test-hmac", DATA_HASH_KEY_VERSION="v1")

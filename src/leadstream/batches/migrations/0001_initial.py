@@ -7,161 +7,341 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('entities', '0001_initial'),
-        ('tenancy', '0002_seed_internal_tenant'),
+        ("entities", "0001_initial"),
+        ("tenancy", "0002_seed_internal_tenant"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Batch',
+            name="Batch",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=160)),
-                ('source_type', models.CharField(choices=[('CSV', 'Arquivo CSV'), ('DISCOVERY', 'Seleção de descoberta')], max_length=16)),
-                ('status', models.CharField(choices=[('RECEIVED', 'Recebido'), ('INGESTING', 'Importando'), ('QUEUED', 'Na fila'), ('RUNNING', 'Em execução'), ('PAUSED', 'Pausado'), ('CANCEL_REQUESTED', 'Cancelamento solicitado'), ('CANCELLED', 'Cancelado'), ('COMPLETED', 'Concluído'), ('PARTIAL', 'Concluído parcialmente'), ('FAILED', 'Falhou')], default='RECEIVED', max_length=24)),
-                ('idempotency_key', models.CharField(blank=True, max_length=128)),
-                ('current_stage', models.CharField(default='INGESTION', max_length=32)),
-                ('input_backend', models.CharField(default='LOCAL', max_length=32)),
-                ('input_key', models.CharField(blank=True, max_length=512)),
-                ('input_original_name', models.CharField(blank=True, max_length=255)),
-                ('input_content_type', models.CharField(blank=True, max_length=128)),
-                ('input_size_bytes', models.PositiveBigIntegerField(default=0)),
-                ('input_sha256', models.CharField(blank=True, max_length=64)),
-                ('chunk_size', models.PositiveIntegerField(default=500)),
-                ('total_rows', models.PositiveIntegerField(default=0)),
-                ('processed_rows', models.PositiveIntegerField(default=0)),
-                ('succeeded_rows', models.PositiveIntegerField(default=0)),
-                ('absent_rows', models.PositiveIntegerField(default=0)),
-                ('failed_rows', models.PositiveIntegerField(default=0)),
-                ('duplicate_rows', models.PositiveIntegerField(default=0)),
-                ('corrected_rows', models.PositiveIntegerField(default=0)),
-                ('invalid_rows', models.PositiveIntegerField(default=0)),
-                ('cost_cents', models.PositiveBigIntegerField(default=0)),
-                ('revenue_cents', models.PositiveBigIntegerField(default=0)),
-                ('started_at', models.DateTimeField(blank=True, null=True)),
-                ('completed_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("name", models.CharField(max_length=160)),
+                (
+                    "source_type",
+                    models.CharField(
+                        choices=[("CSV", "Arquivo CSV"), ("DISCOVERY", "Seleção de descoberta")],
+                        max_length=16,
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("RECEIVED", "Recebido"),
+                            ("INGESTING", "Importando"),
+                            ("QUEUED", "Na fila"),
+                            ("RUNNING", "Em execução"),
+                            ("PAUSED", "Pausado"),
+                            ("CANCEL_REQUESTED", "Cancelamento solicitado"),
+                            ("CANCELLED", "Cancelado"),
+                            ("COMPLETED", "Concluído"),
+                            ("PARTIAL", "Concluído parcialmente"),
+                            ("FAILED", "Falhou"),
+                        ],
+                        default="RECEIVED",
+                        max_length=24,
+                    ),
+                ),
+                ("idempotency_key", models.CharField(blank=True, max_length=128)),
+                ("current_stage", models.CharField(default="INGESTION", max_length=32)),
+                ("input_backend", models.CharField(default="LOCAL", max_length=32)),
+                ("input_key", models.CharField(blank=True, max_length=512)),
+                ("input_original_name", models.CharField(blank=True, max_length=255)),
+                ("input_content_type", models.CharField(blank=True, max_length=128)),
+                ("input_size_bytes", models.PositiveBigIntegerField(default=0)),
+                ("input_sha256", models.CharField(blank=True, max_length=64)),
+                ("chunk_size", models.PositiveIntegerField(default=500)),
+                ("total_rows", models.PositiveIntegerField(default=0)),
+                ("processed_rows", models.PositiveIntegerField(default=0)),
+                ("succeeded_rows", models.PositiveIntegerField(default=0)),
+                ("absent_rows", models.PositiveIntegerField(default=0)),
+                ("failed_rows", models.PositiveIntegerField(default=0)),
+                ("duplicate_rows", models.PositiveIntegerField(default=0)),
+                ("corrected_rows", models.PositiveIntegerField(default=0)),
+                ("invalid_rows", models.PositiveIntegerField(default=0)),
+                ("cost_cents", models.PositiveBigIntegerField(default=0)),
+                ("revenue_cents", models.PositiveBigIntegerField(default=0)),
+                ("started_at", models.DateTimeField(blank=True, null=True)),
+                ("completed_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_batch',
-                'ordering': ['-created_at'],
+                "db_table": "leadstream_batch",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='BatchChunk',
+            name="BatchChunk",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('sequence', models.PositiveIntegerField()),
-                ('start_row', models.PositiveIntegerField()),
-                ('end_row', models.PositiveIntegerField()),
-                ('status', models.CharField(choices=[('PENDING', 'Pendente'), ('LEASED', 'Reservado'), ('RUNNING', 'Em execução'), ('PAUSED', 'Pausado'), ('COMPLETED', 'Concluído'), ('FAILED', 'Falhou'), ('CANCELLED', 'Cancelado')], default='PENDING', max_length=16)),
-                ('checkpoint_row', models.PositiveIntegerField(default=0)),
-                ('lease_owner', models.CharField(blank=True, max_length=255)),
-                ('leased_until', models.DateTimeField(blank=True, null=True)),
-                ('attempt_count', models.PositiveIntegerField(default=0)),
-                ('max_attempts', models.PositiveIntegerField(default=5)),
-                ('last_error_code', models.CharField(blank=True, max_length=64)),
-                ('last_error_message', models.CharField(blank=True, max_length=500)),
-                ('started_at', models.DateTimeField(blank=True, null=True)),
-                ('completed_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('batch', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='chunks', to='batches.batch')),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("sequence", models.PositiveIntegerField()),
+                ("start_row", models.PositiveIntegerField()),
+                ("end_row", models.PositiveIntegerField()),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PENDING", "Pendente"),
+                            ("LEASED", "Reservado"),
+                            ("RUNNING", "Em execução"),
+                            ("PAUSED", "Pausado"),
+                            ("COMPLETED", "Concluído"),
+                            ("FAILED", "Falhou"),
+                            ("CANCELLED", "Cancelado"),
+                        ],
+                        default="PENDING",
+                        max_length=16,
+                    ),
+                ),
+                ("checkpoint_row", models.PositiveIntegerField(default=0)),
+                ("lease_owner", models.CharField(blank=True, max_length=255)),
+                ("leased_until", models.DateTimeField(blank=True, null=True)),
+                ("attempt_count", models.PositiveIntegerField(default=0)),
+                ("max_attempts", models.PositiveIntegerField(default=5)),
+                ("last_error_code", models.CharField(blank=True, max_length=64)),
+                ("last_error_message", models.CharField(blank=True, max_length=500)),
+                ("started_at", models.DateTimeField(blank=True, null=True)),
+                ("completed_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "batch",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="chunks",
+                        to="batches.batch",
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_batch_chunk',
+                "db_table": "leadstream_batch_chunk",
             },
         ),
         migrations.CreateModel(
-            name='BatchItem',
+            name="BatchItem",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('row_number', models.PositiveIntegerField()),
-                ('original_data', models.JSONField(default=dict)),
-                ('normalized_data', models.JSONField(default=dict)),
-                ('hygiene_state', models.CharField(choices=[('UNCHANGED', 'Inalterado'), ('CORRECTED', 'Corrigido'), ('INVALID', 'Inválido'), ('DUPLICATE', 'Duplicado')], max_length=16)),
-                ('applied_rules', models.JSONField(default=list)),
-                ('issues', models.JSONField(default=list)),
-                ('fingerprint', models.CharField(blank=True, max_length=64)),
-                ('status', models.CharField(choices=[('PENDING', 'Pendente'), ('PROCESSING', 'Processando'), ('SUCCEEDED', 'Concluído'), ('ABSENT', 'Sem resultado'), ('FAILED', 'Falhou')], default='PENDING', max_length=16)),
-                ('error_code', models.CharField(blank=True, max_length=64)),
-                ('error_message', models.CharField(blank=True, max_length=500)),
-                ('processed_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('batch', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='items', to='batches.batch')),
-                ('duplicate_of', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='duplicates', to='batches.batchitem')),
-                ('entity', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='batch_items', to='entities.entity')),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("row_number", models.PositiveIntegerField()),
+                ("original_data", models.JSONField(default=dict)),
+                ("normalized_data", models.JSONField(default=dict)),
+                (
+                    "hygiene_state",
+                    models.CharField(
+                        choices=[
+                            ("UNCHANGED", "Inalterado"),
+                            ("CORRECTED", "Corrigido"),
+                            ("INVALID", "Inválido"),
+                            ("DUPLICATE", "Duplicado"),
+                        ],
+                        max_length=16,
+                    ),
+                ),
+                ("applied_rules", models.JSONField(default=list)),
+                ("issues", models.JSONField(default=list)),
+                ("fingerprint", models.CharField(blank=True, max_length=64)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PENDING", "Pendente"),
+                            ("PROCESSING", "Processando"),
+                            ("SUCCEEDED", "Concluído"),
+                            ("ABSENT", "Sem resultado"),
+                            ("FAILED", "Falhou"),
+                        ],
+                        default="PENDING",
+                        max_length=16,
+                    ),
+                ),
+                ("error_code", models.CharField(blank=True, max_length=64)),
+                ("error_message", models.CharField(blank=True, max_length=500)),
+                ("processed_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "batch",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="items",
+                        to="batches.batch",
+                    ),
+                ),
+                (
+                    "duplicate_of",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="duplicates",
+                        to="batches.batchitem",
+                    ),
+                ),
+                (
+                    "entity",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="batch_items",
+                        to="entities.entity",
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_batch_item',
+                "db_table": "leadstream_batch_item",
             },
         ),
         migrations.CreateModel(
-            name='ProcessingAttempt',
+            name="ProcessingAttempt",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('attempt_number', models.PositiveIntegerField()),
-                ('worker_id', models.CharField(max_length=255)),
-                ('status', models.CharField(choices=[('STARTED', 'Iniciada'), ('SUCCEEDED', 'Concluída'), ('RETRYABLE_FAILURE', 'Falha recuperável'), ('PERMANENT_FAILURE', 'Falha permanente'), ('ABANDONED', 'Abandonada')], default='STARTED', max_length=32)),
-                ('error_code', models.CharField(blank=True, max_length=64)),
-                ('error_message', models.CharField(blank=True, max_length=500)),
-                ('started_at', models.DateTimeField()),
-                ('finished_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('chunk', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='attempts', to='batches.batchchunk')),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("attempt_number", models.PositiveIntegerField()),
+                ("worker_id", models.CharField(max_length=255)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("STARTED", "Iniciada"),
+                            ("SUCCEEDED", "Concluída"),
+                            ("RETRYABLE_FAILURE", "Falha recuperável"),
+                            ("PERMANENT_FAILURE", "Falha permanente"),
+                            ("ABANDONED", "Abandonada"),
+                        ],
+                        default="STARTED",
+                        max_length=32,
+                    ),
+                ),
+                ("error_code", models.CharField(blank=True, max_length=64)),
+                ("error_message", models.CharField(blank=True, max_length=500)),
+                ("started_at", models.DateTimeField()),
+                ("finished_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "chunk",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="attempts",
+                        to="batches.batchchunk",
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_processing_attempt',
+                "db_table": "leadstream_processing_attempt",
             },
         ),
         migrations.AddIndex(
-            model_name='batch',
-            index=models.Index(fields=['tenant', 'status', 'created_at'], name='batch_status_time_idx'),
+            model_name="batch",
+            index=models.Index(
+                fields=["tenant", "status", "created_at"], name="batch_status_time_idx"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='batch',
-            constraint=models.UniqueConstraint(condition=models.Q(('idempotency_key', ''), _negated=True), fields=('tenant', 'idempotency_key'), name='batch_tenant_idempotency_uniq'),
+            model_name="batch",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("idempotency_key", ""), _negated=True),
+                fields=("tenant", "idempotency_key"),
+                name="batch_tenant_idempotency_uniq",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='batch',
-            constraint=models.CheckConstraint(condition=models.Q(('chunk_size__gte', 50), ('chunk_size__lte', 5000)), name='batch_chunk_size_range'),
+            model_name="batch",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("chunk_size__gte", 50), ("chunk_size__lte", 5000)),
+                name="batch_chunk_size_range",
+            ),
         ),
         migrations.AddIndex(
-            model_name='batchchunk',
-            index=models.Index(fields=['tenant', 'status', 'leased_until'], name='chunk_lease_idx'),
+            model_name="batchchunk",
+            index=models.Index(fields=["tenant", "status", "leased_until"], name="chunk_lease_idx"),
         ),
         migrations.AddConstraint(
-            model_name='batchchunk',
-            constraint=models.UniqueConstraint(fields=('batch', 'sequence'), name='batch_chunk_seq_uniq'),
+            model_name="batchchunk",
+            constraint=models.UniqueConstraint(
+                fields=("batch", "sequence"), name="batch_chunk_seq_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='batchchunk',
-            constraint=models.CheckConstraint(condition=models.Q(('end_row__gte', models.F('start_row'))), name='batch_chunk_rows_order'),
+            model_name="batchchunk",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("end_row__gte", models.F("start_row"))),
+                name="batch_chunk_rows_order",
+            ),
         ),
         migrations.AddIndex(
-            model_name='batchitem',
-            index=models.Index(fields=['tenant', 'batch', 'status'], name='batch_item_status_idx'),
+            model_name="batchitem",
+            index=models.Index(fields=["tenant", "batch", "status"], name="batch_item_status_idx"),
         ),
         migrations.AddIndex(
-            model_name='batchitem',
-            index=models.Index(fields=['tenant', 'fingerprint'], name='batch_item_fingerprint_idx'),
+            model_name="batchitem",
+            index=models.Index(fields=["tenant", "fingerprint"], name="batch_item_fingerprint_idx"),
         ),
         migrations.AddConstraint(
-            model_name='batchitem',
-            constraint=models.UniqueConstraint(fields=('batch', 'row_number'), name='batch_item_row_uniq'),
+            model_name="batchitem",
+            constraint=models.UniqueConstraint(
+                fields=("batch", "row_number"), name="batch_item_row_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='processingattempt',
-            constraint=models.UniqueConstraint(fields=('chunk', 'attempt_number'), name='chunk_attempt_number_uniq'),
+            model_name="processingattempt",
+            constraint=models.UniqueConstraint(
+                fields=("chunk", "attempt_number"), name="chunk_attempt_number_uniq"
+            ),
         ),
     ]

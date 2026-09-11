@@ -28,3 +28,13 @@ def process_chunk_task(self: Any, chunk_id: str) -> None:
 @shared_task(name="leadstream.batches.recover", ignore_result=True)  # type: ignore[untyped-decorator]
 def recover_stalled_work_task() -> None:
     recover_stalled_work()
+
+
+@shared_task(name="leadstream.batches.generate_export", ignore_result=True)  # type: ignore[untyped-decorator]
+def generate_export_task(export_id: str) -> None:
+    from .exporter import CommercialBatchExporter
+    from .models import BatchExport
+
+    export = BatchExport.objects.get(pk=export_id)
+    exporter = CommercialBatchExporter(export)
+    exporter.execute()

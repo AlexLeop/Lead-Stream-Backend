@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('batches', '0002_batch_last_error_code_batch_last_error_message'),
-        ('tenancy', '0002_seed_internal_tenant'),
+        ("batches", "0002_batch_last_error_code_batch_last_error_message"),
+        ("tenancy", "0002_seed_internal_tenant"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='batchchunk',
-            name='dispatched_at',
+            model_name="batchchunk",
+            name="dispatched_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddIndex(
-            model_name='batchchunk',
-            index=models.Index(fields=['status', 'dispatched_at'], name='chunk_dispatch_idx'),
+            model_name="batchchunk",
+            index=models.Index(fields=["status", "dispatched_at"], name="chunk_dispatch_idx"),
         ),
     ]

@@ -66,9 +66,7 @@ class RetentionPolicy(TenantOwnedModel):
     class Meta:
         db_table = "leadstream_retention_policy"
         constraints: ClassVar[list[models.BaseConstraint]] = [
-            models.UniqueConstraint(
-                fields=("tenant", "code"), name="retention_tenant_code_uniq"
-            ),
+            models.UniqueConstraint(fields=("tenant", "code"), name="retention_tenant_code_uniq"),
             models.CheckConstraint(
                 condition=Q(retention_days__gte=models.F("stale_after_days")),
                 name="retention_after_stale",

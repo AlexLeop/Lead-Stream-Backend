@@ -99,7 +99,9 @@ def test_canonizacao_prioriza_estado_antes_da_fonte_e_preserva_rotulo() -> None:
         method=CaptureMethod.API,
     )
     decision = canonicalize(
-        tenant=tenant, target=target, field_path="person.email"  # type: ignore[arg-type]
+        tenant=tenant,
+        target=target,
+        field_path="person.email",  # type: ignore[arg-type]
     )
     assert decision.selected_observation == confirmed
     assert decision.decision_status == EvidenceStatus.CONFIRMED
@@ -116,7 +118,9 @@ def test_canonizacao_prioriza_estado_antes_da_fonte_e_preserva_rotulo() -> None:
         method=CaptureMethod.INFERENCE,
     )
     inferred_decision = canonicalize(
-        tenant=tenant, target=target, field_path="person.buying_role"  # type: ignore[arg-type]
+        tenant=tenant,
+        target=target,
+        field_path="person.buying_role",  # type: ignore[arg-type]
     )
     assert inferred_decision.selected_observation == inferred
     assert inferred_decision.decision_status == EvidenceStatus.INFERRED
@@ -200,10 +204,14 @@ def test_conflito_e_recanonizacao_preservam_historico() -> None:
         observations=[first, second],
     )
     before = canonicalize(
-        tenant=tenant, target=target, field_path="company.trade_name"  # type: ignore[arg-type]
+        tenant=tenant,
+        target=target,
+        field_path="company.trade_name",  # type: ignore[arg-type]
     )
     after = canonicalize(
-        tenant=tenant, target=target, field_path="company.trade_name"  # type: ignore[arg-type]
+        tenant=tenant,
+        target=target,
+        field_path="company.trade_name",  # type: ignore[arg-type]
     )
     assert set(conflict.observations.values_list("pk", flat=True)) == {first.pk, second.pk}
     assert before.version == 1

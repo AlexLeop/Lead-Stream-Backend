@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
+import httpx
 from django.conf import settings
 from django.core.exceptions import ValidationError
 
@@ -85,4 +86,97 @@ def open_input(key: str) -> BinaryIO:
 
 
 def delete_input(key: str) -> None:
+    _resolve_key(key).unlink(missing_ok=True)
+
+
+@dataclass(frozen=True)
+class StoredExport:
+    backend: str
+    key: str
+    file_name: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+
+
+def save_export_file(
+    *,
+    tenant_id: object,
+    file_name: str,
+    file_path: Path,
+    content_type: str = "text/csv; charset=utf-8",
+) -> StoredExport:
+    import shutil
+
+    from leadstream.integrations.appwrite import AppwriteConfig, AppwriteStorageClient
+
+    size = file_path.stat().st_size
+    digest = hashlib.sha256()
+    with file_path.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    sha256 = digest.hexdigest()
+
+    appwrite_config = AppwriteConfig.from_settings()
+    if appwrite_config is not None:
+        try:
+            client = AppwriteStorageClient(appwrite_config)
+            file_id = f"exp-{uuid.uuid4().hex[:28]}"
+            with file_path.open("rb") as f:
+                content = f.read()
+            client.upload_file(
+                bucket_id=settings.APPWRITE_STORAGE_BUCKET_EXPORTS,
+                file_id=file_id,
+                file_name=file_name,
+                content=content,
+                content_type=content_type,
+            )
+            return StoredExport(
+                backend="APPWRITE",
+                key=f"{settings.APPWRITE_STORAGE_BUCKET_EXPORTS}/{file_id}",
+                file_name=file_name,
+                content_type=content_type,
+                size_bytes=size,
+                sha256=sha256,
+            )
+        except (httpx.HTTPError, OSError, ValueError):
+            # Fallback seguro para armazenamento local se Appwrite estiver indisponível
+            pass
+
+    rel_key = f"exports/{tenant_id}/{uuid.uuid4()}_{file_name}"
+    dest = _resolve_key(rel_key)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(file_path, dest)
+    return StoredExport(
+        backend="LOCAL",
+        key=rel_key,
+        file_name=file_name,
+        content_type=content_type,
+        size_bytes=size,
+        sha256=sha256,
+    )
+
+
+def open_export(backend: str, key: str) -> BinaryIO | bytes:
+    from leadstream.integrations.appwrite import AppwriteConfig, AppwriteStorageClient
+
+    if backend == "APPWRITE":
+        appwrite_config = AppwriteConfig.from_settings()
+        if appwrite_config is not None:
+            bucket_id, file_id = key.split("/", 1)
+            client = AppwriteStorageClient(appwrite_config)
+            return client.download_file(bucket_id=bucket_id, file_id=file_id)
+    return _resolve_key(key).open("rb")
+
+
+def delete_export(backend: str, key: str) -> None:
+    from leadstream.integrations.appwrite import AppwriteConfig, AppwriteStorageClient
+
+    if backend == "APPWRITE":
+        appwrite_config = AppwriteConfig.from_settings()
+        if appwrite_config is not None:
+            bucket_id, file_id = key.split("/", 1)
+            client = AppwriteStorageClient(appwrite_config)
+            client.delete_file(bucket_id=bucket_id, file_id=file_id)
+            return
     _resolve_key(key).unlink(missing_ok=True)

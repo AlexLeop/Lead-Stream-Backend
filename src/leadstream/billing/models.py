@@ -95,6 +95,10 @@ class ProviderCall(TenantOwnedModel):
     error_code = models.CharField(max_length=64, blank=True)
     latency_ms = models.PositiveIntegerField(default=0)
     delivered_blocks = models.JSONField(default=list, blank=True)
+    execution_token = models.CharField(max_length=36, blank=True)
+    leased_until = models.DateTimeField(null=True, blank=True)
+    next_poll_at = models.DateTimeField(null=True, blank=True)
+    provider_state = models.JSONField(default=dict, blank=True)
     started_at = models.DateTimeField()
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -115,8 +119,10 @@ class ProviderCall(TenantOwnedModel):
         errors: dict[str, str] = {}
         if self.batch.tenant_id != self.tenant_id:
             errors["batch"] = "Chamada e lote devem pertencer ao mesmo tenant."
-        if self.item_id and self.item and (
-            self.item.tenant_id != self.tenant_id or self.item.batch_id != self.batch_id
+        if (
+            self.item_id
+            and self.item
+            and (self.item.tenant_id != self.tenant_id or self.item.batch_id != self.batch_id)
         ):
             errors["item"] = "Item não pertence ao mesmo tenant e lote."
         if errors:
@@ -204,3 +210,4 @@ class BillableEvent(TenantOwnedModel):
 
 
 DATA_BLOCK_CHOICES = DataBlock.choices
+PROVIDER_CALL_STATUS_CHOICES = ProviderCall.Status.choices

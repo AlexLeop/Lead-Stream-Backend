@@ -58,9 +58,7 @@ class ProviderPolicy(TenantOwnedModel):
 
 class ProviderHealth(TenantOwnedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    policy = models.OneToOneField(
-        ProviderPolicy, on_delete=models.PROTECT, related_name="health"
-    )
+    policy = models.OneToOneField(ProviderPolicy, on_delete=models.PROTECT, related_name="health")
     consecutive_failures = models.PositiveIntegerField(default=0)
     circuit_open_until = models.DateTimeField(null=True, blank=True)
     last_success_at = models.DateTimeField(null=True, blank=True)
@@ -134,9 +132,7 @@ class DiscoverySearch(TenantOwnedModel):
 
 class DiscoveryResult(TenantOwnedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    search = models.ForeignKey(
-        DiscoverySearch, on_delete=models.PROTECT, related_name="results"
-    )
+    search = models.ForeignKey(DiscoverySearch, on_delete=models.PROTECT, related_name="results")
     rank = models.PositiveIntegerField()
     cnpj = models.CharField(max_length=14)
     legal_name = models.CharField(max_length=255, blank=True)

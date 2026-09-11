@@ -25,6 +25,8 @@ DATABASE_URL=postgresql://quality:quality@localhost:5432/quality \
 CELERY_BROKER_URL=amqp://quality:quality@localhost:5672// \
 REDIS_URL=redis://localhost:6379/15 \
 DJANGO_SECURE_SSL_REDIRECT=true \
+DATA_HASH_KEY=quality-check-only-data-hash-key \
+DATA_HASH_KEY_VERSION=v1 \
   "$leadstream_python" manage.py check --deploy --fail-level WARNING
 
 printf '\n==> Testes\n'

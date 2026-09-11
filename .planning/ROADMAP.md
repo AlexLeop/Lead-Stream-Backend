@@ -130,9 +130,10 @@ Plans:
 
 Plans:
 
-- [ ] 05-01: Implementar exportação, manifesto, minimização e Appwrite Storage.
-- [ ] 05-02: Implementar outbox e conectores HubSpot, Pipedrive e RD Station.
-- [ ] 05-03: Validar produção, segurança operacional, backup, restore e piloto medido.
+- [x] 05-01: Implementar exportação, manifesto, minimização e Appwrite Storage.
+- [x] 05-02: Implementar outbox e conectores HubSpot, Pipedrive e RD Station.
+- [x] 05-03: Validar produção, segurança operacional, backup, restore e piloto medido.
+
 
 ### Phase 6: Aceite de Produção
 
@@ -165,6 +166,6 @@ Plans:
 | 1. Fundação Executável | 3/3 | Verification |  |
 | 2. Dados Confiáveis | 3/3 | Complete | 2026-09-10 |
 | 3. Lotes com Valor Mensurável | 3/3 | Complete | 2026-09-10 |
-| 4. Descoberta e Enriquecimento Real | 1/3 | In progress | - |
-| 5. Entrega e Operação Comercial | 0/3 | Not started | - |
+| 4. Descoberta e Enriquecimento Real | 3/3 | Complete | 2026-09-10 |
+| 5. Entrega e Operação Comercial | 3/3 | Complete | 2026-09-10 |
 | 6. Aceite de Produção | 0/4 | Not started | - |

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import httpx
 import pytest
 from django.test import override_settings
+from django.utils import timezone
 
 from leadstream.batches.models import Batch, BatchChunk, BatchItem
 from leadstream.billing.models import BillableEvent, DataBlock, ProviderCall
@@ -185,11 +187,14 @@ def test_executor_persiste_decisor_contatos_e_cobra_apenas_qualidade_suficiente(
     assert execution.call_id is not None
     assert ProviderCall.objects.get(pk=execution.call_id).confirmed_cost_cents == 16
     assert BillableEvent.objects.filter(batch=context.batch).count() == 3
-    assert sum(
-        BillableEvent.objects.filter(batch=context.batch).values_list(
-            "unit_price_cents", flat=True
+    assert (
+        sum(
+            BillableEvent.objects.filter(batch=context.batch).values_list(
+                "unit_price_cents", flat=True
+            )
         )
-    ) == 34
+        == 34
+    )
 
 
 def test_circuit_breaker_e_orcamento_bloqueiam_chamadas() -> None:
@@ -299,29 +304,61 @@ def test_adapters_http_mapeiam_apenas_campos_explicitos() -> None:
     APIFY_TOKEN="test-token",
     APIFY_DECISION_MAKER_ACTOR_ID="vendor/actor",
     APIFY_COST_CENTS=7,
+    APIFY_USD_RATE_CENTS=600,
+    APIFY_RUN_TIMEOUT_SECONDS=300,
+    APIFY_DATASET_PAGE_SIZE=100,
 )
 def test_adapter_apify_usa_actor_configurado_e_dataset_limpo() -> None:
     context = make_context(suffix="006")
+    call = ProviderCall.objects.create(
+        tenant=context.tenant,
+        batch=context.batch,
+        item=context.item,
+        provider="apify-decision-maker",
+        operation="enrich",
+        block=DataBlock.DECISION_MAKER,
+        idempotency_key="apify-test-call-006",
+        estimated_cost_cents=100,
+        status="REQUESTED",
+        execution_token="token-006",
+        started_at=timezone.now(),
+    )
+    context = replace(context, call_id=str(call.pk), execution_token="token-006")
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert "/acts/vendor~actor/run-sync-get-dataset-items" in str(request.url)
+        url_str = str(request.url)
         assert request.headers["Authorization"] == "Bearer test-token"
-        return httpx.Response(
-            200,
-            json=[
-                {
-                    "fullName": "Carlos Melo",
-                    "position": "Founder",
-                    "linkedin": "https://linkedin.com/in/carlos",
-                }
-            ],
-        )
+        if "/actors/vendor~actor/runs" in url_str:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "id": "run-test-001",
+                        "defaultDatasetId": "dataset-test-001",
+                        "status": "SUCCEEDED",
+                        "usageTotalUsd": "0.0116666",
+                    }
+                },
+            )
+        if "/datasets/dataset-test-001/items" in url_str:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "fullName": "Carlos Melo",
+                        "position": "Founder",
+                        "linkedin": "https://linkedin.com/in/carlos",
+                    }
+                ],
+            )
+        raise AssertionError(f"URL inesperada: {url_str}")
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = ApifyDecisionMakerAdapter(client=client).enrich(context)
     assert result.people[0].full_name == "Carlos Melo"
     assert result.people[0].socials[0].network == SocialProfile.Network.LINKEDIN
     assert result.confirmed_cost_cents == 7
+    assert result.external_request_id == "run-test-001"
 
 
 def test_api_expoe_politicas_sem_credenciais_e_inicia_enriquecimento(

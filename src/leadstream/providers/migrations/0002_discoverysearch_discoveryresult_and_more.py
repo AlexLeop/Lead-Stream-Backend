@@ -7,103 +7,162 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('providers', '0001_initial'),
-        ('tenancy', '0002_seed_internal_tenant'),
+        ("providers", "0001_initial"),
+        ("tenancy", "0002_seed_internal_tenant"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='DiscoverySearch',
+            name="DiscoverySearch",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=160)),
-                ('idempotency_key', models.CharField(max_length=128)),
-                ('filters', models.JSONField(default=dict)),
-                ('status', models.CharField(choices=[('QUEUED', 'Na fila'), ('RUNNING', 'Em execução'), ('COMPLETED', 'Concluída'), ('FAILED', 'Falhou'), ('CANCELLED', 'Cancelada')], default='QUEUED', max_length=16)),
-                ('max_results', models.PositiveIntegerField(default=10000)),
-                ('query_page_size', models.PositiveIntegerField(default=1000)),
-                ('checkpoint_offset', models.PositiveIntegerField(default=0)),
-                ('total_results', models.PositiveIntegerField(default=0)),
-                ('billed_bytes', models.PositiveBigIntegerField(default=0)),
-                ('estimated_cost_cents', models.PositiveIntegerField(default=0)),
-                ('lease_owner', models.CharField(blank=True, max_length=255)),
-                ('leased_until', models.DateTimeField(blank=True, null=True)),
-                ('dispatched_at', models.DateTimeField(blank=True, null=True)),
-                ('attempt_count', models.PositiveSmallIntegerField(default=0)),
-                ('max_attempts', models.PositiveSmallIntegerField(default=5)),
-                ('last_error_code', models.CharField(blank=True, max_length=64)),
-                ('last_error_message', models.CharField(blank=True, max_length=500)),
-                ('started_at', models.DateTimeField(blank=True, null=True)),
-                ('completed_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("name", models.CharField(max_length=160)),
+                ("idempotency_key", models.CharField(max_length=128)),
+                ("filters", models.JSONField(default=dict)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("QUEUED", "Na fila"),
+                            ("RUNNING", "Em execução"),
+                            ("COMPLETED", "Concluída"),
+                            ("FAILED", "Falhou"),
+                            ("CANCELLED", "Cancelada"),
+                        ],
+                        default="QUEUED",
+                        max_length=16,
+                    ),
+                ),
+                ("max_results", models.PositiveIntegerField(default=10000)),
+                ("query_page_size", models.PositiveIntegerField(default=1000)),
+                ("checkpoint_offset", models.PositiveIntegerField(default=0)),
+                ("total_results", models.PositiveIntegerField(default=0)),
+                ("billed_bytes", models.PositiveBigIntegerField(default=0)),
+                ("estimated_cost_cents", models.PositiveIntegerField(default=0)),
+                ("lease_owner", models.CharField(blank=True, max_length=255)),
+                ("leased_until", models.DateTimeField(blank=True, null=True)),
+                ("dispatched_at", models.DateTimeField(blank=True, null=True)),
+                ("attempt_count", models.PositiveSmallIntegerField(default=0)),
+                ("max_attempts", models.PositiveSmallIntegerField(default=5)),
+                ("last_error_code", models.CharField(blank=True, max_length=64)),
+                ("last_error_message", models.CharField(blank=True, max_length=500)),
+                ("started_at", models.DateTimeField(blank=True, null=True)),
+                ("completed_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_discovery_search',
-                'ordering': ['-created_at'],
+                "db_table": "leadstream_discovery_search",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='DiscoveryResult',
+            name="DiscoveryResult",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('rank', models.PositiveIntegerField()),
-                ('cnpj', models.CharField(max_length=14)),
-                ('legal_name', models.CharField(blank=True, max_length=255)),
-                ('trade_name', models.CharField(blank=True, max_length=255)),
-                ('registration_status', models.CharField(blank=True, max_length=64)),
-                ('primary_cnae', models.CharField(blank=True, max_length=16)),
-                ('company_size', models.CharField(blank=True, max_length=80)),
-                ('state', models.CharField(blank=True, max_length=2)),
-                ('city', models.CharField(blank=True, max_length=160)),
-                ('source_data', models.JSONField(default=dict)),
-                ('source_fingerprint', models.CharField(max_length=64)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
-                ('search', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='results', to='providers.discoverysearch')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("rank", models.PositiveIntegerField()),
+                ("cnpj", models.CharField(max_length=14)),
+                ("legal_name", models.CharField(blank=True, max_length=255)),
+                ("trade_name", models.CharField(blank=True, max_length=255)),
+                ("registration_status", models.CharField(blank=True, max_length=64)),
+                ("primary_cnae", models.CharField(blank=True, max_length=16)),
+                ("company_size", models.CharField(blank=True, max_length=80)),
+                ("state", models.CharField(blank=True, max_length=2)),
+                ("city", models.CharField(blank=True, max_length=160)),
+                ("source_data", models.JSONField(default=dict)),
+                ("source_fingerprint", models.CharField(max_length=64)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
+                (
+                    "search",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="results",
+                        to="providers.discoverysearch",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_discovery_result',
-                'ordering': ['rank', 'id'],
+                "db_table": "leadstream_discovery_result",
+                "ordering": ["rank", "id"],
             },
         ),
         migrations.AddIndex(
-            model_name='discoverysearch',
-            index=models.Index(fields=['tenant', 'status', 'created_at'], name='discovery_status_idx'),
+            model_name="discoverysearch",
+            index=models.Index(
+                fields=["tenant", "status", "created_at"], name="discovery_status_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='discoverysearch',
-            index=models.Index(fields=['status', 'leased_until'], name='discovery_lease_idx'),
+            model_name="discoverysearch",
+            index=models.Index(fields=["status", "leased_until"], name="discovery_lease_idx"),
         ),
         migrations.AddConstraint(
-            model_name='discoverysearch',
-            constraint=models.UniqueConstraint(fields=('tenant', 'idempotency_key'), name='discovery_tenant_idempotency_uniq'),
+            model_name="discoverysearch",
+            constraint=models.UniqueConstraint(
+                fields=("tenant", "idempotency_key"), name="discovery_tenant_idempotency_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='discoverysearch',
-            constraint=models.CheckConstraint(condition=models.Q(('max_results__gte', 1), ('max_results__lte', 100000)), name='discovery_max_results_range'),
+            model_name="discoverysearch",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("max_results__gte", 1), ("max_results__lte", 100000)),
+                name="discovery_max_results_range",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='discoverysearch',
-            constraint=models.CheckConstraint(condition=models.Q(('query_page_size__gte', 100), ('query_page_size__lte', 10000)), name='discovery_page_size_range'),
+            model_name="discoverysearch",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("query_page_size__gte", 100), ("query_page_size__lte", 10000)),
+                name="discovery_page_size_range",
+            ),
         ),
         migrations.AddIndex(
-            model_name='discoveryresult',
-            index=models.Index(fields=['tenant', 'search', 'rank'], name='discovery_result_rank_idx'),
+            model_name="discoveryresult",
+            index=models.Index(
+                fields=["tenant", "search", "rank"], name="discovery_result_rank_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='discoveryresult',
-            index=models.Index(fields=['tenant', 'cnpj'], name='discovery_result_cnpj_idx'),
+            model_name="discoveryresult",
+            index=models.Index(fields=["tenant", "cnpj"], name="discovery_result_cnpj_idx"),
         ),
         migrations.AddConstraint(
-            model_name='discoveryresult',
-            constraint=models.UniqueConstraint(fields=('search', 'cnpj'), name='discovery_result_cnpj_uniq'),
+            model_name="discoveryresult",
+            constraint=models.UniqueConstraint(
+                fields=("search", "cnpj"), name="discovery_result_cnpj_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='discoveryresult',
-            constraint=models.UniqueConstraint(fields=('search', 'rank'), name='discovery_result_rank_uniq'),
+            model_name="discoveryresult",
+            constraint=models.UniqueConstraint(
+                fields=("search", "rank"), name="discovery_result_rank_uniq"
+            ),
         ),
     ]

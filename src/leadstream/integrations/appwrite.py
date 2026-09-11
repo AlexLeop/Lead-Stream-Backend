@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol, Self
+from typing import Any, Protocol, Self, cast
 
 import httpx
 from django.conf import settings
@@ -68,3 +68,51 @@ def diagnose_appwrite(
     except (OSError, ValueError):
         return HealthResult("unavailable")
     return HealthResult("ok")
+
+
+class AppwriteStorageClient:
+    def __init__(self, config: AppwriteConfig) -> None:
+        self._config = config
+
+    def upload_file(
+        self,
+        *,
+        bucket_id: str,
+        file_id: str,
+        file_name: str,
+        content: bytes,
+        content_type: str = "text/csv; charset=utf-8",
+    ) -> dict[str, Any]:
+        headers = {
+            "X-Appwrite-Project": self._config.project_id,
+            "X-Appwrite-Key": self._config.api_key,
+        }
+        url = f"{self._config.endpoint}/storage/buckets/{bucket_id}/files"
+        data = {"fileId": file_id}
+        files = {"file": (file_name, content, content_type)}
+        with httpx.Client(timeout=self._config.timeout_seconds * 5) as client:
+            response = client.post(url, headers=headers, data=data, files=files)
+            response.raise_for_status()
+            return cast(dict[str, Any], response.json())
+
+    def download_file(self, *, bucket_id: str, file_id: str) -> bytes:
+        headers = {
+            "X-Appwrite-Project": self._config.project_id,
+            "X-Appwrite-Key": self._config.api_key,
+        }
+        url = f"{self._config.endpoint}/storage/buckets/{bucket_id}/files/{file_id}/download"
+        with httpx.Client(timeout=self._config.timeout_seconds * 5) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.content
+
+    def delete_file(self, *, bucket_id: str, file_id: str) -> None:
+        headers = {
+            "X-Appwrite-Project": self._config.project_id,
+            "X-Appwrite-Key": self._config.api_key,
+        }
+        url = f"{self._config.endpoint}/storage/buckets/{bucket_id}/files/{file_id}"
+        with httpx.Client(timeout=self._config.timeout_seconds * 2) as client:
+            response = client.delete(url, headers=headers)
+            if response.status_code != 404:
+                response.raise_for_status()

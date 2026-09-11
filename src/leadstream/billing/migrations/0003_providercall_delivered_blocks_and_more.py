@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('billing', '0002_billable_event_append_only'),
+        ("billing", "0002_billable_event_append_only"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='providercall',
-            name='delivered_blocks',
+            model_name="providercall",
+            name="delivered_blocks",
             field=models.JSONField(blank=True, default=list),
         ),
         migrations.AddField(
-            model_name='providercall',
-            name='latency_ms',
+            model_name="providercall",
+            name="latency_ms",
             field=models.PositiveIntegerField(default=0),
         ),
     ]

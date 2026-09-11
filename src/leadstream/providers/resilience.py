@@ -6,7 +6,7 @@ from datetime import timedelta
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Case, F, IntegerField, Sum, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -25,8 +25,11 @@ class ProviderGate:
 
 
 def _rate_limit(*, tenant: Tenant, policy: ProviderPolicy) -> None:
+    del tenant  # As credenciais atuais são globais, compartilhadas pelos tenants.
     minute = int(timezone.now().timestamp()) // 60
-    key = f"provider-rate:{tenant.pk}:{policy.provider}:{minute}"
+    key = f"provider-rate:{policy.provider}:{minute}"
+    if policy.requests_per_minute == 0:
+        raise ProviderRateLimited(f"Provedor {policy.provider} está pausado por quota zero.")
     if cache.add(key, 1, timeout=120):
         return
     try:
@@ -39,25 +42,31 @@ def _rate_limit(*, tenant: Tenant, policy: ProviderPolicy) -> None:
 
 
 def _spent(*, tenant: Tenant, policy: ProviderPolicy, batch: Batch | None) -> int:
-    today = timezone.localdate()
     queryset = ProviderCall.objects.filter(
         tenant=tenant,
         provider=policy.provider,
-        started_at__date=today,
     )
     if batch is not None:
         queryset = queryset.filter(batch=batch)
-    values = queryset.aggregate(
-        confirmed=Coalesce(Sum("confirmed_cost_cents"), 0),
-        requested=Coalesce(Sum("estimated_cost_cents"), 0),
-    )
-    return max(int(values["confirmed"]), int(values["requested"]))
+    else:
+        queryset = queryset.filter(started_at__date=timezone.localdate())
+    value = queryset.aggregate(
+        total=Coalesce(
+            Sum(
+                Case(
+                    When(status=ProviderCall.Status.REQUESTED, then=F("estimated_cost_cents")),
+                    default=F("confirmed_cost_cents"),
+                    output_field=IntegerField(),
+                )
+            ),
+            0,
+        )
+    )["total"]
+    return int(value)
 
 
 @transaction.atomic
-def acquire_provider_gate(
-    *, tenant: Tenant, policy: ProviderPolicy, batch: Batch
-) -> ProviderGate:
+def acquire_provider_gate(*, tenant: Tenant, policy: ProviderPolicy, batch: Batch) -> ProviderGate:
     if policy.tenant_id != tenant.pk or batch.tenant_id != tenant.pk:
         raise ValidationError("Política ou lote pertence a outro tenant.")
     locked = ProviderPolicy.objects.select_for_update().get(pk=policy.pk, tenant=tenant)

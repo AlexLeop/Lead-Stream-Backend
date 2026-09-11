@@ -24,3 +24,11 @@ class ProviderTemporaryError(ProviderError):
 
 class ProviderPermanentError(ProviderError):
     pass
+
+
+class ProviderPending(ProviderError):
+    """Operação remota em curso; consultar novamente sem iniciar outra execução."""
+
+
+class ProviderSubmissionUncertain(ProviderPermanentError):
+    """Envio sem confirmação: não repetir automaticamente uma operação cobrável."""

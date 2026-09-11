@@ -87,8 +87,7 @@ def _sanitize(value: object, *, key: str) -> object:
     if isinstance(value, Mapping):
         mapping = cast(Mapping[object, object], value)
         return {
-            str(item_key): _sanitize(item, key=str(item_key))
-            for item_key, item in mapping.items()
+            str(item_key): _sanitize(item, key=str(item_key)) for item_key, item in mapping.items()
         }
     if isinstance(value, (list, tuple, set, frozenset)):
         return [_sanitize(item, key=key) for item in value]

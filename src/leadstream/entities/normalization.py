@@ -24,9 +24,9 @@ def normalize_cnpj(value: str) -> str:
         raise DataValidationError("CNPJ inválido.")
 
     def check_digit(base: str, weights: tuple[int, ...]) -> str:
-        remainder = sum(
-            int(number) * weight for number, weight in zip(base, weights, strict=True)
-        ) % 11
+        remainder = (
+            sum(int(number) * weight for number, weight in zip(base, weights, strict=True)) % 11
+        )
         return "0" if remainder < 2 else str(11 - remainder)
 
     first = check_digit(digits[:12], (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2))

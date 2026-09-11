@@ -73,6 +73,4 @@ def _convert[T](
     try:
         return converter(raw)
     except (TypeError, ValueError) as exc:
-        raise ImproperlyConfigured(
-            f"A variável de ambiente {name} deve ser {type_label}."
-        ) from exc
+        raise ImproperlyConfigured(f"A variável de ambiente {name} deve ser {type_label}.") from exc

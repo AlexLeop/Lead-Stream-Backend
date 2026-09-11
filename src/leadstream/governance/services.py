@@ -129,9 +129,12 @@ def is_suppressed(*, tenant: Tenant, scope: str, value: str, now: datetime | Non
     query = Q()
     for version, digest in pairs:
         query |= Q(key_version=version, value_digest=digest)
-    return Suppression.objects.filter(tenant=tenant, scope=scope).filter(query).filter(
-        _active_query(check_time)
-    ).exists()
+    return (
+        Suppression.objects.filter(tenant=tenant, scope=scope)
+        .filter(query)
+        .filter(_active_query(check_time))
+        .exists()
+    )
 
 
 def is_observation_suppressed(observation: Observation) -> bool:
@@ -148,17 +151,13 @@ def is_observation_suppressed(observation: Observation) -> bool:
     if "email" in field:
         email = normalize_email(observation.value)
         domain = email.rsplit("@", 1)[1]
-        email_suppressed = is_suppressed(
-            tenant=tenant, scope=Suppression.Scope.EMAIL, value=email
-        )
+        email_suppressed = is_suppressed(tenant=tenant, scope=Suppression.Scope.EMAIL, value=email)
         domain_suppressed = is_suppressed(
             tenant=tenant, scope=Suppression.Scope.DOMAIN, value=domain
         )
         return email_suppressed or domain_suppressed
     if "phone" in field or "telefone" in field or "whatsapp" in field:
-        return is_suppressed(
-            tenant=tenant, scope=Suppression.Scope.PHONE, value=observation.value
-        )
+        return is_suppressed(tenant=tenant, scope=Suppression.Scope.PHONE, value=observation.value)
     return False
 
 
@@ -175,18 +174,24 @@ def apply_retention(
         status=RetentionRun.Status.RUNNING,
         started_at=check_time,
     )
-    expired = ContactPoint.objects.filter(
-        tenant=tenant,
-        expires_at__isnull=False,
-        expires_at__lte=check_time,
-    ).exclude(status=ContactPoint.Status.SUPPRESSED).update(status=ContactPoint.Status.EXPIRED)
-    stale = ContactPoint.objects.filter(
-        tenant=tenant,
-        stale_at__isnull=False,
-        stale_at__lte=check_time,
-    ).exclude(
-        status__in=(ContactPoint.Status.SUPPRESSED, ContactPoint.Status.EXPIRED)
-    ).update(status=ContactPoint.Status.STALE)
+    expired = (
+        ContactPoint.objects.filter(
+            tenant=tenant,
+            expires_at__isnull=False,
+            expires_at__lte=check_time,
+        )
+        .exclude(status=ContactPoint.Status.SUPPRESSED)
+        .update(status=ContactPoint.Status.EXPIRED)
+    )
+    stale = (
+        ContactPoint.objects.filter(
+            tenant=tenant,
+            stale_at__isnull=False,
+            stale_at__lte=check_time,
+        )
+        .exclude(status__in=(ContactPoint.Status.SUPPRESSED, ContactPoint.Status.EXPIRED))
+        .update(status=ContactPoint.Status.STALE)
+    )
     run.status = RetentionRun.Status.COMPLETED
     run.expired_marked = expired
     run.stale_marked = stale

@@ -7,72 +7,112 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('tenancy', '0002_seed_internal_tenant'),
+        ("tenancy", "0002_seed_internal_tenant"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ProviderPolicy',
+            name="ProviderPolicy",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('provider', models.SlugField(max_length=80)),
-                ('display_name', models.CharField(max_length=160)),
-                ('enabled', models.BooleanField(default=False)),
-                ('priority', models.PositiveSmallIntegerField(default=100)),
-                ('timeout_seconds', models.PositiveSmallIntegerField(default=30)),
-                ('max_retries', models.PositiveSmallIntegerField(default=3)),
-                ('requests_per_minute', models.PositiveIntegerField(default=60)),
-                ('estimated_cost_cents', models.PositiveIntegerField(default=0)),
-                ('daily_budget_cents', models.PositiveIntegerField(default=0)),
-                ('batch_budget_cents', models.PositiveIntegerField(default=0)),
-                ('failure_threshold', models.PositiveSmallIntegerField(default=5)),
-                ('recovery_seconds', models.PositiveIntegerField(default=300)),
-                ('allowed_blocks', models.JSONField(default=list)),
-                ('config', models.JSONField(blank=True, default=dict)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("provider", models.SlugField(max_length=80)),
+                ("display_name", models.CharField(max_length=160)),
+                ("enabled", models.BooleanField(default=False)),
+                ("priority", models.PositiveSmallIntegerField(default=100)),
+                ("timeout_seconds", models.PositiveSmallIntegerField(default=30)),
+                ("max_retries", models.PositiveSmallIntegerField(default=3)),
+                ("requests_per_minute", models.PositiveIntegerField(default=60)),
+                ("estimated_cost_cents", models.PositiveIntegerField(default=0)),
+                ("daily_budget_cents", models.PositiveIntegerField(default=0)),
+                ("batch_budget_cents", models.PositiveIntegerField(default=0)),
+                ("failure_threshold", models.PositiveSmallIntegerField(default=5)),
+                ("recovery_seconds", models.PositiveIntegerField(default=300)),
+                ("allowed_blocks", models.JSONField(default=list)),
+                ("config", models.JSONField(blank=True, default=dict)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_provider_policy',
-                'ordering': ['priority', 'provider'],
+                "db_table": "leadstream_provider_policy",
+                "ordering": ["priority", "provider"],
             },
         ),
         migrations.CreateModel(
-            name='ProviderHealth',
+            name="ProviderHealth",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('consecutive_failures', models.PositiveIntegerField(default=0)),
-                ('circuit_open_until', models.DateTimeField(blank=True, null=True)),
-                ('last_success_at', models.DateTimeField(blank=True, null=True)),
-                ('last_failure_at', models.DateTimeField(blank=True, null=True)),
-                ('last_error_code', models.CharField(blank=True, max_length=64)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
-                ('policy', models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name='health', to='providers.providerpolicy')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("consecutive_failures", models.PositiveIntegerField(default=0)),
+                ("circuit_open_until", models.DateTimeField(blank=True, null=True)),
+                ("last_success_at", models.DateTimeField(blank=True, null=True)),
+                ("last_failure_at", models.DateTimeField(blank=True, null=True)),
+                ("last_error_code", models.CharField(blank=True, max_length=64)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
+                (
+                    "policy",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="health",
+                        to="providers.providerpolicy",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_provider_health',
+                "db_table": "leadstream_provider_health",
             },
         ),
         migrations.AddConstraint(
-            model_name='providerpolicy',
-            constraint=models.UniqueConstraint(fields=('tenant', 'provider'), name='provider_policy_tenant_uniq'),
+            model_name="providerpolicy",
+            constraint=models.UniqueConstraint(
+                fields=("tenant", "provider"), name="provider_policy_tenant_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='providerpolicy',
-            constraint=models.CheckConstraint(condition=models.Q(('timeout_seconds__gte', 1), ('timeout_seconds__lte', 600)), name='provider_timeout_range'),
+            model_name="providerpolicy",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("timeout_seconds__gte", 1), ("timeout_seconds__lte", 600)),
+                name="provider_timeout_range",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='providerpolicy',
-            constraint=models.CheckConstraint(condition=models.Q(('failure_threshold__gte', 1)), name='provider_failure_threshold_positive'),
+            model_name="providerpolicy",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("failure_threshold__gte", 1)),
+                name="provider_failure_threshold_positive",
+            ),
         ),
         migrations.AddIndex(
-            model_name='providerhealth',
-            index=models.Index(fields=['tenant', 'circuit_open_until'], name='provider_circuit_idx'),
+            model_name="providerhealth",
+            index=models.Index(
+                fields=["tenant", "circuit_open_until"], name="provider_circuit_idx"
+            ),
         ),
     ]

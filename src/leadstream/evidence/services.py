@@ -162,8 +162,9 @@ def canonicalize(
     eligible = [item for item in eligible if not suppression_check(item)]
     selected = max(eligible, key=_rank) if eligible else None
     current_version = (
-        CanonicalDecision.objects.filter(tenant=tenant, target=target, field_path=field_path)
-        .aggregate(max_version=Max("version"))["max_version"]
+        CanonicalDecision.objects.filter(
+            tenant=tenant, target=target, field_path=field_path
+        ).aggregate(max_version=Max("version"))["max_version"]
         or 0
     )
     status = selected.status if selected is not None else EvidenceStatus.ABSENT

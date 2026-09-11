@@ -36,6 +36,8 @@ $env:DATABASE_URL = "postgresql://quality:quality@localhost:5432/quality"
 $env:CELERY_BROKER_URL = "amqp://quality:quality@localhost:5672//"
 $env:REDIS_URL = "redis://localhost:6379/15"
 $env:DJANGO_SECURE_SSL_REDIRECT = "true"
+$env:DATA_HASH_KEY = "quality-check-only-data-hash-key"
+$env:DATA_HASH_KEY_VERSION = "v1"
 Invoke-QualityStep "Configuração de produção" {
     & $python manage.py check --deploy --fail-level WARNING
 }

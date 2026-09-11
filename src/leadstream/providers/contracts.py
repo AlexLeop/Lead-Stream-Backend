@@ -66,6 +66,8 @@ class ProviderContext:
     item: BatchItem
     cnpj: str
     missing_blocks: frozenset[str]
+    call_id: str | None = None
+    execution_token: str = ""
 
 
 @dataclass(frozen=True)

@@ -132,9 +132,7 @@ class BatchItem(TenantOwnedModel):
     class Meta:
         db_table = "leadstream_batch_item"
         constraints: ClassVar[list[models.BaseConstraint]] = [
-            models.UniqueConstraint(
-                fields=("batch", "row_number"), name="batch_item_row_uniq"
-            )
+            models.UniqueConstraint(fields=("batch", "row_number"), name="batch_item_row_uniq")
         ]
         indexes: ClassVar[list[models.Index]] = [
             models.Index(fields=("tenant", "batch", "status"), name="batch_item_status_idx"),
@@ -242,3 +240,53 @@ class ProcessingAttempt(TenantOwnedModel):
     def clean(self) -> None:
         if self.chunk.tenant_id != self.tenant_id:
             raise ValidationError({"chunk": "Tentativa e chunk devem pertencer ao mesmo tenant."})
+
+
+class BatchExport(TenantOwnedModel):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pendente"
+        PROCESSING = "PROCESSING", "Processando"
+        COMPLETED = "COMPLETED", "Concluído"
+        FAILED = "FAILED", "Falhou"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(Batch, on_delete=models.CASCADE, related_name="exports")
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.PENDING)
+
+    file_backend = models.CharField(max_length=32, default="LOCAL")
+    file_key = models.CharField(max_length=512, blank=True)
+    file_name = models.CharField(max_length=255, blank=True)
+    content_type = models.CharField(max_length=128, default="text/csv; charset=utf-8")
+    size_bytes = models.PositiveBigIntegerField(default=0)
+    sha256 = models.CharField(max_length=64, blank=True)
+
+    selected_columns = models.JSONField(default=list, blank=True)
+    selected_statuses = models.JSONField(default=list, blank=True)
+    lead_level = models.CharField(max_length=32, default="DECISION_MAKER")
+
+    total_rows = models.PositiveIntegerField(default=0)
+    total_companies = models.PositiveIntegerField(default=0)
+    total_decision_makers = models.PositiveIntegerField(default=0)
+    total_direct_contacts = models.PositiveIntegerField(default=0)
+
+    manifest_data = models.JSONField(default=dict, blank=True)
+    export_hash = models.CharField(max_length=64, blank=True)
+
+    last_error_code = models.CharField(max_length=64, blank=True)
+    last_error_message = models.CharField(max_length=500, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "leadstream_batch_export"
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=("tenant", "batch", "status"), name="batch_export_status_idx"),
+            models.Index(fields=("tenant", "export_hash"), name="batch_export_hash_idx"),
+        ]
+
+    def clean(self) -> None:
+        if self.batch.tenant_id != self.tenant_id:
+            raise ValidationError({"batch": "Exportação e lote devem pertencer ao mesmo tenant."})

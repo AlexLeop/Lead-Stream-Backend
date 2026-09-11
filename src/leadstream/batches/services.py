@@ -54,9 +54,7 @@ class ChunkExecution:
 def _validate_idempotency_key(value: str) -> str:
     key = value.strip()
     if len(key) < 8 or len(key) > 128:
-        raise ValidationError(
-            {"Idempotency-Key": "Informe uma chave entre 8 e 128 caracteres."}
-        )
+        raise ValidationError({"Idempotency-Key": "Informe uma chave entre 8 e 128 caracteres."})
     return key
 
 
@@ -77,9 +75,7 @@ def _publish_chunk(chunk_id: UUID | str) -> None:
     chunk = BatchChunk.objects.filter(pk=chunk_id).values("stage", "status").first()
     if chunk is None or chunk["status"] != BatchChunk.Status.PENDING:
         return
-    BatchChunk.objects.filter(pk=chunk_id).update(
-        dispatched_at=timezone.now()
-    )
+    BatchChunk.objects.filter(pk=chunk_id).update(dispatched_at=timezone.now())
     try:
         if chunk["stage"] == BatchChunk.Stage.ENRICHMENT:
             process_enrichment_chunk_task.delay(str(chunk_id))
@@ -157,7 +153,7 @@ def _terminal_item_for_result(result_state: str) -> tuple[str, str, str]:
 
 
 def _parse_and_store_items(batch: Batch) -> tuple[int, int, int, int]:
-    seen: dict[str, BatchItem] = {}
+    seen: dict[str, UUID] = {}
     buffer: list[BatchItem] = []
     total = corrected = invalid = duplicates = 0
     with open_input(batch.input_key) as raw:
@@ -178,10 +174,10 @@ def _parse_and_store_items(batch: Batch) -> tuple[int, int, int, int]:
             original = original_json(raw_row)
             result = normalize_row(original)
             state = result.state
-            duplicate_of = None
+            duplicate_of_id: UUID | None = None
             if result.fingerprint and result.fingerprint in seen:
                 state = BatchItem.HygieneState.DUPLICATE
-                duplicate_of = seen[result.fingerprint]
+                duplicate_of_id = seen[result.fingerprint]
                 duplicates += 1
             status, error_code, error_message = _terminal_item_for_result(state)
             item = BatchItem(
@@ -194,14 +190,14 @@ def _parse_and_store_items(batch: Batch) -> tuple[int, int, int, int]:
                 applied_rules=result.rules,
                 issues=result.issues,
                 fingerprint=result.fingerprint,
-                duplicate_of=duplicate_of,
+                duplicate_of_id=duplicate_of_id,
                 status=status,
                 error_code=error_code,
                 error_message=error_message,
                 processed_at=timezone.now() if status in TERMINAL_ITEM_STATUSES else None,
             )
-            if result.fingerprint and duplicate_of is None:
-                seen[result.fingerprint] = item
+            if result.fingerprint and duplicate_of_id is None:
+                seen[result.fingerprint] = item.id
             if state == BatchItem.HygieneState.CORRECTED:
                 corrected += 1
             elif state == BatchItem.HygieneState.INVALID:
@@ -242,7 +238,11 @@ def ingest_batch(batch_id: UUID | str) -> Batch:
         batch.completed_at = timezone.now()
         batch.save(
             update_fields=(
-                "status", "last_error_code", "last_error_message", "completed_at", "updated_at"
+                "status",
+                "last_error_code",
+                "last_error_message",
+                "completed_at",
+                "updated_at",
             )
         )
         return batch

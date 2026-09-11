@@ -7,135 +7,313 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('batches', '0002_batch_last_error_code_batch_last_error_message'),
-        ('evidence', '0002_observation_append_only'),
-        ('tenancy', '0002_seed_internal_tenant'),
+        ("batches", "0002_batch_last_error_code_batch_last_error_message"),
+        ("evidence", "0002_observation_append_only"),
+        ("tenancy", "0002_seed_internal_tenant"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='PriceBook',
+            name="PriceBook",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('version', models.PositiveIntegerField()),
-                ('name', models.CharField(max_length=160)),
-                ('currency', models.CharField(default='BRL', max_length=3)),
-                ('effective_at', models.DateTimeField()),
-                ('retired_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("version", models.PositiveIntegerField()),
+                ("name", models.CharField(max_length=160)),
+                ("currency", models.CharField(default="BRL", max_length=3)),
+                ("effective_at", models.DateTimeField()),
+                ("retired_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_price_book',
-                'ordering': ['-version'],
+                "db_table": "leadstream_price_book",
+                "ordering": ["-version"],
             },
         ),
         migrations.CreateModel(
-            name='PriceRule',
+            name="PriceRule",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('block', models.CharField(choices=[('COMPANY_REGISTRY', 'Dados cadastrais'), ('HYGIENE', 'Higienização'), ('DECISION_MAKER', 'Decisor'), ('DIRECT_EMAIL', 'E-mail direto'), ('DIRECT_PHONE', 'Telefone direto'), ('WHATSAPP', 'WhatsApp validado'), ('SOCIAL_PROFILES', 'Redes sociais'), ('BANKING', 'Instituição bancária')], max_length=32)),
-                ('unit_price_cents', models.PositiveIntegerField()),
-                ('minimum_confidence', models.PositiveSmallIntegerField(default=80)),
-                ('refresh_window_days', models.PositiveIntegerField(default=30)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('price_book', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='rules', to='billing.pricebook')),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                (
+                    "block",
+                    models.CharField(
+                        choices=[
+                            ("COMPANY_REGISTRY", "Dados cadastrais"),
+                            ("HYGIENE", "Higienização"),
+                            ("DECISION_MAKER", "Decisor"),
+                            ("DIRECT_EMAIL", "E-mail direto"),
+                            ("DIRECT_PHONE", "Telefone direto"),
+                            ("WHATSAPP", "WhatsApp validado"),
+                            ("SOCIAL_PROFILES", "Redes sociais"),
+                            ("BANKING", "Instituição bancária"),
+                        ],
+                        max_length=32,
+                    ),
+                ),
+                ("unit_price_cents", models.PositiveIntegerField()),
+                ("minimum_confidence", models.PositiveSmallIntegerField(default=80)),
+                ("refresh_window_days", models.PositiveIntegerField(default=30)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "price_book",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="rules",
+                        to="billing.pricebook",
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_price_rule',
+                "db_table": "leadstream_price_rule",
             },
         ),
         migrations.CreateModel(
-            name='BillableEvent',
+            name="BillableEvent",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('block', models.CharField(choices=[('COMPANY_REGISTRY', 'Dados cadastrais'), ('HYGIENE', 'Higienização'), ('DECISION_MAKER', 'Decisor'), ('DIRECT_EMAIL', 'E-mail direto'), ('DIRECT_PHONE', 'Telefone direto'), ('WHATSAPP', 'WhatsApp validado'), ('SOCIAL_PROFILES', 'Redes sociais'), ('BANKING', 'Instituição bancária')], max_length=32)),
-                ('dedup_key', models.CharField(max_length=64)),
-                ('delivered_value_fingerprint', models.CharField(max_length=64)),
-                ('evidence_status', models.CharField(max_length=32)),
-                ('confidence', models.PositiveSmallIntegerField()),
-                ('unit_price_cents', models.PositiveIntegerField()),
-                ('currency', models.CharField(max_length=3)),
-                ('delivered_at', models.DateTimeField()),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('batch', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='billable_events', to='batches.batch')),
-                ('decision', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='billable_events', to='evidence.canonicaldecision')),
-                ('item', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='billable_events', to='batches.batchitem')),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
-                ('price_rule', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='events', to='billing.pricerule')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                (
+                    "block",
+                    models.CharField(
+                        choices=[
+                            ("COMPANY_REGISTRY", "Dados cadastrais"),
+                            ("HYGIENE", "Higienização"),
+                            ("DECISION_MAKER", "Decisor"),
+                            ("DIRECT_EMAIL", "E-mail direto"),
+                            ("DIRECT_PHONE", "Telefone direto"),
+                            ("WHATSAPP", "WhatsApp validado"),
+                            ("SOCIAL_PROFILES", "Redes sociais"),
+                            ("BANKING", "Instituição bancária"),
+                        ],
+                        max_length=32,
+                    ),
+                ),
+                ("dedup_key", models.CharField(max_length=64)),
+                ("delivered_value_fingerprint", models.CharField(max_length=64)),
+                ("evidence_status", models.CharField(max_length=32)),
+                ("confidence", models.PositiveSmallIntegerField()),
+                ("unit_price_cents", models.PositiveIntegerField()),
+                ("currency", models.CharField(max_length=3)),
+                ("delivered_at", models.DateTimeField()),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "batch",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="billable_events",
+                        to="batches.batch",
+                    ),
+                ),
+                (
+                    "decision",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="billable_events",
+                        to="evidence.canonicaldecision",
+                    ),
+                ),
+                (
+                    "item",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="billable_events",
+                        to="batches.batchitem",
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
+                (
+                    "price_rule",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="events",
+                        to="billing.pricerule",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_billable_event',
+                "db_table": "leadstream_billable_event",
             },
         ),
         migrations.CreateModel(
-            name='ProviderCall',
+            name="ProviderCall",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('provider', models.CharField(max_length=80)),
-                ('operation', models.CharField(max_length=120)),
-                ('block', models.CharField(choices=[('COMPANY_REGISTRY', 'Dados cadastrais'), ('HYGIENE', 'Higienização'), ('DECISION_MAKER', 'Decisor'), ('DIRECT_EMAIL', 'E-mail direto'), ('DIRECT_PHONE', 'Telefone direto'), ('WHATSAPP', 'WhatsApp validado'), ('SOCIAL_PROFILES', 'Redes sociais'), ('BANKING', 'Instituição bancária')], max_length=32)),
-                ('idempotency_key', models.CharField(max_length=160)),
-                ('status', models.CharField(choices=[('REQUESTED', 'Solicitada'), ('SUCCEEDED', 'Concluída'), ('ABSENT', 'Sem resultado'), ('FAILED', 'Falhou'), ('BLOCKED_BUDGET', 'Bloqueada por orçamento')], default='REQUESTED', max_length=24)),
-                ('estimated_cost_cents', models.PositiveIntegerField(default=0)),
-                ('confirmed_cost_cents', models.PositiveIntegerField(default=0)),
-                ('currency', models.CharField(default='BRL', max_length=3)),
-                ('external_request_id', models.CharField(blank=True, max_length=255)),
-                ('error_code', models.CharField(blank=True, max_length=64)),
-                ('started_at', models.DateTimeField()),
-                ('completed_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('batch', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='provider_calls', to='batches.batch')),
-                ('item', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='provider_calls', to='batches.batchitem')),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("provider", models.CharField(max_length=80)),
+                ("operation", models.CharField(max_length=120)),
+                (
+                    "block",
+                    models.CharField(
+                        choices=[
+                            ("COMPANY_REGISTRY", "Dados cadastrais"),
+                            ("HYGIENE", "Higienização"),
+                            ("DECISION_MAKER", "Decisor"),
+                            ("DIRECT_EMAIL", "E-mail direto"),
+                            ("DIRECT_PHONE", "Telefone direto"),
+                            ("WHATSAPP", "WhatsApp validado"),
+                            ("SOCIAL_PROFILES", "Redes sociais"),
+                            ("BANKING", "Instituição bancária"),
+                        ],
+                        max_length=32,
+                    ),
+                ),
+                ("idempotency_key", models.CharField(max_length=160)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("REQUESTED", "Solicitada"),
+                            ("SUCCEEDED", "Concluída"),
+                            ("ABSENT", "Sem resultado"),
+                            ("FAILED", "Falhou"),
+                            ("BLOCKED_BUDGET", "Bloqueada por orçamento"),
+                        ],
+                        default="REQUESTED",
+                        max_length=24,
+                    ),
+                ),
+                ("estimated_cost_cents", models.PositiveIntegerField(default=0)),
+                ("confirmed_cost_cents", models.PositiveIntegerField(default=0)),
+                ("currency", models.CharField(default="BRL", max_length=3)),
+                ("external_request_id", models.CharField(blank=True, max_length=255)),
+                ("error_code", models.CharField(blank=True, max_length=64)),
+                ("started_at", models.DateTimeField()),
+                ("completed_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "batch",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="provider_calls",
+                        to="batches.batch",
+                    ),
+                ),
+                (
+                    "item",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="provider_calls",
+                        to="batches.batchitem",
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_provider_call',
+                "db_table": "leadstream_provider_call",
             },
         ),
         migrations.AddConstraint(
-            model_name='pricebook',
-            constraint=models.UniqueConstraint(fields=('tenant', 'version'), name='price_book_version_uniq'),
+            model_name="pricebook",
+            constraint=models.UniqueConstraint(
+                fields=("tenant", "version"), name="price_book_version_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='pricerule',
-            constraint=models.UniqueConstraint(fields=('price_book', 'block'), name='price_rule_book_block_uniq'),
+            model_name="pricerule",
+            constraint=models.UniqueConstraint(
+                fields=("price_book", "block"), name="price_rule_book_block_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='pricerule',
-            constraint=models.CheckConstraint(condition=models.Q(('minimum_confidence__lte', 100)), name='price_rule_confidence_max'),
+            model_name="pricerule",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("minimum_confidence__lte", 100)),
+                name="price_rule_confidence_max",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='pricerule',
-            constraint=models.CheckConstraint(condition=models.Q(('refresh_window_days__gte', 1)), name='price_rule_refresh_positive'),
+            model_name="pricerule",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("refresh_window_days__gte", 1)),
+                name="price_rule_refresh_positive",
+            ),
         ),
         migrations.AddIndex(
-            model_name='billableevent',
-            index=models.Index(fields=['tenant', 'batch', 'block'], name='billable_batch_block_idx'),
+            model_name="billableevent",
+            index=models.Index(
+                fields=["tenant", "batch", "block"], name="billable_batch_block_idx"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='billableevent',
-            constraint=models.UniqueConstraint(fields=('tenant', 'dedup_key'), name='billable_event_dedup_uniq'),
+            model_name="billableevent",
+            constraint=models.UniqueConstraint(
+                fields=("tenant", "dedup_key"), name="billable_event_dedup_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='billableevent',
-            constraint=models.CheckConstraint(condition=models.Q(('confidence__lte', 100)), name='billable_event_confidence_max'),
+            model_name="billableevent",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("confidence__lte", 100)), name="billable_event_confidence_max"
+            ),
         ),
         migrations.AddIndex(
-            model_name='providercall',
-            index=models.Index(fields=['tenant', 'provider', 'status'], name='provider_call_status_idx'),
+            model_name="providercall",
+            index=models.Index(
+                fields=["tenant", "provider", "status"], name="provider_call_status_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='providercall',
-            index=models.Index(fields=['tenant', 'batch', 'block'], name='provider_call_batch_idx'),
+            model_name="providercall",
+            index=models.Index(fields=["tenant", "batch", "block"], name="provider_call_batch_idx"),
         ),
         migrations.AddConstraint(
-            model_name='providercall',
-            constraint=models.UniqueConstraint(fields=('tenant', 'idempotency_key'), name='provider_call_idempotency_uniq'),
+            model_name="providercall",
+            constraint=models.UniqueConstraint(
+                fields=("tenant", "idempotency_key"), name="provider_call_idempotency_uniq"
+            ),
         ),
     ]

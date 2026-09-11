@@ -7,6 +7,8 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from leadstream.batches.views import ExportDetailView, ExportDownloadView
+
 urlpatterns = [
     path("health/", include("leadstream.common.urls")),
     path("api/v1/schema/", SpectacularAPIView.as_view(), name="schema"),
@@ -25,6 +27,17 @@ urlpatterns = [
     path("api/v1/dados/", include("leadstream.evidence.urls")),
     path("api/v1/dados/", include("leadstream.governance.urls")),
     path("api/v1/lotes/", include("leadstream.batches.urls")),
+    path(
+        "api/v1/exportacoes/<uuid:export_id>/",
+        ExportDetailView.as_view(),
+        name="root-export-detail",
+    ),
+    path(
+        "api/v1/exportacoes/<uuid:export_id>/download/",
+        ExportDownloadView.as_view(),
+        name="root-export-download",
+    ),
     path("api/v1/", include("leadstream.billing.urls")),
     path("api/v1/", include("leadstream.providers.urls")),
+    path("api/v1/", include("leadstream.integrations.urls")),
 ]

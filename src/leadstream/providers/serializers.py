@@ -22,14 +22,34 @@ class ProviderPolicySerializer(serializers.ModelSerializer[ProviderPolicy]):
     class Meta:
         model = ProviderPolicy
         fields = (
-            "id", "provider", "display_name", "enabled", "configured", "priority",
-            "timeout_seconds", "max_retries", "requests_per_minute", "estimated_cost_cents",
-            "daily_budget_cents", "batch_budget_cents", "failure_threshold", "recovery_seconds",
-            "allowed_blocks", "config", "consecutive_failures", "circuit_open_until",
-            "created_at", "updated_at",
+            "id",
+            "provider",
+            "display_name",
+            "enabled",
+            "configured",
+            "priority",
+            "timeout_seconds",
+            "max_retries",
+            "requests_per_minute",
+            "estimated_cost_cents",
+            "daily_budget_cents",
+            "batch_budget_cents",
+            "failure_threshold",
+            "recovery_seconds",
+            "allowed_blocks",
+            "config",
+            "consecutive_failures",
+            "circuit_open_until",
+            "created_at",
+            "updated_at",
         )
         read_only_fields = (
-            "id", "provider", "display_name", "configured", "created_at", "updated_at",
+            "id",
+            "provider",
+            "display_name",
+            "configured",
+            "created_at",
+            "updated_at",
         )
 
     def get_configured(self, obj: ProviderPolicy) -> bool:

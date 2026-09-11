@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from django.conf import settings
 from django.db import transaction
@@ -105,11 +105,9 @@ def _evidence(
     )
 
 
-def _observe(
-    *, record: SourceRecord, target: Any, observation: FieldObservation
-) -> Observation:
+def _observe(*, record: SourceRecord, target: Any, observation: FieldObservation) -> Observation:
     value_hash = fingerprint_value(observation.value)
-    existing = Observation.objects.filter(
+    existing: Observation | None = Observation.objects.filter(
         tenant=record.tenant,
         target=target,
         source_record=record,
@@ -117,7 +115,7 @@ def _observe(
         value_fingerprint=value_hash,
     ).first()
     if existing is not None:
-        return cast(Observation, existing)
+        return existing
     evidence = _evidence(
         record=record,
         value=observation.value,
@@ -186,13 +184,13 @@ def _relationship_qualification(value: str) -> str:
     choices = {choice.casefold(): choice for choice in Relationship.Qualification.values}
     if value.casefold() in choices:
         return choices[value.casefold()]
-    if "representante" in key or "legal representative" in key:
+    if key in {"representante legal", "legal representative"}:
         return Relationship.Qualification.LEGAL_REPRESENTATIVE
-    if any(term in key for term in ("administrador", "administrator", "diretor", "director")):
+    if key in {"administrador", "administradora", "administrator", "socio-administrador"}:
         return Relationship.Qualification.ADMINISTRATOR
-    if any(term in key for term in ("socio", "partner", "owner", "proprietario")):
+    if key in {"socio", "socia", "partner", "owner", "proprietario", "proprietaria"}:
         return Relationship.Qualification.PARTNER
-    if any(term in key for term in ("funcionario", "employee", "gerente", "manager")):
+    if key in {"funcionario", "funcionaria", "employee"}:
         return Relationship.Qualification.EMPLOYEE
     return Relationship.Qualification.OTHER
 
@@ -249,16 +247,36 @@ def _persist_person(
             evidence_status=candidate.evidence_status,
             method="API" if record.source.category == Source.Category.COMMERCIAL else "DATASET",
             source_url=candidate.source_url,
-            external_id=candidate.external_key,
+            external_id=fingerprint_value(candidate.external_key),
         ),
     )
-    _quality_update(
-        qualities,
-        DataBlock.DECISION_MAKER,
-        candidate.evidence_status,
-        candidate.confidence,
-        (candidate.full_name, candidate.qualification),
-    )
+    has_decision_role = (
+        candidate.buying_role and not candidate.buying_role_is_inferred
+    ) or candidate.qualification.casefold() in {
+        "administrador",
+        "administradora",
+        "administrator",
+        "socio-administrador",
+        "socio",
+        "socia",
+        "partner",
+        "owner",
+        "proprietario",
+        "proprietaria",
+        "diretor",
+        "diretora",
+        "director",
+        "representante legal",
+        "legal representative",
+    }
+    if has_decision_role:
+        _quality_update(
+            qualities,
+            DataBlock.DECISION_MAKER,
+            candidate.evidence_status,
+            candidate.confidence,
+            (candidate.full_name, candidate.buying_role or candidate.qualification),
+        )
     for contact_candidate in candidate.contacts:
         scope = (
             Suppression.Scope.EMAIL
@@ -296,8 +314,10 @@ def _persist_person(
             _quality_update(
                 qualities,
                 _contact_block(contact_candidate.kind),
-                contact_status,
-                contact_candidate.confidence,
+                contact_status
+                if candidate.evidence_status == EvidenceStatus.CONFIRMED
+                else candidate.evidence_status,
+                min(contact_candidate.confidence, candidate.confidence),
                 contact_candidate.value,
             )
     for social in candidate.socials:
@@ -329,8 +349,10 @@ def _persist_person(
             _quality_update(
                 qualities,
                 DataBlock.SOCIAL_PROFILES,
-                social_status,
-                social.confidence,
+                social_status
+                if candidate.evidence_status == EvidenceStatus.CONFIRMED
+                else candidate.evidence_status,
+                min(social.confidence, candidate.confidence),
                 social.profile_url,
             )
 

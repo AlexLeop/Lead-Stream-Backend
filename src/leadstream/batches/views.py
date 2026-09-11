@@ -3,8 +3,8 @@ from __future__ import annotations
 from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.http import Http404
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from django.http import FileResponse, Http404, HttpResponse
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -16,14 +16,19 @@ from leadstream.common.api import reject_tenant_override
 from leadstream.common.pagination import StandardPagination
 from leadstream.tenancy.services import get_internal_tenant
 
-from .models import Batch, BatchChunk, BatchItem
+from .exporter import DEFAULT_EXPORT_COLUMNS, compute_export_hash
+from .models import Batch, BatchChunk, BatchExport, BatchItem
 from .serializers import (
     BatchChunkSerializer,
+    BatchExportRequestSerializer,
+    BatchExportSerializer,
     BatchItemSerializer,
     BatchSerializer,
     BatchUploadSerializer,
 )
 from .services import cancel_batch, create_csv_batch, pause_batch, resume_batch
+from .storage import open_export
+from .tasks import generate_export_task
 
 
 def _get_batch(batch_id: UUID) -> Batch:
@@ -55,10 +60,15 @@ class BatchCollectionView(APIView):
     @extend_schema(
         request=BatchUploadSerializer,
         responses={200: BatchSerializer, 202: BatchSerializer},
-        parameters=[OpenApiParameter(
-            "Idempotency-Key", str, location=OpenApiParameter.HEADER, required=True,
-            description="Chave estável da operação de upload.",
-        )],
+        parameters=[
+            OpenApiParameter(
+                "Idempotency-Key",
+                str,
+                location=OpenApiParameter.HEADER,
+                required=True,
+                description="Chave estável da operação de upload.",
+            )
+        ],
         tags=["Lotes"],
     )
     def post(self, request: Request) -> Response:
@@ -68,8 +78,10 @@ class BatchCollectionView(APIView):
         data = serializer.validated_data
         try:
             result = create_csv_batch(
-                tenant=get_internal_tenant(), name=data.get("name", ""),
-                upload=data["arquivo"], idempotency_key=request.headers.get("Idempotency-Key", ""),
+                tenant=get_internal_tenant(),
+                name=data.get("name", ""),
+                upload=data["arquivo"],
+                idempotency_key=request.headers.get("Idempotency-Key", ""),
                 chunk_size=data["chunk_size"],
             )
         except DjangoValidationError as exc:
@@ -99,8 +111,11 @@ class BatchChunksView(APIView):
     @extend_schema(responses=BatchChunkSerializer(many=True), tags=["Lotes"])
     def get(self, request: Request, batch_id: UUID) -> Response:
         batch = _get_batch(batch_id)
-        queryset = (BatchChunk.objects.filter(batch=batch, tenant=batch.tenant)
-                    .prefetch_related("attempts").order_by("sequence"))
+        queryset = (
+            BatchChunk.objects.filter(batch=batch, tenant=batch.tenant)
+            .prefetch_related("attempts")
+            .order_by("sequence")
+        )
         paginator = StandardPagination()
         page = paginator.paginate_queryset(queryset, request, view=self)
         return paginator.get_paginated_response(BatchChunkSerializer(page, many=True).data)
@@ -134,3 +149,106 @@ class CancelBatchView(APIView):
         del request
         batch = cancel_batch(tenant=get_internal_tenant(), batch_id=batch_id)
         return Response(BatchSerializer(batch).data)
+
+
+class BatchExportCreateView(APIView):
+    @extend_schema(
+        request=BatchExportRequestSerializer,
+        responses={200: BatchExportSerializer, 202: BatchExportSerializer},
+        tags=["Lotes — exportação"],
+    )
+    def post(self, request: Request, batch_id: UUID) -> Response:
+        batch = _get_batch(batch_id)
+        serializer = BatchExportRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        columns = list(data.get("columns") or DEFAULT_EXPORT_COLUMNS)
+        statuses = list(data.get("statuses") or [])
+        lead_level = str(data.get("lead_level") or "DECISION_MAKER")
+
+        export_hash = compute_export_hash(
+            batch_id=batch.id,
+            columns=columns,
+            statuses=statuses,
+            lead_level=lead_level,
+            updated_at=batch.updated_at.isoformat(),
+        )
+
+        cached = BatchExport.objects.filter(
+            tenant=batch.tenant,
+            batch=batch,
+            export_hash=export_hash,
+            status=BatchExport.Status.COMPLETED,
+        ).first()
+        if cached:
+            return Response(BatchExportSerializer(cached).data, status=status.HTTP_200_OK)
+
+        export = BatchExport.objects.create(
+            tenant=batch.tenant,
+            batch=batch,
+            status=BatchExport.Status.PENDING,
+            selected_columns=columns,
+            selected_statuses=statuses,
+            lead_level=lead_level,
+            export_hash=export_hash,
+        )
+
+        generate_export_task.delay(str(export.id))
+        return Response(BatchExportSerializer(export).data, status=status.HTTP_202_ACCEPTED)
+
+
+class BatchExportListView(APIView):
+    @extend_schema(responses=BatchExportSerializer(many=True), tags=["Lotes — exportação"])
+    def get(self, request: Request, batch_id: UUID) -> Response:
+        batch = _get_batch(batch_id)
+        queryset = BatchExport.objects.filter(batch=batch, tenant=batch.tenant).order_by(
+            "-created_at"
+        )
+        paginator = StandardPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        return paginator.get_paginated_response(BatchExportSerializer(page, many=True).data)
+
+
+class ExportDetailView(APIView):
+    @extend_schema(responses=BatchExportSerializer, tags=["Exportações"])
+    def get(self, request: Request, export_id: UUID) -> Response:
+        del request
+        try:
+            export = BatchExport.objects.get(pk=export_id, tenant=get_internal_tenant())
+        except BatchExport.DoesNotExist as exc:
+            raise Http404("Exportação não encontrada.") from exc
+        return Response(BatchExportSerializer(export).data)
+
+
+class ExportDownloadView(APIView):
+    @extend_schema(
+        responses={
+            (200, "text/csv"): OpenApiResponse(
+                description="Arquivo CSV em pt-BR com dados comerciais completos."
+            )
+        },
+        tags=["Exportações"],
+    )
+    def get(self, request: Request, export_id: UUID) -> HttpResponse | FileResponse:
+
+        del request
+        try:
+            export = BatchExport.objects.get(pk=export_id, tenant=get_internal_tenant())
+        except BatchExport.DoesNotExist as exc:
+            raise Http404("Exportação não encontrada.") from exc
+
+        if export.status != BatchExport.Status.COMPLETED:
+            raise ValidationError({"erro": "Exportação ainda não foi concluída."})
+
+        file_obj = open_export(export.file_backend, export.file_key)
+        response: HttpResponse | FileResponse
+        if isinstance(file_obj, bytes):
+            response = HttpResponse(file_obj, content_type=export.content_type)
+        else:
+            response = FileResponse(file_obj, content_type=export.content_type)
+
+        response["Content-Disposition"] = f'attachment; filename="{export.file_name}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-transform"
+        return response

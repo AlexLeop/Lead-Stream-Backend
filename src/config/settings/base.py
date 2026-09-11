@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "leadstream.batches.apps.BatchesConfig",
     "leadstream.billing.apps.BillingConfig",
     "leadstream.providers.apps.ProvidersConfig",
+    "leadstream.integrations.apps.IntegrationsConfig",
 ]
 
 MIDDLEWARE = [
@@ -96,6 +97,7 @@ APPWRITE_ENDPOINT = env("APPWRITE_ENDPOINT")
 APPWRITE_PROJECT_ID = env("APPWRITE_PROJECT_ID")
 APPWRITE_API_KEY = env("APPWRITE_API_KEY")
 APPWRITE_TIMEOUT_SECONDS = env_int("APPWRITE_TIMEOUT_SECONDS", default=3)
+APPWRITE_STORAGE_BUCKET_EXPORTS = env("APPWRITE_STORAGE_BUCKET_EXPORTS", default="exports")
 DATA_HASH_KEY = env("DATA_HASH_KEY", default="dev-only-data-hash-key")
 DATA_HASH_KEY_VERSION = env("DATA_HASH_KEY_VERSION", default="v1")
 DATA_HASH_PREVIOUS_KEYS = env_list("DATA_HASH_PREVIOUS_KEYS", default=[])
@@ -109,9 +111,7 @@ OPEN_CNPJ_DISCOVERY_SQL = env("OPEN_CNPJ_DISCOVERY_SQL")
 BIGQUERY_MAXIMUM_BYTES_BILLED = env_int("BIGQUERY_MAXIMUM_BYTES_BILLED", default=10_000_000_000)
 BIGQUERY_TIMEOUT_SECONDS = env_int("BIGQUERY_TIMEOUT_SECONDS", default=60)
 BIGQUERY_COST_CENTS_PER_TIB = env_int("BIGQUERY_COST_CENTS_PER_TIB", default=3500)
-BIGDATACORP_BASE_URL = env(
-    "BIGDATACORP_BASE_URL", default="https://plataforma.bigdatacorp.com.br"
-)
+BIGDATACORP_BASE_URL = env("BIGDATACORP_BASE_URL", default="https://plataforma.bigdatacorp.com.br")
 BIGDATACORP_ACCESS_TOKEN = env("BIGDATACORP_ACCESS_TOKEN")
 BIGDATACORP_TOKEN_ID = env("BIGDATACORP_TOKEN_ID")
 BIGDATACORP_DATASETS = env("BIGDATACORP_DATASETS", default="basic_data,relationships")
@@ -123,6 +123,10 @@ APIFY_DECISION_MAKER_ACTOR_ID = env("APIFY_DECISION_MAKER_ACTOR_ID")
 APIFY_TIMEOUT_SECONDS = env_int("APIFY_TIMEOUT_SECONDS", default=300)
 APIFY_MAX_RESULTS_PER_COMPANY = env_int("APIFY_MAX_RESULTS_PER_COMPANY", default=10)
 APIFY_COST_CENTS = env_int("APIFY_COST_CENTS", default=0)
+APIFY_USD_RATE_CENTS = env_int("APIFY_USD_RATE_CENTS", default=600)
+APIFY_RUN_TIMEOUT_SECONDS = env_int("APIFY_RUN_TIMEOUT_SECONDS", default=300)
+APIFY_DATASET_PAGE_SIZE = env_int("APIFY_DATASET_PAGE_SIZE", default=100)
+APIFY_POLL_SECONDS = env_int("APIFY_POLL_SECONDS", default=10)
 OPEN_ENRICH_URL = env("OPEN_ENRICH_URL")
 OPEN_ENRICH_TOKEN = env("OPEN_ENRICH_TOKEN")
 OPEN_ENRICH_COST_CENTS = env_int("OPEN_ENRICH_COST_CENTS", default=0)
@@ -163,6 +167,6 @@ SPECTACULAR_SETTINGS = {
         "ContactPointScopeEnum": "leadstream.entities.models.CONTACT_POINT_SCOPE_CHOICES",
         "SuppressionScopeEnum": "leadstream.governance.models.SUPPRESSION_SCOPE_CHOICES",
         "DataBlockEnum": "leadstream.billing.models.DATA_BLOCK_CHOICES",
-        "ProviderCallStatusEnum": "leadstream.billing.models.ProviderCall.Status.choices",
+        "ProviderCallStatusEnum": "leadstream.billing.models.PROVIDER_CALL_STATUS_CHOICES",
     },
 }

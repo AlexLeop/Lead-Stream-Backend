@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('batches', '0001_initial'),
+        ("batches", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='batch',
-            name='last_error_code',
+            model_name="batch",
+            name="last_error_code",
             field=models.CharField(blank=True, max_length=64),
         ),
         migrations.AddField(
-            model_name='batch',
-            name='last_error_message',
+            model_name="batch",
+            name="last_error_message",
             field=models.CharField(blank=True, max_length=500),
         ),
     ]

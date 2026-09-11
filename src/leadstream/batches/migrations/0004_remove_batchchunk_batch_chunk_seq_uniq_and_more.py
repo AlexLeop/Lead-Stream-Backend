@@ -4,49 +4,64 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('batches', '0003_batchchunk_dispatched_at_and_more'),
-        ('tenancy', '0002_seed_internal_tenant'),
+        ("batches", "0003_batchchunk_dispatched_at_and_more"),
+        ("tenancy", "0002_seed_internal_tenant"),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='batchchunk',
-            name='batch_chunk_seq_uniq',
+            model_name="batchchunk",
+            name="batch_chunk_seq_uniq",
         ),
         migrations.AddField(
-            model_name='batchchunk',
-            name='requested_blocks',
+            model_name="batchchunk",
+            name="requested_blocks",
             field=models.JSONField(default=list),
         ),
         migrations.AddField(
-            model_name='batchchunk',
-            name='stage',
-            field=models.CharField(choices=[('HYGIENE', 'Higienização'), ('ENRICHMENT', 'Enriquecimento')], default='HYGIENE', max_length=16),
+            model_name="batchchunk",
+            name="stage",
+            field=models.CharField(
+                choices=[("HYGIENE", "Higienização"), ("ENRICHMENT", "Enriquecimento")],
+                default="HYGIENE",
+                max_length=16,
+            ),
         ),
         migrations.AddField(
-            model_name='batchitem',
-            name='delivered_blocks',
+            model_name="batchitem",
+            name="delivered_blocks",
             field=models.JSONField(default=list),
         ),
         migrations.AddField(
-            model_name='batchitem',
-            name='enrichment_errors',
+            model_name="batchitem",
+            name="enrichment_errors",
             field=models.JSONField(default=list),
         ),
         migrations.AddField(
-            model_name='batchitem',
-            name='enrichment_status',
-            field=models.CharField(choices=[('PENDING', 'Pendente'), ('SUCCEEDED', 'Concluído'), ('PARTIAL', 'Parcial'), ('FAILED', 'Falhou'), ('SKIPPED', 'Ignorado')], default='PENDING', max_length=16),
+            model_name="batchitem",
+            name="enrichment_status",
+            field=models.CharField(
+                choices=[
+                    ("PENDING", "Pendente"),
+                    ("SUCCEEDED", "Concluído"),
+                    ("PARTIAL", "Parcial"),
+                    ("FAILED", "Falhou"),
+                    ("SKIPPED", "Ignorado"),
+                ],
+                default="PENDING",
+                max_length=16,
+            ),
         ),
         migrations.AddField(
-            model_name='batchitem',
-            name='missing_blocks',
+            model_name="batchitem",
+            name="missing_blocks",
             field=models.JSONField(default=list),
         ),
         migrations.AddConstraint(
-            model_name='batchchunk',
-            constraint=models.UniqueConstraint(fields=('batch', 'stage', 'sequence'), name='batch_chunk_stage_seq_uniq'),
+            model_name="batchchunk",
+            constraint=models.UniqueConstraint(
+                fields=("batch", "stage", "sequence"), name="batch_chunk_stage_seq_uniq"
+            ),
         ),
     ]

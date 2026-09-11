@@ -54,11 +54,9 @@ def create_price_book(
         raise ValidationError("Cada bloco pode aparecer apenas uma vez na tabela.")
     if not rule_data:
         raise ValidationError("A tabela de preços exige ao menos uma regra.")
+    Tenant.objects.select_for_update().get(pk=tenant.pk)
     current_version = (
-        PriceBook.objects.select_for_update()
-        .filter(tenant=tenant)
-        .aggregate(value=Max("version"))["value"]
-        or 0
+        PriceBook.objects.filter(tenant=tenant).aggregate(value=Max("version"))["value"] or 0
     )
     effective = effective_at or timezone.now()
     PriceBook.objects.filter(
@@ -136,9 +134,7 @@ def register_provider_call(
 ) -> ProviderCall:
     if batch.tenant_id != tenant.pk or (item and item.tenant_id != tenant.pk):
         raise ValidationError("Chamada contém lote ou item de outro tenant.")
-    existing = ProviderCall.objects.filter(
-        tenant=tenant, idempotency_key=idempotency_key
-    ).first()
+    existing = ProviderCall.objects.filter(tenant=tenant, idempotency_key=idempotency_key).first()
     if existing is not None:
         return existing
     call = ProviderCall(
@@ -188,12 +184,9 @@ def finalize_provider_call(
     return locked
 
 
-def _dedup_key(
-    *, tenant: Tenant, item: BatchItem, rule: PriceRule, fingerprint: str, delivered_at: datetime
-) -> str:
-    window_seconds = rule.refresh_window_days * 86_400
-    bucket = int(delivered_at.timestamp()) // window_seconds
-    material = f"{tenant.pk}:{item.pk}:{rule.block}:{fingerprint}:{bucket}"
+def _dedup_key(*, tenant: Tenant, item: BatchItem, rule: PriceRule) -> str:
+    # Uma compra por bloco e item do lote; novos valores/fallbacks não são novas compras.
+    material = f"{tenant.pk}:{item.pk}:{rule.block}"
     return hashlib.sha256(material.encode()).hexdigest()
 
 
@@ -216,6 +209,10 @@ def record_billable_delivery(
         raise ValidationError("Decisão canônica pertence a outro tenant.")
     if evidence_status not in ELIGIBLE_EVIDENCE_STATUSES:
         return None
+    BatchItem.objects.select_for_update().get(pk=item.pk, tenant=tenant, batch=batch)
+    existing = BillableEvent.objects.filter(tenant=tenant, item=item, block=block).first()
+    if existing is not None:
+        return cast(BillableEvent, existing)
     price_book = active_price_book(tenant=tenant, at=delivered_at)
     try:
         rule = price_book.rules.get(block=block)
@@ -228,8 +225,6 @@ def record_billable_delivery(
         tenant=tenant,
         item=item,
         rule=rule,
-        fingerprint=delivered_value_fingerprint,
-        delivered_at=event_time,
     )
     existing = BillableEvent.objects.filter(tenant=tenant, dedup_key=key).first()
     if existing is not None:
@@ -259,10 +254,12 @@ def record_billable_delivery(
     return event
 
 
+@transaction.atomic
 def refresh_batch_financials(batch_id: UUID | str) -> None:
-    cost = ProviderCall.objects.filter(
-        batch_id=batch_id, status=ProviderCall.Status.SUCCEEDED
-    ).aggregate(value=Coalesce(Sum("confirmed_cost_cents"), 0))["value"]
+    Batch.objects.select_for_update().get(pk=batch_id)
+    cost = ProviderCall.objects.filter(batch_id=batch_id).aggregate(
+        value=Coalesce(Sum("confirmed_cost_cents"), 0)
+    )["value"]
     revenue = BillableEvent.objects.filter(batch_id=batch_id).aggregate(
         value=Coalesce(Sum("unit_price_cents"), 0)
     )["value"]
@@ -282,9 +279,7 @@ def financial_summary(*, tenant: Tenant, batch: Batch) -> dict[str, Any]:
     }
     block_cost = {
         row["block"]: {"calls": row["calls"], "cost_cents": row["cost"]}
-        for row in ProviderCall.objects.filter(
-            batch=batch, tenant=tenant, status=ProviderCall.Status.SUCCEEDED
-        )
+        for row in ProviderCall.objects.filter(batch=batch, tenant=tenant)
         .values("block")
         .annotate(calls=Count("id"), cost=Sum("confirmed_cost_cents"))
     }
@@ -320,7 +315,13 @@ def financial_summary(*, tenant: Tenant, batch: Batch) -> dict[str, Any]:
     profit = int(batch.revenue_cents) - int(batch.cost_cents)
     margin = round((profit / batch.revenue_cents) * 100, 2) if batch.revenue_cents else 0.0
     delivered_count = BillableEvent.objects.filter(batch=batch, tenant=tenant).count()
-    coverage = round((delivered_count / batch.total_rows) * 100, 2) if batch.total_rows else 0.0
+    delivered_items = (
+        BillableEvent.objects.filter(batch=batch, tenant=tenant)
+        .values("item_id")
+        .distinct()
+        .count()
+    )
+    coverage = round((delivered_items / batch.total_rows) * 100, 2) if batch.total_rows else 0.0
     return {
         "batch_id": str(batch.pk),
         "currency": "BRL",

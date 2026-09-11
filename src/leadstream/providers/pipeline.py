@@ -152,8 +152,7 @@ def process_enrichment_chunk(
                 locked_item.save()
                 BatchChunk.objects.filter(pk=chunk.pk).update(
                     checkpoint_row=item.row_number,
-                    leased_until=timezone.now()
-                    + timedelta(seconds=settings.BATCH_LEASE_SECONDS),
+                    leased_until=timezone.now() + timedelta(seconds=settings.BATCH_LEASE_SECONDS),
                 )
         with transaction.atomic():
             locked_chunk = BatchChunk.objects.select_for_update().get(pk=chunk.pk)
