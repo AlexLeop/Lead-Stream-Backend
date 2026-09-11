@@ -90,9 +90,22 @@ class CanonicalLeadBuilder:
             or f"EMPRESA {digits}"
         )
         nome_fantasia = norm.get("nome_fantasia") or orig.get("nome_fantasia") or ""
-        situacao_cadastral = (
+        raw_sit = str(
             norm.get("situacao_cadastral") or orig.get("situacao_cadastral") or "ATIVA"
-        ).upper()
+        ).strip()
+        sit_map = {
+            "1": "NULA",
+            "01": "NULA",
+            "2": "ATIVA",
+            "02": "ATIVA",
+            "3": "SUSPENSA",
+            "03": "SUSPENSA",
+            "4": "INAPTA",
+            "04": "INAPTA",
+            "8": "BAIXADA",
+            "08": "BAIXADA",
+        }
+        situacao_cadastral = sit_map.get(raw_sit, raw_sit.upper())
 
         data_abertura_date = parse_date_safely(
             norm.get("data_inicio_atividade")
@@ -254,6 +267,20 @@ class CanonicalLeadBuilder:
         # 8. Decision Makers / QSA
         decision_makers_qsa: list[dict[str, Any]] = []
         raw_qsa = norm.get("qsa") or orig.get("qsa") or []
+        if not raw_qsa and item.entity_id:
+            from leadstream.entities.models import Relationship
+
+            db_rels = Relationship.objects.filter(
+                company__entity=item.entity
+            ).select_related("person")
+            for r in db_rels:
+                raw_qsa.append(
+                    {
+                        "nome_socio": r.person.full_name,
+                        "qualificacao_socio": r.qualification,
+                        "cargo": r.observed_title,
+                    }
+                )
         primary_decisor_linkedin: str | None = None
 
         if isinstance(raw_qsa, list):
@@ -280,16 +307,13 @@ class CanonicalLeadBuilder:
                 celular_whatsapp = telefones[0]["numero"] if telefones else None
                 email_corp = emails[0]["endereco"] if emails else None
 
-                # Resolve LinkedIn for decision maker
+                # Resolve LinkedIn for decision maker ONLY if observed (never fabricate)
                 socio_linkedin = (
                     socio.get("linkedin_url")
                     or socio.get("linkedin")
                     or norm.get("linkedin_decisor")
-                    or norm.get("linkedin_url")
+                    or None
                 )
-                if not socio_linkedin and nome_socio:
-                    slug = slugify_name(nome_socio)
-                    socio_linkedin = f"https://www.linkedin.com/in/{slug}"
 
                 if not primary_decisor_linkedin and socio_linkedin:
                     primary_decisor_linkedin = socio_linkedin
@@ -391,19 +415,7 @@ class CanonicalLeadBuilder:
                     "tempo_relacionamento_anos": float(idade_anos or 1.5),
                 }
             )
-        else:
-            bancos_list.append(
-                {
-                    "codigo_compensacao": "260",
-                    "nome_banco": "Nu Pagamentos S.A. (Nubank)",
-                    "tipo_relacionamento": "CONTA_CORRENTE_PRINCIPAL",
-                    "chave_pix_ativa": True,
-                    "tipo_chave_pix": "CNPJ",
-                    "chave_pix": digits,
-                    "operacoes_cambio_ativas": False,
-                    "tempo_relacionamento_anos": float(idade_anos or 1.5),
-                }
-            )
+        # If no bank institutions were observed or provided, bancos_list remains empty []
 
         # 11. Meta
         canon_id = f"canon_{uuid.uuid4()}"
@@ -561,12 +573,7 @@ class CanonicalLeadBuilder:
                 "tecnologias_detectadas": norm.get("tecnologias_detectadas") or [],
                 "redes_sociais": {
                     "linkedin_decisor": primary_decisor_linkedin,
-                    "linkedin_company": norm.get("linkedin_company")
-                    or (
-                        f"https://www.linkedin.com/company/{slugify_name(razao_social)}"
-                        if razao_social
-                        else None
-                    ),
+                    "linkedin_company": norm.get("linkedin_company") or None,
                     "instagram": norm.get("instagram"),
                     "facebook": norm.get("facebook"),
                 },

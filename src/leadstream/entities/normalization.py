@@ -92,8 +92,20 @@ def normalize_phone_br(value: str) -> str:
     return f"+{digits}"
 
 
+def _json_default(obj: Any) -> str:
+    if hasattr(obj, "isoformat"):
+        return str(obj.isoformat())
+    return str(obj)
+
+
 def canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=_json_default,
+    )
 
 
 def fingerprint_value(value: Any) -> str:

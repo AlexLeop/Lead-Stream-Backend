@@ -382,6 +382,29 @@ def persist_provider_result(
         },
     )
     qualities: dict[str, BlockQuality] = {}
+    normalized_updates: dict[str, Any] = dict(item.normalized_data or {})
+    field_to_norm_key = {
+        "company.legal_name": "razao_social",
+        "company.trade_name": "nome_fantasia",
+        "company.registration_status": "situacao_cadastral",
+        "company.primary_cnae": "cnae_fiscal",
+        "company.secondary_cnaes": "cnaes_secundarios",
+        "company.city": "municipio",
+        "company.state": "uf",
+        "company.tipo_logradouro": "tipo_logradouro",
+        "company.logradouro": "logradouro",
+        "company.numero": "numero",
+        "company.complemento": "complemento",
+        "company.bairro": "bairro",
+        "company.cep": "cep",
+        "company.capital_social": "capital_social",
+        "company.porte": "porte",
+        "company.natureza_juridica": "natureza_juridica",
+        "company.data_inicio_atividade": "data_inicio_atividade",
+        "company.data_situacao_cadastral": "data_situacao_cadastral",
+        "company.motivo_situacao_cadastral": "motivo_situacao_cadastral",
+        "company.codigo_municipio_ibge": "codigo_municipio_ibge",
+    }
     for observation in result.observations:
         _observe(record=record, target=item.entity, observation=observation)
         if observation.field_path.startswith("company."):
@@ -401,6 +424,16 @@ def persist_provider_result(
             elif observation.field_path == "company.registration_status" and observation.value:
                 company.registration_status = str(observation.value)
                 company.save(update_fields=["registration_status", "updated_at"])
+            norm_key = field_to_norm_key.get(observation.field_path)
+            if norm_key and observation.value not in (None, ""):
+                normalized_updates[norm_key] = observation.value
+
+    qsa_list: list[dict[str, Any]] = list(normalized_updates.get("qsa") or [])
+    existing_qsa_names = {
+        str(entry.get("nome_socio") or entry.get("nome") or "").strip().upper()
+        for entry in qsa_list
+        if isinstance(entry, dict)
+    }
     for candidate in result.people:
         _persist_person(
             item=item,
@@ -409,4 +442,35 @@ def persist_provider_result(
             candidate=candidate,
             qualities=qualities,
         )
+        cand_name = candidate.full_name.strip()
+        if cand_name and cand_name.upper() not in existing_qsa_names:
+            socio_entry: dict[str, Any] = {
+                "nome_socio": cand_name,
+                "qualificacao_socio": candidate.qualification,
+                "faixa_etaria": None,
+            }
+            for soc in candidate.socials:
+                if soc.network.upper() == "LINKEDIN":
+                    socio_entry["linkedin_url"] = soc.profile_url
+            for cont in candidate.contacts:
+                if (
+                    cont.kind == ContactPoint.Kind.EMAIL
+                    and "correio_eletronico" not in normalized_updates
+                ):
+                    normalized_updates["correio_eletronico"] = cont.value
+                    normalized_updates["email"] = cont.value
+                elif (
+                    cont.kind in (ContactPoint.Kind.PHONE, ContactPoint.Kind.WHATSAPP)
+                    and "ddd_telefone_1" not in normalized_updates
+                ):
+                    normalized_updates["ddd_telefone_1"] = cont.value
+                    normalized_updates["telefone"] = cont.value
+            qsa_list.append(socio_entry)
+            existing_qsa_names.add(cand_name.upper())
+
+    if qsa_list:
+        normalized_updates["qsa"] = qsa_list
+
+    item.normalized_data = normalized_updates
+    item.save(update_fields=["normalized_data", "updated_at"])
     return qualities

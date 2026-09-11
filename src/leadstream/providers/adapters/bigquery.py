@@ -112,11 +112,35 @@ class BigQueryOpenCNPJAdapter:
             "company.trade_name": ("nome_fantasia", "trade_name"),
             "company.registration_status": ("situacao_cadastral", "registration_status"),
             "company.primary_cnae": ("cnae_fiscal", "cnae_principal", "primary_cnae"),
+            "company.secondary_cnaes": (
+                "cnaes_secundarios",
+                "cnae_fiscal_secundaria",
+                "secondary_cnaes",
+            ),
             "company.city": ("municipio", "cidade", "city"),
             "company.state": ("uf", "estado", "state"),
+            "company.tipo_logradouro": ("tipo_logradouro",),
+            "company.logradouro": ("logradouro",),
+            "company.numero": ("numero",),
+            "company.complemento": ("complemento",),
+            "company.bairro": ("bairro",),
+            "company.cep": ("cep",),
+            "company.capital_social": ("capital_social",),
+            "company.porte": ("porte",),
+            "company.natureza_juridica": ("natureza_juridica",),
+            "company.data_inicio_atividade": ("data_inicio_atividade",),
+            "company.data_situacao_cadastral": ("data_situacao_cadastral",),
+            "company.motivo_situacao_cadastral": ("motivo_situacao_cadastral",),
+            "company.codigo_municipio_ibge": ("codigo_municipio_ibge", "id_municipio"),
         }
         for field_path, aliases in field_map.items():
             value = pick(row, *aliases)
+            if hasattr(value, "isoformat"):
+                value = str(value.isoformat())
+            elif isinstance(value, (int, float)):
+                pass
+            elif hasattr(value, "is_finite"):  # Decimal
+                value = float(value)
             if value not in (None, "", []):
                 observations.append(
                     FieldObservation(
