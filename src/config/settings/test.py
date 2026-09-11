@@ -5,9 +5,11 @@ import dj_database_url
 from leadstream.common.env import env
 
 from .base import *  # noqa: F403
+from .base import SIMPLE_JWT
 
 DEBUG = False
-SECRET_KEY = "test-only-secret-key"
+SECRET_KEY = "test-only-secret-key-that-is-at-least-64-bytes-long-for-hmac-sha256-compliance"
+SIMPLE_JWT["SIGNING_KEY"] = SECRET_KEY
 ALLOWED_HOSTS = ["testserver", "localhost"]
 TEST_DATABASE_URL = env("TEST_DATABASE_URL")
 DATABASES = (
