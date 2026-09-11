@@ -14,16 +14,19 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from leadstream.batches.models import Batch, BatchItem
 from leadstream.common.api import resolve_tenant
 from leadstream.security.authentication import ApiKeyUser, CombinedAuthentication
 from leadstream.security.crypto import generate_api_key
-from leadstream.security.models import APIKey, SecurityAuditLog
+from leadstream.security.models import APIKey, SecurityAuditLog, WorkspaceMembership, WorkspaceRole
 from leadstream.security.permissions import IsTenantMember, IsWorkspaceAdmin
 from leadstream.security.serializers import (
     APIKeyCreatedResponseSerializer,
     APIKeyCreateSerializer,
     APIKeyReadSerializer,
+    AuthMeResponseSerializer,
     SecurityAuditLogSerializer,
+    SwitchWorkspaceSerializer,
     TokenRevokeSerializer,
 )
 from leadstream.security.throttling import AuthRateThrottle, AuthRefreshRateThrottle
@@ -268,3 +271,270 @@ class SecurityAuditLogListView(APIView):
         logs = SecurityAuditLog.objects.filter(tenant=tenant).order_by("-timestamp")
         serializer = SecurityAuditLogSerializer(logs[:200], many=True)
         return Response({"results": serializer.data, "count": logs.count()})
+
+
+ROLE_PERMISSIONS: dict[str, list[str]] = {
+    "SUPER_ADMIN": [
+        "batches:view",
+        "batches:create",
+        "batches:export",
+        "leads:view",
+        "leads:enrich",
+        "integrations:manage",
+        "security:manage_keys",
+        "security:view_audit",
+        "workspaces:manage",
+    ],
+    WorkspaceRole.ADMIN: [
+        "batches:view",
+        "batches:create",
+        "batches:export",
+        "leads:view",
+        "leads:enrich",
+        "integrations:manage",
+        "security:manage_keys",
+        "security:view_audit",
+    ],
+    WorkspaceRole.OPERATOR: [
+        "batches:view",
+        "batches:create",
+        "batches:export",
+        "leads:view",
+        "leads:enrich",
+        "integrations:view",
+    ],
+    WorkspaceRole.READ_ONLY: [
+        "batches:view",
+        "batches:export",
+        "leads:view",
+    ],
+}
+
+
+@extend_schema(
+    tags=["Autenticação"],
+    summary="Consultar Perfil do Usuário e Workspace Ativo",
+    responses={200: AuthMeResponseSerializer},
+)
+class AuthMeView(APIView):
+    """Retorna os dados do operador/chave autenticado, perfil, workspace ativo e permissões."""
+
+    authentication_classes = (CombinedAuthentication,)
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request: Request) -> Response:
+        tenant = resolve_tenant(request)
+
+        if isinstance(request.user, ApiKeyUser):
+            role = request.user.role
+            permissions = ROLE_PERMISSIONS.get(role, ["batches:view", "leads:view"])
+            user_data = {
+                "id": str(request.user.api_key.id),
+                "username": request.user.username,
+                "email": None,
+                "first_name": "",
+                "last_name": "",
+                "is_superuser": False,
+                "is_staff": False,
+            }
+            auth_type = "API_KEY"
+            active_workspace_data = {
+                "id": tenant.id,
+                "name": tenant.name,
+                "slug": tenant.slug,
+                "role": role,
+                "is_owner": False,
+                "stats": {
+                    "total_batches": Batch.objects.filter(tenant=tenant).count(),
+                    "total_leads_processed": BatchItem.objects.filter(batch__tenant=tenant).count(),
+                    "active_api_keys": APIKey.objects.filter(tenant=tenant, is_active=True).count(),
+                },
+            }
+            workspaces_list = [
+                {
+                    "id": tenant.id,
+                    "name": tenant.name,
+                    "slug": tenant.slug,
+                    "role": role,
+                    "is_active": tenant.is_active,
+                    "is_current": True,
+                }
+            ]
+        elif getattr(request.user, "is_superuser", False):
+            role = "SUPER_ADMIN"
+            permissions = ROLE_PERMISSIONS["SUPER_ADMIN"]
+            user_data = {
+                "id": str(request.user.pk),
+                "username": request.user.username,
+                "email": request.user.email,
+                "first_name": request.user.first_name,
+                "last_name": request.user.last_name,
+                "is_superuser": True,
+                "is_staff": request.user.is_staff,
+            }
+            auth_type = "JWT"
+            all_tenants = Tenant.objects.filter(is_active=True).order_by("name")
+            workspaces_list = [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "slug": t.slug,
+                    "role": "SUPER_ADMIN",
+                    "is_active": t.is_active,
+                    "is_current": (t.id == tenant.id),
+                }
+                for t in all_tenants
+            ]
+            active_workspace_data = {
+                "id": tenant.id,
+                "name": tenant.name,
+                "slug": tenant.slug,
+                "role": "SUPER_ADMIN",
+                "is_owner": True,
+                "stats": {
+                    "total_batches": Batch.objects.filter(tenant=tenant).count(),
+                    "total_leads_processed": BatchItem.objects.filter(batch__tenant=tenant).count(),
+                    "active_api_keys": APIKey.objects.filter(tenant=tenant, is_active=True).count(),
+                },
+            }
+        else:
+            memberships = (
+                WorkspaceMembership.objects.filter(user=request.user, is_active=True)
+                .select_related("tenant")
+                .order_by("tenant__name")
+            )
+            current_membership = getattr(request, "workspace_membership", None)
+            current_role = current_membership.role if current_membership else WorkspaceRole.OPERATOR
+            permissions = ROLE_PERMISSIONS.get(current_role, ["batches:view", "leads:view"])
+
+            user_data = {
+                "id": str(request.user.pk),
+                "username": request.user.username,
+                "email": request.user.email,
+                "first_name": request.user.first_name,
+                "last_name": request.user.last_name,
+                "is_superuser": False,
+                "is_staff": request.user.is_staff,
+            }
+            auth_type = "JWT"
+            workspaces_list = [
+                {
+                    "id": m.tenant.id,
+                    "name": m.tenant.name,
+                    "slug": m.tenant.slug,
+                    "role": m.role,
+                    "is_active": m.is_active,
+                    "is_current": (m.tenant_id == tenant.id),
+                }
+                for m in memberships
+            ]
+            active_workspace_data = {
+                "id": tenant.id,
+                "name": tenant.name,
+                "slug": tenant.slug,
+                "role": current_role,
+                "is_owner": (current_role == WorkspaceRole.ADMIN),
+                "stats": {
+                    "total_batches": Batch.objects.filter(tenant=tenant).count(),
+                    "total_leads_processed": BatchItem.objects.filter(batch__tenant=tenant).count(),
+                    "active_api_keys": APIKey.objects.filter(tenant=tenant, is_active=True).count(),
+                },
+            }
+
+        payload = {
+            "user": user_data,
+            "auth_type": auth_type,
+            "active_workspace": active_workspace_data,
+            "workspaces": workspaces_list,
+            "permissions": permissions,
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["Autenticação"],
+    summary="Alternar Workspace Ativo",
+    request=SwitchWorkspaceSerializer,
+    responses={
+        200: OpenApiResponse(description="Workspace alterado com sucesso."),
+        400: OpenApiResponse(description="Dados inválidos ou cliente autenticado via API Key."),
+        403: OpenApiResponse(description="Usuário não possui acesso ao workspace informado."),
+        404: OpenApiResponse(description="Workspace não encontrado."),
+    },
+)
+class SwitchWorkspaceView(APIView):
+    """Permite a operadores autenticados via JWT alternar seu workspace ativo em tempo real."""
+
+    authentication_classes = (CombinedAuthentication,)
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request: Request) -> Response:
+        if isinstance(request.user, ApiKeyUser):
+            return Response(
+                {"detail": "Chaves de API são fixadas ao seu workspace de emissão."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = SwitchWorkspaceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        workspace_id = serializer.validated_data.get("workspace_id")
+        slug = serializer.validated_data.get("slug")
+
+        if workspace_id:
+            target_tenant = Tenant.objects.filter(id=workspace_id, is_active=True).first()
+        else:
+            target_tenant = Tenant.objects.filter(slug=slug, is_active=True).first()
+
+        if not target_tenant:
+            return Response(
+                {"detail": "Workspace não encontrado ou inativo."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if request.user.is_superuser:
+            role = "SUPER_ADMIN"
+        else:
+            membership = WorkspaceMembership.objects.filter(
+                user=request.user,
+                tenant=target_tenant,
+                is_active=True,
+            ).first()
+            if not membership:
+                return Response(
+                    {
+                        "detail": "Você não possui acesso a este workspace.",
+                        "code": "WORKSPACE_ACCESS_DENIED",
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            role = membership.role
+
+        refresh = RefreshToken.for_user(request.user)
+        refresh["tenant_id"] = str(target_tenant.id)
+        access = refresh.access_token
+        access["tenant_id"] = str(target_tenant.id)
+
+        log_security_event(
+            request=request,
+            action="WORKSPACE_SWITCH",
+            status_code=status.HTTP_200_OK,
+            tenant=target_tenant,
+            details={"target_tenant_id": str(target_tenant.id), "target_slug": target_tenant.slug},
+        )
+
+        return Response(
+            {
+                "message": f"Workspace alterado para '{target_tenant.name}'.",
+                "active_workspace": {
+                    "id": str(target_tenant.id),
+                    "name": target_tenant.name,
+                    "slug": target_tenant.slug,
+                    "role": role,
+                },
+                "access": str(access),
+                "refresh": str(refresh),
+            },
+            status=status.HTTP_200_OK,
+        )
+

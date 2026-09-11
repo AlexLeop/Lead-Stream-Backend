@@ -94,3 +94,52 @@ class SecurityAuditLogSerializer(serializers.ModelSerializer[SecurityAuditLog]):
             "details",
         )
         read_only_fields = fields
+
+
+class UserProfileSerializer(serializers.Serializer[dict[str, Any]]):
+    id = serializers.CharField()
+    username = serializers.CharField()
+    email = serializers.EmailField(allow_blank=True, allow_null=True)
+    first_name = serializers.CharField(allow_blank=True)
+    last_name = serializers.CharField(allow_blank=True)
+    is_superuser = serializers.BooleanField()
+    is_staff = serializers.BooleanField()
+
+
+class WorkspaceSummarySerializer(serializers.Serializer[dict[str, Any]]):
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    role = serializers.CharField()
+    is_active = serializers.BooleanField()
+    is_current = serializers.BooleanField(default=False)
+
+
+class ActiveWorkspaceDetailSerializer(serializers.Serializer[dict[str, Any]]):
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    role = serializers.CharField()
+    is_owner = serializers.BooleanField(default=False)
+    stats = serializers.DictField(required=False, default=dict)
+
+
+class AuthMeResponseSerializer(serializers.Serializer[dict[str, Any]]):
+    user = UserProfileSerializer()
+    auth_type = serializers.CharField()
+    active_workspace = ActiveWorkspaceDetailSerializer()
+    workspaces = serializers.ListField(child=WorkspaceSummarySerializer())
+    permissions = serializers.ListField(child=serializers.CharField())
+
+
+class SwitchWorkspaceSerializer(serializers.Serializer[dict[str, Any]]):
+    workspace_id = serializers.UUIDField(required=False, allow_null=True)
+    slug = serializers.CharField(required=False, allow_blank=True, max_length=63)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        if not attrs.get("workspace_id") and not attrs.get("slug"):
+            raise serializers.ValidationError(
+                {"detail": "Informe 'workspace_id' ou 'slug' do workspace."}
+            )
+        return attrs
+
