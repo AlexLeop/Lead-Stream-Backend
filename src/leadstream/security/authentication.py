@@ -146,10 +146,9 @@ class CombinedAuthentication(BaseAuthentication):
             request.tenant = tenant  # type: ignore[attr-defined]
             request.workspace_membership = None  # type: ignore[attr-defined]
         else:
-            memberships = (
-                WorkspaceMembership.objects.filter(user=user, is_active=True)
-                .select_related("tenant")
-            )
+            memberships = WorkspaceMembership.objects.filter(
+                user=user, is_active=True
+            ).select_related("tenant")
             if tenant_header:
                 if _is_uuid(tenant_header):
                     membership = memberships.filter(tenant__id=tenant_header).first()

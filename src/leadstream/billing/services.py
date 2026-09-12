@@ -354,11 +354,7 @@ def get_or_create_wallet(tenant: Tenant) -> CreditWallet:
     O tenant interno de administração possui créditos ilimitados.
     """
     with transaction.atomic():
-        wallet = (
-            CreditWallet.objects.select_for_update()
-            .filter(tenant=tenant)
-            .first()
-        )
+        wallet = CreditWallet.objects.select_for_update().filter(tenant=tenant).first()
         if wallet:
             return wallet
 
@@ -400,10 +396,7 @@ def deposit_credits(
         raise ValidationError("O valor do depósito deve ser estritamente positivo.")
 
     with transaction.atomic():
-        locked_wallet = (
-            CreditWallet.objects.select_for_update()
-            .get(id=wallet.id)
-        )
+        locked_wallet = CreditWallet.objects.select_for_update().get(id=wallet.id)
         locked_wallet.balance += amount
         locked_wallet.save(update_fields=["balance", "updated_at"])
 
@@ -430,10 +423,7 @@ def hold_credits(
         raise ValidationError("O valor da reserva deve ser estritamente positivo.")
 
     with transaction.atomic():
-        locked_wallet = (
-            CreditWallet.objects.select_for_update()
-            .get(id=wallet.id)
-        )
+        locked_wallet = CreditWallet.objects.select_for_update().get(id=wallet.id)
 
         if not locked_wallet.is_unlimited and locked_wallet.balance < amount:
             raise ValidationError(
@@ -478,17 +468,11 @@ def capture_and_release(
         raise ValidationError("O valor faturado não pode ser negativo.")
 
     with transaction.atomic():
-        locked_res = (
-            CreditReservation.objects.select_for_update()
-            .get(id=reservation.id)
-        )
+        locked_res = CreditReservation.objects.select_for_update().get(id=reservation.id)
         if locked_res.status != CreditReservation.Status.ACTIVE:
             raise ValidationError("Apenas reservas ativas podem ser liquidadas.")
 
-        locked_wallet = (
-            CreditWallet.objects.select_for_update()
-            .get(id=locked_res.wallet_id)
-        )
+        locked_wallet = CreditWallet.objects.select_for_update().get(id=locked_res.wallet_id)
 
         reserved = locked_res.amount
         capture_val = min(actual_amount, reserved)
@@ -536,4 +520,3 @@ def capture_and_release(
             )
 
         return capture_tx, release_tx
-

@@ -54,11 +54,7 @@ def verify_webhook_signature(
 
     # Formato moderno com timestamp anti-replay
     if signature_header.startswith("t="):
-        parts = dict(
-            item.split("=", 1)
-            for item in signature_header.split(",")
-            if "=" in item
-        )
+        parts = dict(item.split("=", 1) for item in signature_header.split(",") if "=" in item)
         timestamp_str = parts.get("t")
         candidate_sig = parts.get("v1")
 
@@ -76,9 +72,7 @@ def verify_webhook_signature(
 
         expected_header = generate_webhook_signature(payload_bytes, secret, timestamp=timestamp)
         expected_parts = dict(
-            item.split("=", 1)
-            for item in expected_header.split(",")
-            if "=" in item
+            item.split("=", 1) for item in expected_header.split(",") if "=" in item
         )
         expected_sig = expected_parts.get("v1", "")
         return hmac.compare_digest(candidate_sig, expected_sig)

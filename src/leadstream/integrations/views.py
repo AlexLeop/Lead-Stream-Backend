@@ -234,9 +234,7 @@ class CRMOutboxStatusView(APIView):
         messages_qs = CRMOutboxMessage.objects.filter(tenant=tenant)
 
         counts_dict = dict(
-            messages_qs.values("status")
-            .annotate(total=Count("id"))
-            .values_list("status", "total")
+            messages_qs.values("status").annotate(total=Count("id")).values_list("status", "total")
         )
         pending = counts_dict.get(OutboxStatus.PENDING, 0)
         processing = counts_dict.get(OutboxStatus.PROCESSING, 0)
@@ -288,9 +286,7 @@ class CRMOutboxRetryDeadLetterView(APIView):
 
     def post(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
-        message_ids = (
-            request.data.get("message_ids") if isinstance(request.data, dict) else None
-        )
+        message_ids = request.data.get("message_ids") if isinstance(request.data, dict) else None
 
         qs = CRMOutboxMessage.objects.filter(tenant=tenant, status=OutboxStatus.DEAD_LETTER)
         if message_ids:
@@ -318,4 +314,3 @@ class CRMOutboxRetryDeadLetterView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-

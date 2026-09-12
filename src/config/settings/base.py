@@ -11,7 +11,9 @@ from leadstream.common.logging import build_logging_config
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-only-unsafe-secret-key-that-is-at-least-32-chars-long")
+SECRET_KEY = env(
+    "DJANGO_SECRET_KEY", default="dev-only-unsafe-secret-key-that-is-at-least-32-chars-long"
+)
 DEBUG = env_bool("DJANGO_DEBUG", default=False)
 configured_hosts = env_list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 if "*" in configured_hosts:
@@ -37,6 +39,7 @@ INSTALLED_APPS = [
     "leadstream.billing.apps.BillingConfig",
     "leadstream.providers.apps.ProvidersConfig",
     "leadstream.integrations.apps.IntegrationsConfig",
+    "leadstream.analytics.apps.AnalyticsConfig",
 ]
 
 MIDDLEWARE = [

@@ -142,4 +142,3 @@ class SwitchWorkspaceSerializer(serializers.Serializer[dict[str, Any]]):
                 {"detail": "Informe 'workspace_id' ou 'slug' do workspace."}
             )
         return attrs
-

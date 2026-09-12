@@ -173,4 +173,3 @@ class CreditDepositResponseSerializer(serializers.Serializer[object]):
     message = serializers.CharField()
     balance = serializers.IntegerField()
     transaction = CreditTransactionSerializer()
-

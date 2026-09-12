@@ -9,8 +9,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  WandSparkles,
-  Zap,
 } from 'lucide-react';
 import { api } from '../api';
 import type { DataHealthData } from '../types';
@@ -30,14 +28,14 @@ const dimensionLabels: Record<keyof DataHealthData['dimensions'], string> = {
 function scoreColor(value: number) {
   if (value >= 80) return 'bg-emerald-500';
   if (value >= 55) return 'bg-amber-500';
-  return 'bg-red-500';
+  return 'bg-rose-500';
 }
 
 function severityStyle(severity: string) {
-  if (severity === 'high') return { dot: 'bg-red-500', badge: 'bg-red-50 text-red-800', label: 'Alta' };
-  if (severity === 'medium') return { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-800', label: 'Média' };
-  if (severity === 'low') return { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-800', label: 'Baixa' };
-  return { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-800', label: 'Resolvido' };
+  if (severity === 'high') return { dot: 'bg-rose-500', badge: 'bg-rose-500/10 text-rose-400 border border-rose-500/20', label: 'Alta' };
+  if (severity === 'medium') return { dot: 'bg-amber-500', badge: 'bg-amber-500/10 text-amber-400 border border-amber-500/20', label: 'Média' };
+  if (severity === 'low') return { dot: 'bg-sky-500', badge: 'bg-sky-500/10 text-sky-400 border border-sky-500/20', label: 'Baixa' };
+  return { dot: 'bg-emerald-500', badge: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20', label: 'Resolvido' };
 }
 
 export default function DataHealth({ onNavigate }: DataHealthProps) {
@@ -79,11 +77,11 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-[1440px] space-y-5" aria-busy="true">
-        <div className="h-28 animate-pulse rounded-[12px] bg-slate-200" />
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="h-80 animate-pulse rounded-[12px] bg-slate-200" />
-          <div className="h-80 animate-pulse rounded-[12px] bg-slate-200" />
+      <div className="space-y-6" aria-busy="true">
+        <div className="h-28 animate-pulse rounded-xl bg-[#12141C] border border-white/5" />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="h-80 animate-pulse rounded-xl bg-[#12141C] border border-white/5" />
+          <div className="h-80 animate-pulse rounded-xl bg-[#12141C] border border-white/5" />
         </div>
       </div>
     );
@@ -91,14 +89,19 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
 
   if (error || !data) {
     return (
-      <div className="mx-auto max-w-[1440px] rounded-[12px] bg-red-50 p-6 text-red-950" role="alert">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 h-5 w-5" />
-          <div>
-            <h2 className="font-bold">O diagnóstico não pôde ser concluído</h2>
-            <p className="mt-1 text-sm text-red-800">{error}</p>
-            <button onClick={() => void load()} className="mt-4 rounded-lg bg-red-700 px-4 py-2 text-xs font-bold text-white">
-              Tentar novamente
+      <div className="rounded-xl border border-rose-500/20 bg-[#12141C] p-6 text-rose-300" role="alert">
+        <div className="flex items-start gap-4">
+          <div className="rounded-lg bg-rose-500/10 p-2.5 border border-rose-500/20 text-rose-400">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
+          <div className="space-y-2 flex-1">
+            <h2 className="text-base font-bold text-white tracking-tight">O diagnóstico não pôde ser concluído</h2>
+            <p className="text-xs text-rose-400/90 leading-relaxed max-w-2xl">{error}</p>
+            <button
+              onClick={() => void load()}
+              className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-semibold text-white transition-colors cursor-pointer"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Tentar novamente
             </button>
           </div>
         </div>
@@ -111,15 +114,16 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
   const distributionTotal = data.distribution.healthy + data.distribution.attention + data.distribution.critical;
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-5">
-      <section className="flex flex-col justify-between gap-5 rounded-[12px] border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:p-6">
-        <div className="max-w-2xl">
-          <div className="flex items-center gap-2 text-xs font-semibold text-blue-700">
-            <ShieldCheck className="h-4 w-4" /> Diagnóstico da sua base
+    <div className="space-y-6">
+      {/* Header Diagnostic Strip */}
+      <section className="flex flex-col justify-between gap-5 rounded-xl border border-white/10 bg-[#12141C] p-6 sm:flex-row sm:items-center">
+        <div className="max-w-2xl space-y-1.5">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <ShieldCheck className="h-3.5 w-3.5" /> Diagnóstico de Confiabilidade Cadastral
           </div>
-          <h2 className="mt-2 text-xl font-bold tracking-[-0.03em] text-slate-950">Confiança começa antes do enriquecimento</h2>
-          <p className="mt-1.5 max-w-[68ch] text-sm leading-6 text-slate-600">
-            O score considera identificação, meios de contato, perfil, validação e atualização das informações.
+          <h1 className="text-xl font-bold tracking-tight text-white">Confiança e Linhagem de Dados</h1>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Métricas de integridade contínua: identificação CNPJ/QSA, validade RFC 5321, canal móvel observável e trilha de auditoria.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -127,22 +131,22 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
             <button
               onClick={handleAutoRepair}
               disabled={isRepairing}
-              className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/10 transition-all flex items-center gap-2 cursor-pointer"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg transition-colors flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-950/50"
             >
-              <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-              <span>{isRepairing ? 'Revisando…' : 'Revisar classificação segura'}</span>
+              <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+              <span>{isRepairing ? 'Revisando...' : 'Revisar Classificação'}</span>
             </button>
           )}
-          <span className="text-right text-[11px] text-slate-500">
+          <span className="text-right text-[11px] font-mono text-slate-500">
             Atualizado
-            <strong className="block font-semibold text-slate-800">
+            <strong className="block font-semibold text-slate-300">
               {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(data.generatedAt))}
             </strong>
           </span>
           <button
             onClick={() => void load()}
-            className="rounded-lg border border-slate-200 p-2.5 text-slate-700 hover:bg-slate-50"
-            aria-label="Recalcular diagnóstico"
+            className="rounded-lg border border-white/10 bg-white/[0.03] p-2 text-slate-400 hover:text-white hover:border-white/20 transition-colors cursor-pointer"
+            title="Recalcular diagnóstico"
           >
             <RefreshCw className="h-4 w-4" />
           </button>
@@ -150,95 +154,89 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
       </section>
 
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-800 flex items-center gap-2.5 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-300">
+        <div className="fixed bottom-6 right-6 z-50 bg-[#12141C] text-white px-4 py-3 rounded-xl shadow-2xl border border-emerald-500/30 flex items-center gap-2.5 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-300">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      <section className="rounded-[12px] border border-amber-200 bg-amber-50/60 p-5 sm:p-6" aria-labelledby="quarantine-title">
+      {/* Quarantine Banner */}
+      <section className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5 sm:p-6">
         <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
           <div className="flex max-w-2xl items-start gap-3">
-            <div className="mt-0.5 rounded-lg bg-amber-100 p-2 text-amber-800">
-              <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+            <div className="rounded-lg bg-amber-500/10 p-2 text-amber-400 border border-amber-500/20">
+              <ShieldAlert className="h-5 w-5" />
             </div>
             <div>
-              <h2 id="quarantine-title" className="text-sm font-bold text-slate-950">Registros isolados por segurança</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-700">
-                Registros isolados por segurança não aparecem em busca, métricas ou exportações.
+              <h2 className="text-sm font-bold text-white tracking-tight">Registros Isolados por Segurança & LGPD</h2>
+              <p className="mt-1 text-xs leading-relaxed text-amber-300/80">
+                Registros que falharam em validações de consentimento, syntax RFC 5321 ou suspeita de honeypot ficam isolados e não afetam o score.
               </p>
             </div>
           </div>
           <dl className="grid grid-cols-3 gap-3 text-center sm:min-w-[360px]">
-            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2.5">
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Isolados</dt>
-              <dd className="mt-1 text-lg font-extrabold text-slate-950">{data.quarantine.quarantined}</dd>
+            <div className="rounded-lg border border-white/10 bg-[#12141C] px-3 py-2.5">
+              <dt className="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-500">Isolados</dt>
+              <dd className="mt-1 text-lg font-mono font-bold text-white">{data.quarantine.quarantined}</dd>
             </div>
-            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2.5">
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Em revisão</dt>
-              <dd className="mt-1 text-lg font-extrabold text-slate-950">{data.quarantine.pendingReview}</dd>
+            <div className="rounded-lg border border-white/10 bg-[#12141C] px-3 py-2.5">
+              <dt className="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-500">Em Revisão</dt>
+              <dd className="mt-1 text-lg font-mono font-bold text-white">{data.quarantine.pendingReview}</dd>
             </div>
-            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2.5">
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Liberados</dt>
-              <dd className="mt-1 text-lg font-extrabold text-slate-950">{data.quarantine.released}</dd>
+            <div className="rounded-lg border border-white/10 bg-[#12141C] px-3 py-2.5">
+              <dt className="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-500">Liberados</dt>
+              <dd className="mt-1 text-lg font-mono font-bold text-emerald-400">{data.quarantine.released}</dd>
             </div>
           </dl>
         </div>
-        {data.quarantine.lastClassifiedAt && (
-          <p className="mt-3 text-[10px] text-slate-500">
-            Última classificação: {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(data.quarantine.lastClassifiedAt))}
-          </p>
-        )}
       </section>
 
       {!hasData ? (
-        <section className="rounded-[12px] border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[12px] bg-blue-50 text-blue-700">
+        <section className="rounded-xl border border-dashed border-white/10 bg-[#12141C] px-6 py-14 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 text-slate-400">
             <FileWarning className="h-5 w-5" />
           </div>
-          <h2 className="mt-4 text-lg font-bold text-slate-950">Importe uma base para receber o primeiro diagnóstico</h2>
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
-            A LeadStream mostrará campos ausentes, registros acionáveis e possíveis duplicidades para você priorizar as melhorias certas.
+          <h2 className="mt-4 text-base font-bold text-white">Importe uma base para receber o primeiro diagnóstico</h2>
+          <p className="mx-auto mt-2 max-w-xl text-xs leading-relaxed text-slate-400">
+            A LeadStream mapeará campos ausentes, decisores QSA e integridade de e-mails para garantir máxima entregabilidade.
           </p>
           <button
             onClick={() => onNavigate('datasets')}
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700"
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-xs font-semibold text-white transition-colors cursor-pointer"
           >
-            Importar base <ArrowRight className="h-3.5 w-3.5" />
+            Importar Base <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </section>
       ) : (
         <>
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
-            <section className="rounded-[12px] border border-slate-200 bg-white p-5 sm:p-6">
-              <div className="flex items-start justify-between">
+          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+            {/* Score & Dimensions */}
+            <section className="rounded-xl border border-white/10 bg-[#12141C] p-6 space-y-6">
+              <div className="flex items-start justify-between border-b border-white/10 pb-4">
                 <div>
-                  <p className="text-xs font-semibold text-slate-500">Score geral da base</p>
+                  <p className="text-xs font-semibold text-slate-400">Score Geral de Integridade</p>
                   <div className="mt-1 flex items-baseline gap-2">
-                    <span className="text-4xl font-extrabold tracking-[-0.04em] text-slate-950">{summary.overallScore}</span>
-                    <span className="text-sm font-semibold text-slate-400">/ 100</span>
+                    <span className="text-4xl font-bold font-mono text-emerald-400">{summary.overallScore}</span>
+                    <span className="text-sm font-mono text-slate-500">/ 100</span>
                   </div>
                 </div>
-                <CircleGauge className="h-6 w-6 text-blue-600" />
-              </div>
-              <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100" aria-label={`Score geral: ${summary.overallScore}%`}>
-                <div className={`h-full rounded-full ${scoreColor(summary.overallScore)}`} style={{ width: `${summary.overallScore}%` }} />
+                <CircleGauge className="h-6 w-6 text-emerald-400" />
               </div>
 
-              <div className="mt-7 divide-y divide-slate-100">
+              <div className="space-y-4 divide-y divide-white/5">
                 {(Object.entries(data.dimensions) as Array<[keyof DataHealthData['dimensions'], number]>).map(([key, value]) => (
-                  <div key={key} className="grid grid-cols-[1fr_48px] items-center gap-4 py-3">
+                  <div key={key} className="pt-3 first:pt-0 grid grid-cols-[1fr_56px] items-center gap-4">
                     <div>
-                      <div className="mb-1.5 flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-slate-700">{dimensionLabels[key]}</span>
-                        <span className="text-[11px] font-bold text-slate-900">{value}%</span>
+                      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                        <span className="font-medium text-slate-300">{dimensionLabels[key]}</span>
+                        <span className="font-mono text-slate-400">{value}%</span>
                       </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
                         <div className={`h-full rounded-full ${scoreColor(value)}`} style={{ width: `${value}%` }} />
                       </div>
                     </div>
-                    <span className={`rounded-full px-2 py-1 text-center text-[10px] font-bold ${
-                      value >= 80 ? 'bg-emerald-50 text-emerald-800' : value >= 55 ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-800'
+                    <span className={`rounded px-2 py-0.5 text-center text-[10px] font-mono font-bold uppercase ${
+                      value >= 80 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : value >= 55 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                     }`}>
                       {value >= 80 ? 'Boa' : value >= 55 ? 'Atenção' : 'Crítica'}
                     </span>
@@ -247,79 +245,94 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[12px] border border-slate-200 bg-white">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+            {/* Quality Queue */}
+            <section className="rounded-xl border border-white/10 bg-[#12141C] p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
                 <div>
-                  <h2 className="text-sm font-bold text-slate-950">Fila de qualidade</h2>
-                  <p className="mt-0.5 text-[11px] text-slate-500">Problemas priorizados por impacto operacional.</p>
+                  <h2 className="text-sm font-bold text-white tracking-tight">Fila de Prioridades Cadastrais</h2>
+                  <p className="text-[11px] text-slate-400">Campos sugeridos para enriquecimento complementar</p>
                 </div>
-                <FileWarning className="h-5 w-5 text-slate-400" />
+                <FileWarning className="h-4 w-4 text-slate-500" />
               </div>
-              <div className="divide-y divide-slate-100">
-                {data.issues.map((issue) => {
-                  const style = severityStyle(issue.severity);
-                  return (
-                    <button
-                      key={issue.id}
-                      onClick={() => onNavigate(issue.actionRoute)}
-                      className="flex w-full items-start gap-4 px-5 py-4 text-left hover:bg-slate-50"
-                    >
-                      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <strong className="text-xs text-slate-900">{issue.label}</strong>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${style.badge}`}>{style.label}</span>
+
+              <div className="space-y-3">
+                {data.issues.length ? (
+                  data.issues.map((issue) => {
+                    const style = severityStyle(issue.severity);
+                    return (
+                      <button
+                        key={issue.id}
+                        onClick={() => onNavigate(issue.actionRoute)}
+                        className="flex w-full items-start gap-4 p-3 rounded-lg bg-white/[0.02] border border-white/5 hover:border-emerald-500/30 transition-colors text-left cursor-pointer"
+                      >
+                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <strong className="text-xs text-white">{issue.label}</strong>
+                            <span className={`rounded px-1.5 py-0.5 text-[9px] font-mono uppercase ${style.badge}`}>{style.label}</span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">{issue.description}</p>
+                        </div>
+                        <span className="flex shrink-0 items-center gap-1.5 text-xs font-mono font-bold text-white">
+                          {issue.count} <ArrowRight className="h-3.5 w-3.5 text-slate-500" />
                         </span>
-                        <span className="mt-1 block text-[11px] leading-5 text-slate-500">{issue.description}</span>
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2 text-sm font-extrabold text-slate-950">
-                        {issue.count.toLocaleString('pt-BR')} <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-                      </span>
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="p-8 text-center text-xs text-slate-400 space-y-1">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
+                    <p className="font-semibold text-white">Base plenamente saneada</p>
+                    <p className="text-[11px] text-slate-500">Nenhuma inconformidade técnica detectada nas contas ativas.</p>
+                  </div>
+                )}
               </div>
             </section>
           </div>
 
-          <section className="overflow-hidden rounded-[12px] border border-slate-200 bg-white">
-            <div className="flex flex-col justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center">
+          {/* Coverage Table */}
+          <section className="rounded-xl border border-white/10 bg-[#12141C] p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
               <div>
-                <h2 className="text-sm font-bold text-slate-950">Cobertura por campo crítico</h2>
-                <p className="mt-0.5 text-[11px] text-slate-500">O denominador respeita o tipo de entidade de cada campo.</p>
+                <h2 className="text-sm font-bold text-white tracking-tight">Cobertura por Atributo Chave</h2>
+                <p className="text-[11px] text-slate-400">Relação de preenchimento dos campos exigidos para prospecção outbound</p>
               </div>
-              <button onClick={() => onNavigate('enrichment')} className="inline-flex items-center gap-2 text-xs font-bold text-blue-700">
-                Planejar correção <ArrowRight className="h-3.5 w-3.5" />
+              <button
+                onClick={() => onNavigate('enrichment')}
+                className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+              >
+                Planejar Enriquecimento <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
+
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] text-left">
-                <thead className="bg-slate-50 text-[10px] font-semibold text-slate-500">
+              <table className="w-full text-left font-sans">
+                <thead className="text-[10px] font-mono uppercase tracking-wider text-slate-500 border-b border-white/5">
                   <tr>
-                    <th className="px-5 py-3">Campo</th>
-                    <th className="px-5 py-3">Cobertura</th>
-                    <th className="px-5 py-3">Encontrados</th>
-                    <th className="px-5 py-3">Leitura</th>
+                    <th className="py-2.5 px-3">Atributo</th>
+                    <th className="py-2.5 px-3">Cobertura (%)</th>
+                    <th className="py-2.5 px-3">Registros Úteis</th>
+                    <th className="py-2.5 px-3">Classificação</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-white/5 text-xs">
                   {data.coverage.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-5 py-3.5 text-xs font-semibold text-slate-900">{item.label}</td>
-                      <td className="w-[38%] px-5 py-3.5">
+                    <tr key={item.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="py-3 px-3 font-medium text-white">{item.label}</td>
+                      <td className="py-3 px-3 w-[40%]">
                         <div className="flex items-center gap-3">
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/5">
                             <div className={`h-full rounded-full ${scoreColor(item.value)}`} style={{ width: `${item.value}%` }} />
                           </div>
-                          <span className="w-10 text-right text-[11px] font-bold text-slate-800">{item.value}%</span>
+                          <span className="w-10 text-right font-mono font-bold text-white text-[11px]">{item.value}%</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-xs text-slate-600">
-                        {item.count.toLocaleString('pt-BR')} de {item.total.toLocaleString('pt-BR')}
+                      <td className="py-3 px-3 font-mono text-slate-400 text-[11px]">
+                        {item.count} de {item.total}
                       </td>
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${
-                          item.value >= 80 ? 'bg-emerald-50 text-emerald-800' : item.value >= 55 ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-800'
+                      <td className="py-3 px-3">
+                        <span className={`inline-flex rounded px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${
+                          item.value >= 80 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : item.value >= 55 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                         }`}>
                           {item.value >= 80 ? 'Confiável' : item.value >= 55 ? 'Parcial' : 'Lacuna'}
                         </span>
@@ -330,35 +343,6 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
               </table>
             </div>
           </section>
-
-          <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-            <section className="rounded-[12px] border border-slate-200 bg-white p-5">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                <h2 className="text-sm font-bold text-slate-950">Distribuição operacional dos contatos</h2>
-              </div>
-              <div className="mt-5 flex h-3 overflow-hidden rounded-full bg-slate-100">
-                {distributionTotal > 0 && (
-                  <>
-                    <div className="bg-emerald-500" style={{ width: `${(data.distribution.healthy / distributionTotal) * 100}%` }} />
-                    <div className="bg-amber-500" style={{ width: `${(data.distribution.attention / distributionTotal) * 100}%` }} />
-                    <div className="bg-red-500" style={{ width: `${(data.distribution.critical / distributionTotal) * 100}%` }} />
-                  </>
-                )}
-              </div>
-              <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[11px] text-slate-600">
-                <span><i className="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-500" />{data.distribution.healthy} {data.distribution.healthy === 1 ? 'acionável' : 'acionáveis'}</span>
-                <span><i className="mr-2 inline-block h-2 w-2 rounded-full bg-amber-500" />{data.distribution.attention} em atenção</span>
-                <span><i className="mr-2 inline-block h-2 w-2 rounded-full bg-red-500" />{data.distribution.critical} críticos</span>
-              </div>
-            </section>
-            <aside className="rounded-[12px] bg-slate-900 p-5 text-white">
-              <p className="text-xs font-bold">Como interpretar</p>
-              <p className="mt-2 text-[11px] leading-5 text-slate-300">
-                “Acionável” exige vínculo empresarial, cargo e ao menos e-mail com evidência técnica ou telefone observado. Score zero significa ausência de evidência — não reprovação do registro.
-              </p>
-            </aside>
-          </div>
         </>
       )}
     </div>

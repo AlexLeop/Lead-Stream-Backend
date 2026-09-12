@@ -61,8 +61,6 @@ def other_tenant() -> Tenant:
     return Tenant.objects.create(name="Tenant Externo B2B", is_active=True)
 
 
-
-
 # ==============================================================================
 # JORNADA 1: IMPORTAÇÃO DE BASE PRÓPRIA, HIGIENIZAÇÃO, EXPORTAÇÃO E CRM
 # ==============================================================================

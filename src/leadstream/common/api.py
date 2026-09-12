@@ -43,5 +43,3 @@ def resolve_tenant(request: Request | None) -> Tenant:
     from leadstream.tenancy.services import get_internal_tenant
 
     return get_internal_tenant()
-
-

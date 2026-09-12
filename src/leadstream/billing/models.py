@@ -284,9 +284,7 @@ class CreditTransaction(TenantOwnedModel):
         ADJUSTMENT = "ADJUSTMENT", "Ajuste manual administrativo"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    wallet = models.ForeignKey(
-        CreditWallet, on_delete=models.PROTECT, related_name="transactions"
-    )
+    wallet = models.ForeignKey(CreditWallet, on_delete=models.PROTECT, related_name="transactions")
     reservation = models.ForeignKey(
         CreditReservation,
         on_delete=models.SET_NULL,
@@ -331,4 +329,3 @@ class CreditTransaction(TenantOwnedModel):
     def delete(self, using: str | None = None, keep_parents: bool = False) -> NoReturn:
         del using, keep_parents
         raise ValidationError("Eventos de transação de crédito são append-only.")
-

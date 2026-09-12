@@ -7,100 +7,196 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('batches', '0006_batchitem_canonical_payload'),
-        ('billing', '0004_providercall_execution_token_and_more'),
-        ('tenancy', '0002_seed_internal_tenant'),
+        ("batches", "0006_batchitem_canonical_payload"),
+        ("billing", "0004_providercall_execution_token_and_more"),
+        ("tenancy", "0002_seed_internal_tenant"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='CreditReservation',
+            name="CreditReservation",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('amount', models.PositiveIntegerField()),
-                ('captured_amount', models.PositiveIntegerField(default=0)),
-                ('released_amount', models.PositiveIntegerField(default=0)),
-                ('status', models.CharField(choices=[('ACTIVE', 'Ativa'), ('SETTLED', 'Liquidada'), ('CANCELLED', 'Cancelada')], default='ACTIVE', max_length=20)),
-                ('description', models.CharField(blank=True, max_length=255)),
-                ('expires_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('batch', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='credit_reservations', to='batches.batch')),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("amount", models.PositiveIntegerField()),
+                ("captured_amount", models.PositiveIntegerField(default=0)),
+                ("released_amount", models.PositiveIntegerField(default=0)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("ACTIVE", "Ativa"),
+                            ("SETTLED", "Liquidada"),
+                            ("CANCELLED", "Cancelada"),
+                        ],
+                        default="ACTIVE",
+                        max_length=20,
+                    ),
+                ),
+                ("description", models.CharField(blank=True, max_length=255)),
+                ("expires_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "batch",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="credit_reservations",
+                        to="batches.batch",
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_credit_reservation',
+                "db_table": "leadstream_credit_reservation",
             },
         ),
         migrations.CreateModel(
-            name='CreditWallet',
+            name="CreditWallet",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('balance', models.IntegerField(default=0)),
-                ('reserved_balance', models.IntegerField(default=0)),
-                ('is_unlimited', models.BooleanField(default=False)),
-                ('auto_recharge', models.BooleanField(default=False)),
-                ('recharge_threshold', models.IntegerField(default=100)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("balance", models.IntegerField(default=0)),
+                ("reserved_balance", models.IntegerField(default=0)),
+                ("is_unlimited", models.BooleanField(default=False)),
+                ("auto_recharge", models.BooleanField(default=False)),
+                ("recharge_threshold", models.IntegerField(default=100)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_credit_wallet',
+                "db_table": "leadstream_credit_wallet",
             },
         ),
         migrations.CreateModel(
-            name='CreditTransaction',
+            name="CreditTransaction",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('transaction_type', models.CharField(choices=[('DEPOSIT', 'Depósito / Recarga'), ('HOLD', 'Reserva de lote'), ('CAPTURE', 'Captura / Cobrança de lead útil'), ('RELEASE', 'Liberação / Estorno de excedente'), ('BONUS', 'Crédito bônus inicial'), ('ADJUSTMENT', 'Ajuste manual administrativo')], max_length=20)),
-                ('amount', models.IntegerField()),
-                ('balance_after', models.IntegerField()),
-                ('reference_id', models.CharField(blank=True, max_length=160)),
-                ('metadata', models.JSONField(blank=True, default=dict)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('reservation', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='transactions', to='billing.creditreservation')),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='%(app_label)s_%(class)s_set', to='tenancy.tenant')),
-                ('wallet', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='transactions', to='billing.creditwallet')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                (
+                    "transaction_type",
+                    models.CharField(
+                        choices=[
+                            ("DEPOSIT", "Depósito / Recarga"),
+                            ("HOLD", "Reserva de lote"),
+                            ("CAPTURE", "Captura / Cobrança de lead útil"),
+                            ("RELEASE", "Liberação / Estorno de excedente"),
+                            ("BONUS", "Crédito bônus inicial"),
+                            ("ADJUSTMENT", "Ajuste manual administrativo"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                ("amount", models.IntegerField()),
+                ("balance_after", models.IntegerField()),
+                ("reference_id", models.CharField(blank=True, max_length=160)),
+                ("metadata", models.JSONField(blank=True, default=dict)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "reservation",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="transactions",
+                        to="billing.creditreservation",
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="%(app_label)s_%(class)s_set",
+                        to="tenancy.tenant",
+                    ),
+                ),
+                (
+                    "wallet",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="transactions",
+                        to="billing.creditwallet",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'leadstream_credit_transaction',
-                'ordering': ['-created_at'],
+                "db_table": "leadstream_credit_transaction",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.AddField(
-            model_name='creditreservation',
-            name='wallet',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='reservations', to='billing.creditwallet'),
+            model_name="creditreservation",
+            name="wallet",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="reservations",
+                to="billing.creditwallet",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='creditwallet',
-            constraint=models.UniqueConstraint(fields=('tenant',), name='credit_wallet_tenant_uniq'),
+            model_name="creditwallet",
+            constraint=models.UniqueConstraint(
+                fields=("tenant",), name="credit_wallet_tenant_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='creditwallet',
-            constraint=models.CheckConstraint(condition=models.Q(('balance__gte', 0), ('is_unlimited', True), _connector='OR'), name='credit_wallet_balance_positive'),
+            model_name="creditwallet",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("balance__gte", 0), ("is_unlimited", True), _connector="OR"),
+                name="credit_wallet_balance_positive",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='creditwallet',
-            constraint=models.CheckConstraint(condition=models.Q(('reserved_balance__gte', 0)), name='credit_wallet_reserved_positive'),
+            model_name="creditwallet",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("reserved_balance__gte", 0)),
+                name="credit_wallet_reserved_positive",
+            ),
         ),
         migrations.AddIndex(
-            model_name='credittransaction',
-            index=models.Index(fields=['wallet', '-created_at'], name='credit_tx_wallet_idx'),
+            model_name="credittransaction",
+            index=models.Index(fields=["wallet", "-created_at"], name="credit_tx_wallet_idx"),
         ),
         migrations.AddIndex(
-            model_name='credittransaction',
-            index=models.Index(fields=['tenant', '-created_at'], name='credit_tx_tenant_idx'),
+            model_name="credittransaction",
+            index=models.Index(fields=["tenant", "-created_at"], name="credit_tx_tenant_idx"),
         ),
         migrations.AddIndex(
-            model_name='creditreservation',
-            index=models.Index(fields=['tenant', 'status'], name='credit_res_status_idx'),
+            model_name="creditreservation",
+            index=models.Index(fields=["tenant", "status"], name="credit_res_status_idx"),
         ),
         migrations.AddIndex(
-            model_name='creditreservation',
-            index=models.Index(fields=['wallet', 'status'], name='credit_res_wallet_idx'),
+            model_name="creditreservation",
+            index=models.Index(fields=["wallet", "status"], name="credit_res_wallet_idx"),
         ),
     ]

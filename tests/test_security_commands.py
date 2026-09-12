@@ -98,4 +98,3 @@ def test_email_or_username_authentication() -> None:
     # Teste 4: Senha incorreta
     user_fail = authenticate(username="diretor@empresa.com.br", password="WrongPassword")
     assert user_fail is None
-

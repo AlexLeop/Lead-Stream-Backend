@@ -5,9 +5,7 @@ from rest_framework import serializers
 
 class EmailValidationRequestSerializer(serializers.Serializer[object]):
     email = serializers.CharField(required=False, allow_blank=True, default="")
-    emails = serializers.ListField(
-        child=serializers.CharField(), required=False, default=list
-    )
+    emails = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     deep_smtp = serializers.BooleanField(default=True)
 
     def validate(self, attrs: dict) -> dict:

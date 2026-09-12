@@ -163,4 +163,3 @@ class CRMOutboxRetryDeadLetterRequestSerializer(serializers.Serializer[dict[str,
 class CRMOutboxRetryDeadLetterResponseSerializer(serializers.Serializer[dict[str, Any]]):
     retried_count = serializers.IntegerField()
     message = serializers.CharField()
-

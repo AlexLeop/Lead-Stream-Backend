@@ -126,4 +126,3 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write("  ⚠️  IMPORTANTE: Guarde estas credenciais em um cofre de senhas.")
         self.stdout.write(self.style.SUCCESS(banner))
-

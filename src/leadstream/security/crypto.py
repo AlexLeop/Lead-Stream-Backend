@@ -30,7 +30,7 @@ def generate_api_key(
     **kwargs: Any,
 ) -> tuple[APIKey, str]:
     """Gera uma nova chave de API criptograficamente segura.
-    
+
     Retorna uma tupla (instancia_APIKey, chave_bruta).
     A chave bruta e exibida apenas no momento de sua emissao e nunca mais pode ser recuperada.
     """

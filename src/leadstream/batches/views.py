@@ -100,9 +100,7 @@ class BatchCollectionView(APIView):
             raise _domain_error(exc) from exc
 
         if result.created and not wallet.is_unlimited:
-            estimated_hold = min(
-                wallet.available_balance, max(50, result.batch.total_rows or 50)
-            )
+            estimated_hold = min(wallet.available_balance, max(50, result.batch.total_rows or 50))
             if estimated_hold > 0:
                 try:
                     hold_credits(

@@ -22,5 +22,7 @@ urlpatterns = [
         name="wallet-ledger",
     ),
     path("faturamento/carteira/recarga/", CreditDepositView.as_view(), name="wallet-deposit"),
+    path("billing/wallet/", CreditWalletDetailView.as_view(), name="billing-wallet"),
+    path("billing/transactions/", CreditTransactionListView.as_view(), name="billing-transactions"),
+    path("billing/deposit/", CreditDepositView.as_view(), name="billing-deposit"),
 ]
-
