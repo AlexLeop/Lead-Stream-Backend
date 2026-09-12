@@ -29,6 +29,20 @@ import type {
   BatchExtractInput,
   BatchExtractResult,
   PixLookupStatus,
+  PlatformBranding,
+  AdminTenant,
+  AdminUser,
+  AdminAPIKey,
+  AdminPriceBook,
+  AdminWallet,
+  AdminProvidersData,
+  AdminProviderBudget,
+  AdminSuppression,
+  AdminAuditLog,
+  AdminSMTPConfig,
+  SMTPProbeResult,
+  AdminBatch,
+  AdminCeleryQueuesData,
 } from './types';
 
 function resolveBaseUrl(): string {
@@ -289,4 +303,154 @@ export const api = {
       automaticEligibility: 'ONLY_EXPLICIT_PUBLIC_PIX_KEY' as const,
       providers: [],
     })),
+
+  // White-Label Branding
+  branding: () => request<PlatformBranding>('/system/branding/'),
+  updateBranding: (data: Partial<PlatformBranding>) =>
+    request<PlatformBranding>('/system/branding/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  // Admin: Tenants & Workspaces
+  adminTenants: () => request<PaginatedResponse<AdminTenant>>('/admin/tenants/'),
+  createAdminTenant: (data: {
+    name: string;
+    slug: string;
+    max_users?: number;
+    max_leads_monthly?: number;
+    max_storage_mb?: number;
+    initial_credits?: number;
+    initial_admin_username?: string;
+    initial_admin_email?: string;
+    initial_admin_password?: string;
+  }) =>
+    request<AdminTenant>('/admin/tenants/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateAdminTenant: (id: string, data: Partial<AdminTenant>) =>
+    request<AdminTenant>(`/admin/tenants/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  impersonateTenant: (id: string) =>
+    request<{ tenant_id: string; tenant_name: string; tenant_slug: string }>(
+      `/admin/tenants/${id}/impersonate/`,
+      { method: 'POST' }
+    ),
+
+  // Admin: Users & Security
+  adminUsers: () => request<PaginatedResponse<AdminUser>>('/admin/users/'),
+  createAdminUser: (data: {
+    username: string;
+    email: string;
+    password?: string;
+    is_active?: boolean;
+    tenant_id?: string;
+    role?: string;
+  }) =>
+    request<AdminUser>('/admin/users/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateAdminUser: (
+    id: number,
+    data: {
+      is_active?: boolean;
+      memberships?: Array<{ tenant_id: string; role: string; is_active: boolean }>;
+    }
+  ) =>
+    request<AdminUser>(`/admin/users/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  adminAPIKeys: () => request<PaginatedResponse<AdminAPIKey>>('/admin/api-keys/'),
+  createAdminAPIKey: (data: { tenant_id: string; name: string; scope: string }) =>
+    request<AdminAPIKey>('/admin/api-keys/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  revokeAdminAPIKey: (id: string) =>
+    request<{ status: string }>(`/admin/api-keys/${id}/`, {
+      method: 'DELETE',
+    }),
+
+  // Admin: Pricing & Ledger
+  adminPricing: () => request<AdminPriceBook[]>('/admin/pricing/'),
+  updateAdminPriceBook: (
+    bookId: string,
+    data: {
+      rules: Array<{
+        block: string;
+        unit_price_cents: number;
+        minimum_confidence?: number;
+        refresh_window_days?: number;
+      }>;
+    }
+  ) =>
+    request<{ status: string; updated_rules: number }>(`/admin/pricing/${bookId}/`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  adminWallets: () => request<PaginatedResponse<AdminWallet>>('/admin/wallets/'),
+  injectAdminCredit: (tenantId: string, data: { amount: number; reason: string }) =>
+    request<{ status: string; balance: number; transaction_id: string }>(
+      `/admin/wallets/${tenantId}/credit/`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    ),
+  adminWalletTransactions: (tenantId: string) =>
+    request<PaginatedResponse<DjangoCreditTransaction>>(
+      `/admin/wallets/${tenantId}/transactions/`
+    ),
+
+  // Admin: Providers & Budget
+  adminProviders: () => request<AdminProvidersData>('/admin/providers/'),
+  updateAdminProviderBudget: (data: { daily_limit_usd?: number; circuit_breaker_rate?: number }) =>
+    request<AdminProviderBudget>('/admin/providers/budget/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  // Admin: Governance & Suppression
+  adminSuppression: () => request<PaginatedResponse<AdminSuppression>>('/admin/suppression/'),
+  createAdminSuppression: (data: {
+    identifier_type: 'CNPJ' | 'EMAIL' | 'DOMAIN';
+    identifier_value: string;
+    reason: string;
+  }) =>
+    request<AdminSuppression>('/admin/suppression/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteAdminSuppression: (id: string) =>
+    request<{ status: string }>(`/admin/suppression/${id}/`, {
+      method: 'DELETE',
+    }),
+  adminAuditLogs: (limit = 50) =>
+    request<PaginatedResponse<AdminAuditLog>>(`/admin/audit-logs/?limit=${limit}`),
+
+  // Admin: SMTP Engine & Real-time Probe
+  adminSMTPConfig: () => request<AdminSMTPConfig>('/admin/smtp-config/'),
+  updateAdminSMTPConfig: (data: Partial<AdminSMTPConfig>) =>
+    request<AdminSMTPConfig>('/admin/smtp-config/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  probeSMTP: (email: string) =>
+    request<SMTPProbeResult>('/admin/smtp-probe/', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  // Admin: Batches & Celery Queues
+  adminBatches: () => request<PaginatedResponse<AdminBatch>>('/admin/batches/'),
+  actionAdminBatch: (id: string, action: 'pause' | 'resume' | 'cancel') =>
+    request<{ status: string; batch_id: string }>(`/admin/batches/${id}/${action}/`, {
+      method: 'POST',
+    }),
+  adminCeleryQueues: () => request<AdminCeleryQueuesData>('/admin/celery/queues/'),
 };

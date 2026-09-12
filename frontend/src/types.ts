@@ -653,3 +653,175 @@ export interface PaginatedResponse<T> {
   results: T[];
 }
 
+export interface PlatformBranding {
+  platform_name: string;
+  logo_url_dark: string;
+  logo_url_light: string;
+  favicon_url: string;
+  accent_color: string;
+  primary_color: string;
+  support_email: string;
+  terms_url: string;
+  privacy_url: string;
+}
+
+export interface AdminTenant {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  max_users: number;
+  max_leads_monthly: number;
+  max_storage_mb: number;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  email: string;
+  is_active: boolean;
+  is_staff: boolean;
+  is_superuser: boolean;
+  date_joined: string;
+  memberships: Array<{
+    tenant_id: string;
+    tenant_name: string;
+    tenant_slug: string;
+    role: 'ADMIN' | 'OPERATOR' | 'READ_ONLY';
+    is_active: boolean;
+  }>;
+}
+
+export interface AdminAPIKey {
+  id: string;
+  tenant: string;
+  tenant_name: string;
+  name: string;
+  prefix: string;
+  raw_key?: string;
+  scope: 'FULL' | 'READ_ONLY' | 'INGEST_ONLY';
+  is_active: boolean;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface AdminPriceRule {
+  id: string;
+  block: string;
+  unit_price_cents: number;
+  minimum_confidence: number;
+  refresh_window_days: number;
+}
+
+export interface AdminPriceBook {
+  id: string;
+  tenant: string;
+  tenant_name: string;
+  name: string;
+  version: number;
+  effective_at: string;
+  rules: AdminPriceRule[];
+}
+
+export interface AdminWallet {
+  id: string;
+  tenant: string;
+  tenant_name: string;
+  balance: number;
+  currency: string;
+  is_locked: boolean;
+  updated_at: string;
+}
+
+export interface AdminProviderStatus {
+  name: string;
+  status: 'ONLINE' | 'DEGRADED' | 'OFFLINE';
+  priority: number;
+  latency_ms: number;
+  success_rate_24h: number;
+  error_count_24h: number;
+}
+
+export interface AdminProviderBudget {
+  daily_limit_usd: number;
+  circuit_breaker_rate: number;
+  spent_today_usd: number;
+  is_tripped: boolean;
+}
+
+export interface AdminProvidersData {
+  providers: AdminProviderStatus[];
+  budget: AdminProviderBudget;
+}
+
+export interface AdminSuppression {
+  id: string;
+  identifier_type: 'CNPJ' | 'EMAIL' | 'DOMAIN';
+  identifier_value: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  tenant_id?: string;
+  actor_id?: string;
+  action: string;
+  entity_type: string;
+  entity_id?: string;
+  ip_address?: string;
+  user_agent?: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AdminSMTPConfig {
+  helo_domain: string;
+  timeout_seconds: number;
+  max_retries: number;
+  catch_all_strategy: 'PROBE' | 'ASSUME_RISKY' | 'ACCEPT';
+  blacklisted_mx_patterns: string[];
+}
+
+export interface SMTPProbeResult {
+  email: string;
+  status: 'DELIVERABLE' | 'UNDELIVERABLE' | 'CATCH_ALL' | 'TIMEOUT' | 'ERROR';
+  mx_host?: string;
+  smtp_code?: number;
+  raw_response?: string;
+  latency_ms: number;
+}
+
+export interface AdminBatch {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  name: string;
+  source_type: string;
+  status: string;
+  total_rows: number;
+  processed_rows: number;
+  succeeded_rows: number;
+  failed_rows: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface AdminQueueStatus {
+  queue_name: string;
+  messages_count: number;
+  consumers_count: number;
+  rate_in_per_sec: number;
+  rate_out_per_sec: number;
+}
+
+export interface AdminCeleryQueuesData {
+  queues: AdminQueueStatus[];
+  active_workers: number;
+  total_throughput_hour: number;
+}
+
+

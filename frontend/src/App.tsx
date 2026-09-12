@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AppShell from './pages/AppShell';
 import { Login } from './pages/Login';
 import { LeadStreamProvider, useLeadStream } from './LeadStreamContext';
+import { BrandingProvider } from './components/BrandingProvider';
 
 function AppContent() {
   const [route, setRoute] = useState('dashboard');
@@ -27,8 +28,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <LeadStreamProvider>
-      <AppContent />
-    </LeadStreamProvider>
+    <BrandingProvider>
+      <LeadStreamProvider>
+        <AppContent />
+      </LeadStreamProvider>
+    </BrandingProvider>
   );
 }
