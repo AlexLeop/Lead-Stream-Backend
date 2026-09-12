@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import dj_database_url
 
@@ -50,12 +51,13 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 ASGI_APPLICATION = "config.asgi.application"
 
+_empty_context_processors: list[str] = []
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
-        "OPTIONS": {"context_processors": []},
+        "OPTIONS": {"context_processors": _empty_context_processors},
     }
 ]
 
@@ -301,14 +303,15 @@ A API adota os códigos padronizados do protocolo HTTP:
 - `503 Service Unavailable`: Serviço temporariamente indisponível ou dependência essencial inacessível.
 """
 
-SPECTACULAR_SETTINGS = {
+_empty_security_scopes: list[str] = []
+SPECTACULAR_SETTINGS: dict[str, Any] = {
     "TITLE": "LeadStream API Reference — Inteligência Cadastral B2B",
     "DESCRIPTION": API_DESCRIPTION,
     "VERSION": "2.4.0",
     "OAS_VERSION": "3.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
-    "SECURITY": [{"BearerAuth": []}, {"ApiKeyAuth": []}],
+    "SECURITY": [{"BearerAuth": _empty_security_scopes}, {"ApiKeyAuth": _empty_security_scopes}],
     "APPEND_COMPONENTS": {
         "securitySchemes": {
             "BearerAuth": {

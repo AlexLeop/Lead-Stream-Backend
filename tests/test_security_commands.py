@@ -82,11 +82,13 @@ def test_email_or_username_authentication() -> None:
     # Teste 1: Autenticação por username
     user1 = authenticate(username="corporativo_user", password="ValidPassword456!")
     assert user1 is not None
+    assert isinstance(user1, User)
     assert user1.username == "corporativo_user"
 
     # Teste 2: Autenticação por e-mail
     user2 = authenticate(username="diretor@empresa.com.br", password="ValidPassword456!")
     assert user2 is not None
+    assert isinstance(user2, User)
     assert user2.username == "corporativo_user"
 
     # Teste 3: Autenticação por e-mail com maiúsculas (case-insensitive)

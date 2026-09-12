@@ -23,7 +23,8 @@ class EmailOrUsernameModelBackend(ModelBackend):
         **kwargs: Any,
     ) -> Any | None:
         if username is None:
-            username = kwargs.get(UserModel.USERNAME_FIELD)
+            username_field = getattr(UserModel, "USERNAME_FIELD", "username")
+            username = kwargs.get(username_field)
         if not username or not password:
             return None
 
