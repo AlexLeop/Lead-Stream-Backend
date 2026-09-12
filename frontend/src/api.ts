@@ -31,9 +31,20 @@ import type {
   PixLookupStatus,
 } from './types';
 
-const BASE_URL = import.meta.env.VITE_API_URL 
-  ? `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/api/v1` 
-  : '/api/v1';
+function resolveBaseUrl(): string {
+  const envUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  // Se veio URL interna de docker ou localhost em produção, ignorar
+  if (envUrl && !envUrl.includes('lead_stream_backend') && !envUrl.includes('localhost') && envUrl.startsWith('http')) {
+    return `${envUrl.replace(/\/$/, '')}/api/v1`;
+  }
+  // Se estiver acessando pelo domínio do EasyPanel, usar o backend público em HTTPS
+  if (typeof window !== 'undefined' && window.location.hostname.includes('easypanel.host')) {
+    return 'https://lead-stream-backend.a3rpjn.easypanel.host/api/v1';
+  }
+  return '/api/v1';
+}
+
+const BASE_URL = resolveBaseUrl();
 
 export class ApiError extends Error {
   constructor(
