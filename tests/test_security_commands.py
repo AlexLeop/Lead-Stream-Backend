@@ -68,3 +68,32 @@ def test_setup_security_admin_with_environment_variables(monkeypatch: pytest.Mon
     call_command("setup_security_admin", stdout=out2)
     assert APIKey.objects.filter(tenant=membership.tenant, is_active=True).count() == 1
 
+
+@pytest.mark.django_db
+def test_email_or_username_authentication() -> None:
+    from django.contrib.auth import authenticate
+
+    User.objects.create_user(
+        username="corporativo_user",
+        email="diretor@empresa.com.br",
+        password="ValidPassword456!",
+    )
+
+    # Teste 1: Autenticação por username
+    user1 = authenticate(username="corporativo_user", password="ValidPassword456!")
+    assert user1 is not None
+    assert user1.username == "corporativo_user"
+
+    # Teste 2: Autenticação por e-mail
+    user2 = authenticate(username="diretor@empresa.com.br", password="ValidPassword456!")
+    assert user2 is not None
+    assert user2.username == "corporativo_user"
+
+    # Teste 3: Autenticação por e-mail com maiúsculas (case-insensitive)
+    user3 = authenticate(username="DIRETOR@EMPRESA.COM.BR", password="ValidPassword456!")
+    assert user3 is not None
+
+    # Teste 4: Senha incorreta
+    user_fail = authenticate(username="diretor@empresa.com.br", password="WrongPassword")
+    assert user_fail is None
+

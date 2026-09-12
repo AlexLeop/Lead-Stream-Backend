@@ -31,10 +31,13 @@ COPY --chown=10001:10001 src ./src
 COPY --chown=10001:10001 scripts ./scripts
 COPY --chown=10001:10001 templates ./templates
 
+RUN chmod +x scripts/*.sh
+
 USER 10001:10001
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
   CMD ["python", "scripts/healthcheck.py"]
 
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
 CMD ["gunicorn", "config.asgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--worker-class", "uvicorn_worker.UvicornWorker", "--timeout", "60", "--graceful-timeout", "30", "--error-logfile", "-"]
