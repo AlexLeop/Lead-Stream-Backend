@@ -8,6 +8,7 @@ import {
   MailCheck,
   Menu,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Wallet as WalletIcon,
@@ -21,7 +22,9 @@ import DataHealth from './DataHealth';
 import Enrichment from './Enrichment';
 import { Wallet } from './Wallet';
 import { EmailValidation } from './EmailValidation';
+import AdminCenter from './AdminCenter';
 import { useLeadStream } from '../LeadStreamContext';
+import { useBranding } from '../components/BrandingProvider';
 
 interface AppShellProps {
   currentRoute: string;
@@ -65,12 +68,31 @@ const pageTitles: Record<string, { title: string; description: string }> = {
   datasets: { title: 'Bases de Dados', description: 'Arquivos brutos, snapshots e segmentações.' },
   lists: { title: 'Listas Comerciais', description: 'Conjuntos selecionados para ativação em vendas e CRM.' },
   'data-health': { title: 'Qualidade da Base', description: 'Indicadores de precisão, frescor e cobertura cadastral.' },
+  admin: {
+    title: 'Torre Master de Governança',
+    description: 'Controle de inquilinos, planos, ledger contábil, provedores e motor Zero-Bounce.',
+  },
 };
 
-function BrandMark() {
+function BrandMark({ logoUrl, platformName }: { logoUrl?: string; platformName?: string }) {
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt={platformName || 'LeadStream'}
+        className="h-8 w-8 rounded-lg object-contain bg-black/40 p-1 border border-white/10"
+      />
+    );
+  }
+  const initials = (platformName || 'LeadStream')
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
   return (
     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-mono font-bold text-white shadow-md shadow-emerald-950/50">
-      LS
+      {initials || 'LS'}
     </div>
   );
 }
@@ -81,6 +103,7 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
   const { user, tenant, wallet, loading, error, refresh, logout } = useLeadStream();
+  const { branding } = useBranding();
   const page = pageTitles[currentRoute] ?? pageTitles.dashboard;
 
   useEffect(() => {
@@ -125,10 +148,14 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
           className="flex items-center gap-3 text-left focus-visible:outline-none cursor-pointer"
           aria-label="Ir para o painel geral"
         >
-          <BrandMark />
+          <BrandMark logoUrl={branding.logo_url_dark} platformName={branding.platform_name} />
           <span>
-            <span className="block text-sm font-bold tracking-tight text-white">LeadStream</span>
-            <span className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider">Data Intelligence</span>
+            <span className="block text-sm font-bold tracking-tight text-white">
+              {branding.platform_name || 'LeadStream'}
+            </span>
+            <span className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+              Data Intelligence
+            </span>
           </span>
         </button>
         <button
@@ -176,6 +203,39 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
             </div>
           </div>
         ))}
+
+        {/* Master Administration Section (Superadmin & Staff) */}
+        {(user?.is_superuser || user?.is_staff) && (
+          <div className="pt-2 border-t border-white/10">
+            <p className="mb-2 px-3 text-[10px] font-mono font-medium text-purple-400 uppercase tracking-wider flex items-center justify-between">
+              <span>Governança Master</span>
+              <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold">ADMIN</span>
+            </p>
+            <div className="space-y-1">
+              <button
+                onClick={() => navigate('admin')}
+                aria-current={currentRoute === 'admin' ? 'page' : undefined}
+                className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors cursor-pointer ${
+                  currentRoute === 'admin'
+                    ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                    : 'text-slate-300 hover:bg-white/5 hover:text-white border border-transparent'
+                }`}
+              >
+                <ShieldAlert
+                  className={`h-4 w-4 shrink-0 ${
+                    currentRoute === 'admin' ? 'text-purple-400' : 'text-purple-400/70 group-hover:text-purple-300'
+                  }`}
+                />
+                <span className="min-w-0">
+                  <span className="block text-xs font-semibold text-purple-200">Torre Master</span>
+                  <span className="block truncate text-[10px] text-purple-400/80">
+                    Inquilinos, Planos & Marca
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Bottom Tenant & User Footer */}
@@ -293,6 +353,7 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
           )}
           {currentRoute === 'datasets' && <DatasetsPage onNavigateToSearchWithSet={handleNavigateToSearchWithSet} />}
           {currentRoute === 'lists' && <ListsPage />}
+          {currentRoute === 'admin' && <AdminCenter />}
         </main>
       </div>
     </div>
