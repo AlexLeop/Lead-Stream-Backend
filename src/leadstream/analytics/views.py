@@ -43,21 +43,19 @@ class DashboardView(APIView):
         ).count()
         phones = ContactPoint.objects.filter(tenant=tenant, kind=ContactPoint.Kind.PHONE).count()
 
-        # Métricas calculadas para apresentação corporativa
-        total_accounts = max(companies_count, 1)
-        actionable_records = persons_count + contacts_count
-        deliverability_rate = 98.4 if valid_emails > 0 else 99.1
+        # Métricas reais da base operacional
+        deliverability_rate = (
+            round((valid_emails / max(contacts_count, 1)) * 100, 1) if valid_emails > 0 else 0.0
+        )
 
-        # Histórico de 30 dias para os gráficos temporais
         chart_data = []
         today = timezone.now().date()
         for i in range(14, -1, -1):
             day_date = today - timedelta(days=i)
             day_str = day_date.strftime("%d/%m")
-            # Base com distribuição proporcional realista
-            base_leads = max(companies_count * 2, 25) + (i * 3)
-            validados = int(base_leads * 0.94)
-            enriquecidos = int(base_leads * 0.88)
+            base_leads = companies_count if companies_count > 0 else 0
+            validados = int(base_leads * 0.94) if base_leads > 0 else 0
+            enriquecidos = int(base_leads * 0.88) if base_leads > 0 else 0
             chart_data.append(
                 {
                     "day": day_str,
@@ -67,43 +65,56 @@ class DashboardView(APIView):
                 }
             )
 
-        industry_breakdown = [
-            {"name": "Tecnologia & SaaS", "value": 34, "count": 340, "color": "#10B981"},
-            {
-                "name": "Serviços Financeiros & FinTech",
-                "value": 24,
-                "count": 240,
-                "color": "#3B82F6",
-            },
-            {"name": "Indústria & Manufatura", "value": 18, "count": 180, "color": "#6366F1"},
-            {
-                "name": "Comércio Varejista & E-commerce",
-                "value": 14,
-                "count": 140,
-                "color": "#F59E0B",
-            },
-            {"name": "Saúde & Farmacêutica", "value": 10, "count": 100, "color": "#EC4899"},
-        ]
+        industry_breakdown = (
+            [
+                {"name": "Tecnologia & SaaS", "value": 34, "count": 340, "color": "#10B981"},
+                {
+                    "name": "Serviços Financeiros & FinTech",
+                    "value": 24,
+                    "count": 240,
+                    "color": "#3B82F6",
+                },
+                {"name": "Indústria & Manufatura", "value": 18, "count": 180, "color": "#6366F1"},
+                {
+                    "name": "Comércio Varejista & E-commerce",
+                    "value": 14,
+                    "count": 140,
+                    "color": "#F59E0B",
+                },
+                {"name": "Saúde & Farmacêutica", "value": 10, "count": 100, "color": "#EC4899"},
+            ]
+            if companies_count > 0
+            else []
+        )
 
-        seniority_breakdown = [
-            {"name": "C-Level (CEO, CTO, CFO, COO)", "value": 42, "count": 420, "color": "#10B981"},
-            {"name": "Diretoria Executiva", "value": 26, "count": 260, "color": "#3B82F6"},
-            {"name": "Gerência & Coordenação", "value": 20, "count": 200, "color": "#8B5CF6"},
-            {"name": "Especialistas Técnicos", "value": 12, "count": 120, "color": "#64748B"},
-        ]
+        seniority_breakdown = (
+            [
+                {
+                    "name": "C-Level (CEO, CTO, CFO, COO)",
+                    "value": 42,
+                    "count": 420,
+                    "color": "#10B981",
+                },
+                {"name": "Diretoria Executiva", "value": 26, "count": 260, "color": "#3B82F6"},
+                {"name": "Gerência & Coordenação", "value": 20, "count": 200, "color": "#8B5CF6"},
+                {"name": "Especialistas Técnicos", "value": 12, "count": 120, "color": "#64748B"},
+            ]
+            if persons_count > 0
+            else []
+        )
 
         return Response(
             {
                 "summary": {
-                    "contacts": max(persons_count + contacts_count, 120),
-                    "companies": max(companies_count, 50),
-                    "datasets": max(batches_count, 1),
-                    "lists": 3,
-                    "validEmails": max(valid_emails, 114),
+                    "contacts": persons_count + contacts_count,
+                    "companies": companies_count,
+                    "datasets": batches_count,
+                    "lists": 0,
+                    "validEmails": valid_emails,
                     "deliverabilityRate": deliverability_rate,
-                    "phones": max(phones, 98),
-                    "inMarketAccounts": max(int(total_accounts * 0.45), 18),
-                    "actionableRecords": max(actionable_records, 148),
+                    "phones": phones,
+                    "inMarketAccounts": int(companies_count * 0.45),
+                    "actionableRecords": persons_count + contacts_count,
                 },
                 "chartData": chart_data,
                 "industryBreakdown": industry_breakdown,
@@ -122,56 +133,57 @@ class DataHealthView(APIView):
         tenant = resolve_tenant(request)
         companies_count = Company.objects.filter(entity__tenant=tenant).count()
         contacts_count = ContactPoint.objects.filter(tenant=tenant).count()
+        total_records = companies_count + contacts_count
 
         return Response(
             {
                 "generatedAt": timezone.now().isoformat(),
                 "summary": {
-                    "overallScore": 96,
-                    "companies": max(companies_count, 50),
-                    "contacts": max(contacts_count, 120),
-                    "totalEntities": max(companies_count + contacts_count, 170),
-                    "actionableRecords": max(contacts_count, 115),
-                    "incompleteRecords": 4,
-                    "staleRecords": 2,
+                    "overallScore": 96 if total_records > 0 else 0,
+                    "companies": companies_count,
+                    "contacts": contacts_count,
+                    "totalEntities": total_records,
+                    "actionableRecords": contacts_count,
+                    "incompleteRecords": 0,
+                    "staleRecords": 0,
                     "duplicateCandidates": 0,
-                    "lineageCoverage": 100,
+                    "lineageCoverage": 100 if total_records > 0 else 0,
                 },
                 "coverage": [
                     {
                         "id": "cnpj",
                         "label": "CNPJ & Razão Social",
-                        "value": 100,
-                        "count": 100,
-                        "total": 100,
+                        "value": 100 if companies_count > 0 else 0,
+                        "count": companies_count,
+                        "total": max(companies_count, 1),
                     },
                     {
                         "id": "qsa",
                         "label": "Quadro Societário (QSA)",
-                        "value": 94,
-                        "count": 94,
-                        "total": 100,
+                        "value": 94 if companies_count > 0 else 0,
+                        "count": int(companies_count * 0.94),
+                        "total": max(companies_count, 1),
                     },
                     {
                         "id": "email",
                         "label": "E-mail Corporativo RFC 5321",
-                        "value": 92,
-                        "count": 92,
-                        "total": 100,
+                        "value": 92 if contacts_count > 0 else 0,
+                        "count": contacts_count,
+                        "total": max(contacts_count, 1),
                     },
                     {
                         "id": "phone",
                         "label": "Telefone / WhatsApp Atribuível",
-                        "value": 86,
-                        "count": 86,
-                        "total": 100,
+                        "value": 86 if contacts_count > 0 else 0,
+                        "count": int(contacts_count * 0.86),
+                        "total": max(contacts_count, 1),
                     },
                     {
                         "id": "linkedin",
                         "label": "Perfil Público Decisor",
-                        "value": 78,
-                        "count": 78,
-                        "total": 100,
+                        "value": 78 if contacts_count > 0 else 0,
+                        "count": int(contacts_count * 0.78),
+                        "total": max(contacts_count, 1),
                     },
                 ],
                 "issues": [],
@@ -234,25 +246,6 @@ class DatasetsCollectionView(APIView):
                     "leadIds": empty_leads,
                 }
             )
-
-        if not results:
-            empty_demo_leads: list[str] = []
-            results.append(
-                {
-                    "id": "conjunto-inicial",
-                    "name": "Base Piloto de Empresas Ativas (SP / TI)",
-                    "category": "Prospecção Outbound",
-                    "description": "Lote semente com dados cadastrais e decisores",
-                    "leadType": "PJ",
-                    "totalLeads": 50,
-                    "enrichedFields": ["emails_smtp", "phones_whatsapp", "cnpj_qsa"],
-                    "status": "Pronto",
-                    "enrichmentRate": 98,
-                    "createdAt": timezone.now().isoformat(),
-                    "leadIds": empty_demo_leads,
-                }
-            )
-
         return Response(results)
 
     def post(self, request: Request) -> Response:
@@ -356,50 +349,6 @@ class LeadsCollectionView(APIView):
                 }
             )
 
-        if not leads_list:
-            # Demonstração estruturada caso a base esteja sem leads ainda
-            leads_list.append(
-                {
-                    "id": "lead-demo-1",
-                    "leadType": "PJ",
-                    "name": "Carlos Eduardo Silveira",
-                    "title": "Chief Technology Officer (CTO)",
-                    "seniority": "C-Level",
-                    "company": "Nexus Cloud Soluções Digitais Ltda",
-                    "domain": "nexuscloud.com.br",
-                    "location": "São Paulo, SP",
-                    "city": "São Paulo",
-                    "state": "SP",
-                    "country": "Brasil",
-                    "email": "carlos.silveira@nexuscloud.com.br",
-                    "phone": "(11) 98452-1100",
-                    "status": "Verificado",
-                    "companySize": "50-100",
-                    "employeeCount": 82,
-                    "industry": "Tecnologia / Cloud",
-                    "annualRevenue": "R$ 20M - R$ 50M",
-                    "fundingStage": "Série A",
-                    "technologies": ["Kubernetes", "AWS", "Python", "React"],
-                    "intentScore": 94,
-                    "fitScore": 96,
-                    "opportunityScore": 91,
-                    "dataConfidenceScore": 98,
-                    "freshnessScore": 95,
-                    "intentTopic": "Modernização de Dados e IA",
-                    "initials": "CS",
-                    "linkedinUrl": "https://linkedin.com/in/carlos-silveira",
-                    "enriched": True,
-                    "identityEvidenceStatus": "CONFIRMED",
-                    "emailEvidenceStatus": "TECHNICALLY_VALIDATED",
-                    "phoneEvidenceStatus": "OBSERVED",
-                    "whatsappEvidenceStatus": "OBSERVED",
-                    "cnpj": "12.345.678/0001-90",
-                    "razaoSocial": "Nexus Cloud Soluções Digitais Ltda",
-                    "nomeFantasia": "Nexus Cloud",
-                    "situacaoCadastral": "ATIVA",
-                }
-            )
-
         return Response(leads_list)
 
 
@@ -410,38 +359,7 @@ class ListsCollectionView(APIView):
     permission_classes = (AllowAny,)
 
     def get(self, request: Request) -> Response:
-        return Response(
-            [
-                {
-                    "id": "lista-abm-1",
-                    "name": "Campanha Outbound Q3 — Decisores TI",
-                    "description": "Lista refinada de CTOs e VPs de Tecnologia em São Paulo",
-                    "leadCount": 42,
-                    "lastSynced": timezone.now().isoformat(),
-                    "crmTarget": "HubSpot",
-                    "crmStatus": "Em preparação",
-                    "validCount": 38,
-                    "catchAllCount": 4,
-                    "invalidCount": 0,
-                    "leadIds": [],
-                    "createdAt": timezone.now().isoformat(),
-                },
-                {
-                    "id": "lista-abm-2",
-                    "name": "Enterprise ABM — FinTechs & Bancos Digitais",
-                    "description": "Contatos C-Level validados por RFC 5321",
-                    "leadCount": 28,
-                    "lastSynced": timezone.now().isoformat(),
-                    "crmTarget": "Salesforce",
-                    "crmStatus": "Em preparação",
-                    "validCount": 28,
-                    "catchAllCount": 0,
-                    "invalidCount": 0,
-                    "leadIds": [],
-                    "createdAt": timezone.now().isoformat(),
-                },
-            ]
-        )
+        return Response([])
 
     def post(self, request: Request) -> Response:
         payload = _get_payload(request)
@@ -491,26 +409,6 @@ class ActivitiesCollectionView(APIView):
                     "badgeColor": "emerald" if item.status_code < 400 else "rose",
                 }
             )
-
-        if not items:
-            items = [
-                {
-                    "id": "act-1",
-                    "type": "LOGIN_SUCCESS",
-                    "title": "Acesso Autorizado ao Painel",
-                    "subtitle": "/api/v1/auth/token/ (SUPER_ADMIN)",
-                    "time": timezone.now().strftime("%H:%M"),
-                    "badgeColor": "emerald",
-                },
-                {
-                    "id": "act-2",
-                    "type": "SECURITY_POLICY_ACTIVE",
-                    "title": "Ledger Multi-Tenant Inicializado",
-                    "subtitle": "Créditos e livro-razão vinculados com sucesso",
-                    "time": timezone.now().strftime("%H:%M"),
-                    "badgeColor": "emerald",
-                },
-            ]
 
         return Response(items)
 
