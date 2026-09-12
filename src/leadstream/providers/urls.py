@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .admin_views import AdminProvidersBudgetView, AdminProvidersConfigView
 from .views import (
     DiscoveryCollectionView,
     DiscoveryDetailView,
@@ -12,6 +13,16 @@ from .views import (
 )
 
 urlpatterns = [
+    path(
+        "admin/providers/",
+        AdminProvidersConfigView.as_view(),
+        name="admin-providers-config",
+    ),
+    path(
+        "admin/providers/budget/",
+        AdminProvidersBudgetView.as_view(),
+        name="admin-providers-budget",
+    ),
     path("descobertas/", DiscoveryCollectionView.as_view(), name="discovery-list"),
     path(
         "descobertas/<uuid:search_id>/",

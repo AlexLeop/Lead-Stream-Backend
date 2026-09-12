@@ -30,6 +30,7 @@ urlpatterns = [
     ),
     path("api/v1/", include("leadstream.security.urls")),
     path("api/v1/", include("leadstream.tenancy.urls")),
+    path("api/v1/", include("leadstream.governance.urls")),
     path("api/v1/dados/", include("leadstream.entities.urls")),
     path("api/v1/dados/", include("leadstream.evidence.urls")),
     path("api/v1/dados/", include("leadstream.governance.urls")),
