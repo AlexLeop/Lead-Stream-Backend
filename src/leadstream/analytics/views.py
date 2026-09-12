@@ -65,7 +65,7 @@ class DashboardView(APIView):
                 }
             )
 
-        industry_breakdown = (
+        industry_breakdown: list[dict[str, object]] = (
             [
                 {"name": "Tecnologia & SaaS", "value": 34, "count": 340, "color": "#10B981"},
                 {
@@ -87,7 +87,7 @@ class DashboardView(APIView):
             else []
         )
 
-        seniority_breakdown = (
+        seniority_breakdown: list[dict[str, object]] = (
             [
                 {
                     "name": "C-Level (CEO, CTO, CFO, COO)",
@@ -824,7 +824,8 @@ class EnrichmentCompanyView(APIView):
             },
         }
 
-        sections = [
+        empty_contact_items: list[dict[str, object]] = []
+        sections: list[dict[str, object]] = [
             {
                 "id": "registry",
                 "title": "Dados Cadastrais & QSA",
@@ -866,7 +867,7 @@ class EnrichmentCompanyView(APIView):
                     {"label": "Telefone Celular", "value": "(11) 98765-4321"},
                     {"label": "WhatsApp Ativo", "value": "Sim"},
                 ],
-                "items": [],
+                "items": empty_contact_items,
             },
         ]
 
