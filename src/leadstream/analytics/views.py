@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import timedelta
+from typing import Any
 
 from django.utils import timezone
 from rest_framework import status
@@ -16,6 +17,10 @@ from leadstream.entities.models import Company, ContactPoint, Person
 from leadstream.intelligence.cnae import KNOWN_CNAES
 from leadstream.security.authentication import CombinedAuthentication
 from leadstream.security.models import SecurityAuditLog
+
+
+def _get_payload(request: Request) -> dict[str, Any]:
+    return request.data if isinstance(request.data, dict) else {}
 
 
 class DashboardView(APIView):
@@ -209,8 +214,9 @@ class DatasetsCollectionView(APIView):
         tenant = resolve_tenant(request)
         batches = Batch.objects.filter(tenant=tenant).order_by("-created_at")
 
-        results = []
+        results: list[dict[str, Any]] = []
         for b in batches:
+            empty_leads: list[str] = []
             results.append(
                 {
                     "id": str(b.id),
@@ -220,16 +226,17 @@ class DatasetsCollectionView(APIView):
                     "leadType": "PJ",
                     "totalLeads": b.total_rows,
                     "enrichedFields": ["emails_smtp", "phones_whatsapp", "cnpj_qsa"],
-                    "status": "Pronto" if b.status == Batch.Status.SUCCEEDED else "Processando",
+                    "status": "Pronto" if b.status == Batch.Status.COMPLETED else "Processando",
                     "enrichmentRate": 100
                     if b.total_rows == 0
                     else int((b.succeeded_rows / b.total_rows) * 100),
                     "createdAt": b.created_at.isoformat(),
-                    "leadIds": [],
+                    "leadIds": empty_leads,
                 }
             )
 
         if not results:
+            empty_demo_leads: list[str] = []
             results.append(
                 {
                     "id": "conjunto-inicial",
@@ -242,7 +249,7 @@ class DatasetsCollectionView(APIView):
                     "status": "Pronto",
                     "enrichmentRate": 98,
                     "createdAt": timezone.now().isoformat(),
-                    "leadIds": [],
+                    "leadIds": empty_demo_leads,
                 }
             )
 
@@ -250,17 +257,19 @@ class DatasetsCollectionView(APIView):
 
     def post(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
-        name = request.data.get("name", "Novo Conjunto de Leads")
-        category = request.data.get("category", "Prospecção Outbound")
+        payload = _get_payload(request)
+        name = payload.get("name", "Novo Conjunto de Leads")
+        category = payload.get("category", "Prospecção Outbound")
 
         batch = Batch.objects.create(
             tenant=tenant,
             name=name,
-            source_type=Batch.SourceType.MANUAL,
-            status=Batch.Status.SUCCEEDED,
+            source_type=Batch.SourceType.DISCOVERY,
+            status=Batch.Status.COMPLETED,
             total_rows=0,
         )
 
+        empty_new_leads: list[str] = []
         return Response(
             {
                 "id": str(batch.id),
@@ -273,7 +282,7 @@ class DatasetsCollectionView(APIView):
                 "status": "Pronto",
                 "enrichmentRate": 100,
                 "createdAt": batch.created_at.isoformat(),
-                "leadIds": [],
+                "leadIds": empty_new_leads,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -435,13 +444,17 @@ class ListsCollectionView(APIView):
         )
 
     def post(self, request: Request) -> Response:
-        name = request.data.get("name", "Nova Lista")
-        crm = request.data.get("crmTarget", "HubSpot")
+        payload = _get_payload(request)
+        name = payload.get("name", "Nova Lista")
+        crm = payload.get("crmTarget", "HubSpot")
+        lead_ids: list[str] = (
+            payload.get("leadIds", []) if isinstance(payload.get("leadIds"), list) else []
+        )
         return Response(
             {
                 "id": f"lista-{uuid.uuid4().hex[:8]}",
                 "name": name,
-                "description": request.data.get("description", ""),
+                "description": payload.get("description", ""),
                 "leadCount": 0,
                 "lastSynced": timezone.now().isoformat(),
                 "crmTarget": crm,
@@ -449,7 +462,7 @@ class ListsCollectionView(APIView):
                 "validCount": 0,
                 "catchAllCount": 0,
                 "invalidCount": 0,
-                "leadIds": request.data.get("leadIds", []),
+                "leadIds": lead_ids,
                 "createdAt": timezone.now().isoformat(),
             },
             status=status.HTTP_201_CREATED,
@@ -708,8 +721,9 @@ class DiscoverySearchView(APIView):
     permission_classes = (AllowAny,)
 
     def post(self, request: Request) -> Response:
-        cnae = request.data.get("cnaePrincipal", "6201501")
-        uf = request.data.get("uf", "SP")
+        payload = _get_payload(request)
+        cnae = payload.get("cnaePrincipal", "6201501")
+        uf = payload.get("uf", "SP")
 
         return Response(
             {
@@ -830,7 +844,8 @@ class ImportsCollectionView(APIView):
     permission_classes = (AllowAny,)
 
     def post(self, request: Request) -> Response:
-        records = request.data.get("records", [])
+        payload = _get_payload(request)
+        records = payload.get("records", [])
         return Response(
             {
                 "imported": len(records) if isinstance(records, list) else 1,
@@ -847,7 +862,8 @@ class ListArchiveView(APIView):
     permission_classes = (AllowAny,)
 
     def patch(self, request: Request, list_id: str) -> Response:
-        archived = request.data.get("archived", True)
+        payload = _get_payload(request)
+        archived = payload.get("archived", True)
         return Response(
             {
                 "id": list_id,
@@ -862,11 +878,13 @@ class ListAddLeadsView(APIView):
     permission_classes = (AllowAny,)
 
     def post(self, request: Request, list_id: str) -> Response:
-        lead_ids = request.data.get("leadIds", [])
+        payload = _get_payload(request)
+        raw_ids = payload.get("leadIds", [])
+        lead_ids: list[str] = raw_ids if isinstance(raw_ids, list) else []
         return Response(
             {
                 "id": list_id,
-                "addedCount": len(lead_ids) if isinstance(lead_ids, list) else 0,
+                "addedCount": len(lead_ids),
                 "leadIds": lead_ids,
                 "message": f"{len(lead_ids)} leads vinculados à lista.",
             }
@@ -878,8 +896,10 @@ class EnrichmentCompanyView(APIView):
     permission_classes = (AllowAny,)
 
     def post(self, request: Request) -> Response:
-        query = request.data.get("query", "")
-        capabilities = request.data.get("capabilities", [])
+        payload = _get_payload(request)
+        query = payload.get("query", "")
+        raw_caps = payload.get("capabilities", [])
+        capabilities: list[str] = raw_caps if isinstance(raw_caps, list) else []
         return Response(
             {
                 "company": {
@@ -962,8 +982,9 @@ class DiscoveryExtractView(APIView):
     permission_classes = (AllowAny,)
 
     def post(self, request: Request) -> Response:
-        target_dataset_id = request.data.get("targetDatasetId", "conjunto-inicial")
-        total_extracted = request.data.get("limit", 25)
+        payload = _get_payload(request)
+        target_dataset_id = payload.get("targetDatasetId", "conjunto-inicial")
+        total_extracted = payload.get("limit", 25)
         return Response(
             {
                 "batchId": str(uuid.uuid4()),
