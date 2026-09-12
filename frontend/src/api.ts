@@ -377,7 +377,7 @@ export const api = {
     }),
 
   // Admin: Pricing & Ledger
-  adminPricing: () => request<AdminPriceBook[]>('/admin/pricing/'),
+  adminPricing: () => request<PaginatedResponse<AdminPriceBook> | AdminPriceBook[]>('/admin/pricing/'),
   updateAdminPriceBook: (
     bookId: string,
     data: {
@@ -409,7 +409,11 @@ export const api = {
 
   // Admin: Providers & Budget
   adminProviders: () => request<AdminProvidersData>('/admin/providers/'),
-  updateAdminProviderBudget: (data: { daily_limit_usd?: number; circuit_breaker_rate?: number }) =>
+  updateAdminProviderBudget: (data: {
+    daily_limit_brl?: number;
+    daily_limit_usd?: number;
+    circuit_breaker_rate?: number;
+  }) =>
     request<AdminProviderBudget>('/admin/providers/budget/', {
       method: 'PATCH',
       body: JSON.stringify(data),

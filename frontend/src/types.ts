@@ -705,6 +705,7 @@ export interface AdminAPIKey {
   is_active: boolean;
   created_at: string;
   expires_at: string | null;
+  last_used_at?: string | null;
 }
 
 export interface AdminPriceRule {
@@ -745,10 +746,13 @@ export interface AdminProviderStatus {
 }
 
 export interface AdminProviderBudget {
-  daily_limit_usd: number;
+  daily_limit_brl?: number;
+  daily_limit_usd?: number;
   circuit_breaker_rate: number;
-  spent_today_usd: number;
-  is_tripped: boolean;
+  current_spend_brl?: number;
+  current_spend_usd?: number;
+  spent_today_usd?: number;
+  is_tripped?: boolean;
 }
 
 export interface AdminProvidersData {
@@ -824,4 +828,13 @@ export interface AdminCeleryQueuesData {
   total_throughput_hour: number;
 }
 
-
+export function ensureArray<T>(val: unknown): T[] {
+  if (Array.isArray(val)) return val as T[];
+  if (val && typeof val === 'object') {
+    const obj = val as Record<string, unknown>;
+    if (Array.isArray(obj.results)) return obj.results as T[];
+    if (Array.isArray(obj.items)) return obj.items as T[];
+    if (Array.isArray(obj.data)) return obj.data as T[];
+  }
+  return [];
+}

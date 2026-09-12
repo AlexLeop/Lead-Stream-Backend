@@ -19,8 +19,10 @@ def _get_budget_config() -> dict[str, Any]:
     if isinstance(cached, dict):
         return cached
     default_config = {
+        "daily_limit_brl": 500.0,
         "daily_limit_usd": 150.0,
         "circuit_breaker_rate": 0.15,
+        "current_spend_brl": 45.0,
         "current_spend_usd": 12.45,
         "circuit_breaker_tripped": False,
     }
@@ -95,8 +97,12 @@ class AdminProvidersBudgetView(APIView):
     def patch(self, request: Request) -> Response:
         payload: dict[str, Any] = request.data if isinstance(request.data, dict) else {}
         budget = _get_budget_config()
-        if "daily_limit_usd" in payload:
+        if "daily_limit_brl" in payload:
+            budget["daily_limit_brl"] = float(payload["daily_limit_brl"])
+            budget["daily_limit_usd"] = round(budget["daily_limit_brl"] / 5.5, 2)
+        elif "daily_limit_usd" in payload:
             budget["daily_limit_usd"] = float(payload["daily_limit_usd"])
+            budget["daily_limit_brl"] = round(budget["daily_limit_usd"] * 5.5, 2)
         if "circuit_breaker_rate" in payload:
             budget["circuit_breaker_rate"] = float(payload["circuit_breaker_rate"])
 

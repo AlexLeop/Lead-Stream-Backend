@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --ls-bg: #090A0F;
-  --ls-surface: #12141C;
-  --ls-surface-subtle: #0D1117;
-  --ls-border: rgba(255, 255, 255, 0.08);
-  --ls-ink: #F8FAFC;
-  --ls-muted: #94A3B8;
-  --ls-accent: #10B981;
-  --ls-focus: rgba(16, 185, 129, 0.5);
+  --ls-bg: #F8FAFC;
+  --ls-surface: #FFFFFF;
+  --ls-surface-subtle: #F1F5F9;
+  --ls-border: #E2E8F0;
+  --ls-ink: #0F172A;
+  --ls-muted: #64748B;
+  --ls-accent: #2563EB;
+  --ls-focus: rgba(37, 99, 235, 0.5);
   font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
   color: var(--ls-ink);
   background: var(--ls-bg);
-  color-scheme: dark;
+  color-scheme: light;
   text-rendering: optimizeLegibility;
 }
 
@@ -61,8 +61,8 @@ p {
 }
 
 ::selection {
-  background: rgba(16, 185, 129, 0.2);
-  color: #34D399;
+  background: rgba(37, 99, 235, 0.15);
+  color: #1D4ED8;
 }
 
 /* Custom minimal scrollbar */
@@ -71,14 +71,14 @@ p {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #090A0F;
+  background: #F1F5F9;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: #CBD5E1;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: #94A3B8;
 }
 
 @media (prefers-reduced-motion: reduce) {
