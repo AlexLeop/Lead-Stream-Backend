@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '../api';
+import { useLeadStream } from '../LeadStreamContext';
 import { Lock, User, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 
 interface LoginProps {
@@ -7,6 +7,7 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+  const { login } = useLeadStream();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,7 +24,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      await api.login(username.trim(), password);
+      await login(username.trim(), password);
       onLoginSuccess();
     } catch (err: any) {
       setError(err?.message || 'Falha na autenticação. Verifique as credenciais.');

@@ -29,10 +29,11 @@ interface LeadStreamContextValue {
   workspace: WorkspaceSummary;
   loading: boolean;
   error: string | null;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => void;
   refresh: () => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   refreshWallet: () => Promise<void>;
-  logout: () => void;
   createDataset: (input: CreateDatasetInput) => Promise<LeadSet>;
   deleteDataset: (id: string) => Promise<void>;
   importRecords: (input: ImportPayload) => Promise<ImportResult>;
@@ -85,16 +86,32 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
     }
     try {
       const me = await api.me();
-      setUser(me.user);
-      setTenant(me.tenant);
+      if (me?.user) {
+        setUser(me.user);
+      }
+      const activeTenant = me?.active_workspace || me?.tenant || null;
+      if (activeTenant) {
+        setTenant(activeTenant);
+      }
       setIsAuthenticated(true);
-      await refreshWallet();
-    } catch {
-      logout();
+      await refreshWallet().catch(() => {});
+    } catch (err) {
+      console.warn('Não foi possível obter dados completos do perfil, mantendo sessão ativa:', err);
+      // Mantém a sessão autenticada com os tokens armazenados
+      setIsAuthenticated(true);
     } finally {
       setLoading(false);
     }
-  }, [logout, refreshWallet]);
+  }, [refreshWallet]);
+
+  const login = useCallback(
+    async (username: string, password: string) => {
+      await api.login(username, password);
+      setIsAuthenticated(true);
+      await loadAuthUser();
+    },
+    [loadAuthUser],
+  );
 
   const refresh = useCallback(async () => {
     if (!getStoredTokens()) return;
@@ -182,13 +199,14 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
       workspace,
       loading,
       error,
+      login,
+      logout,
       refresh,
       refreshWorkspace: refresh,
       refreshWallet,
-      logout,
       ...mutations,
     }),
-    [activities, crmConnections, datasets, error, isAuthenticated, leads, lists, loading, logout, mutations, refresh, refreshWallet, tenant, user, wallet, workspace],
+    [activities, crmConnections, datasets, error, isAuthenticated, leads, lists, loading, login, logout, mutations, refresh, refreshWallet, tenant, user, wallet, workspace],
   );
 
   return <LeadStreamContext.Provider value={value}>{children}</LeadStreamContext.Provider>;

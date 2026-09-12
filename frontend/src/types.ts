@@ -574,9 +574,20 @@ export interface DjangoAuthTokens {
 
 export interface DjangoAuthMeResponse {
   user: DjangoUser;
-  tenant: DjangoTenant;
-  role: 'ADMIN' | 'OPERATOR' | 'READ_ONLY';
-  is_authenticated: boolean;
+  active_workspace?: DjangoTenant;
+  tenant?: DjangoTenant;
+  role?: string;
+  is_authenticated?: boolean;
+  auth_type?: string;
+  permissions?: string[];
+  workspaces?: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    role: string;
+    is_active: boolean;
+    is_current: boolean;
+  }>;
 }
 
 export interface DjangoCreditWallet {
