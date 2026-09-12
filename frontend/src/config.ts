@@ -1,0 +1,87 @@
+import type { EnrichmentFieldOption } from './types';
+
+export const leadSetCategories = [
+  'Prospecção Outbound',
+  'Enriquecimento Cadastral',
+  'Campanha ABM & Enterprise',
+  'Eventos & Feiras',
+  'Validação de Base',
+  'Reativação de Churn',
+  'Base Inbound',
+  'Geral',
+];
+
+// Catálogo de capacidades do produto. Estes itens descrevem integrações possíveis;
+// eles não representam resultados, cobertura ou serviços configurados.
+export const enrichmentFieldOptions: EnrichmentFieldOption[] = [
+  {
+    id: 'emails_smtp',
+    label: 'Inspeção de e-mail corporativo',
+    description: 'Separa formato, DNS e eventual validação da caixa; cada sinal mantém seu próprio status.',
+    applicableFor: 'ALL',
+    creditsCost: 1,
+    matchRate: 'Serviço indisponível',
+    iconName: 'Mail',
+    category: 'Contato',
+  },
+  {
+    id: 'phones_whatsapp',
+    label: 'Telefone profissional e indício de WhatsApp',
+    description: 'Normaliza o telefone e mantém formato móvel, link de tentativa e confirmação do canal como sinais distintos.',
+    applicableFor: 'ALL',
+    creditsCost: 2,
+    matchRate: 'Serviço indisponível',
+    iconName: 'Phone',
+    category: 'Contato',
+  },
+  {
+    id: 'cnpj_qsa',
+    label: 'Dados empresariais, CNPJ e QSA',
+    description: 'Informações corporativas para qualificação e segmentação de empresas.',
+    applicableFor: 'PJ',
+    creditsCost: 2,
+    matchRate: 'Serviço indisponível',
+    iconName: 'Building2',
+    category: 'Cadastral',
+  },
+  {
+    id: 'technologies',
+    label: 'Tecnologias instaladas',
+    description: 'Technographics observados no domínio da empresa.',
+    applicableFor: 'PJ',
+    creditsCost: 1,
+    matchRate: 'Serviço indisponível',
+    iconName: 'Server',
+    category: 'Inteligência',
+  },
+  {
+    id: 'intent_signals',
+    label: 'Sinais de intenção B2B',
+    description: 'Sinais de interesse e comportamento para priorização comercial.',
+    applicableFor: 'ALL',
+    creditsCost: 3,
+    matchRate: 'Serviço indisponível',
+    iconName: 'Flame',
+    category: 'Inteligência',
+  },
+  {
+    id: 'linkedin_job',
+    label: 'Perfil e histórico profissional',
+    description: 'Dados profissionais para localizar e qualificar decisores.',
+    applicableFor: 'ALL',
+    creditsCost: 1,
+    matchRate: 'Serviço indisponível',
+    iconName: 'Linkedin',
+    category: 'Inteligência',
+  },
+  {
+    id: 'revenue_size',
+    label: 'Porte e faturamento empresarial',
+    description: 'Faixas corporativas para segmentação por potencial comercial.',
+    applicableFor: 'PJ',
+    creditsCost: 1,
+    matchRate: 'Serviço indisponível',
+    iconName: 'DollarSign',
+    category: 'Inteligência',
+  },
+];

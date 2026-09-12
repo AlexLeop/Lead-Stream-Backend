@@ -5,8 +5,14 @@
 !deploy/env.production.example
 *.json
 !**/.planning/*.json
+!frontend/*.json
 *.pem
 *.key
+
+# Frontend / Node
+node_modules/
+dist/
+.vite/
 
 # Python
 __pycache__/
