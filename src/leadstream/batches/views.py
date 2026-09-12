@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-import django.core.exceptions as django_exceptions
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import FileResponse, Http404, HttpResponse
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
@@ -37,7 +37,6 @@ def _get_batch(batch_id: UUID, request: Request | None = None) -> Batch:
         return Batch.objects.get(pk=batch_id, tenant=tenant)
     except Batch.DoesNotExist as exc:
         raise Http404("Lote não encontrado.") from exc
-DjangoValidationError = django_exceptions.ValidationError
 
 
 def _domain_error(exc: DjangoValidationError) -> ValidationError:
