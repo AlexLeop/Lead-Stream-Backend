@@ -982,14 +982,14 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                   <div>
                     <div className="text-xs font-bold uppercase tracking-wider text-slate-800">Resultado da consulta</div>
                     <div className="mt-0.5 text-[11px] text-slate-600">
-                      {result.coverage.available}/{result.coverage.requested} dimensões disponíveis ·
-                      {result.coverage.fieldCount} campos · {result.coverage.recordCount} registros secundários
+                      {(result.coverage?.available ?? 0)}/{(result.coverage?.requested ?? 0)} dimensões disponíveis ·
+                      {(result.coverage?.fieldCount ?? 0)} campos · {(result.coverage?.recordCount ?? 0)} registros secundários
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
-                      void navigator.clipboard?.writeText(result.companyId);
+                      if (result.companyId) void navigator.clipboard?.writeText(result.companyId);
                     }}
                     className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 inline-flex items-center gap-1"
                     title="Copiar ID da empresa"
@@ -998,7 +998,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                   </button>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
-                  {result.sections.map((sec) => {
+                  {(result.sections || []).map((sec) => {
                     const st = sectionState(sec.status);
                     return (
                       <div key={sec.id} className="p-3 sm:p-4">
@@ -1020,9 +1020,9 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                             )}
                           </div>
                         </div>
-                        {sec.fields.length > 0 && (
+                        {(sec.fields || []).length > 0 && (
                           <div className="mt-2 grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
-                            {sec.fields.map((f) => (
+                            {(sec.fields || []).map((f) => (
                               <div key={`${sec.id}-${f.label}`} className="flex gap-2 items-start">
                                 <span className="text-slate-500 shrink-0 w-32">{f.label}</span>
                                 <span className="text-slate-800 flex-1 break-words">{f.value || <span className="text-slate-400">—</span>}</span>
@@ -1030,13 +1030,13 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                             ))}
                           </div>
                         )}
-                        {sec.items.length > 0 && (
+                        {(sec.items || []).length > 0 && (
                           <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                            {sec.items.map((it, idx) => (
+                            {(sec.items || []).map((it, idx) => (
                               <div key={`${sec.id}-it-${idx}`} className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-1">
                                 {it.title && <div className="text-xs font-semibold text-slate-900">{it.title}</div>}
                                 <div className="space-y-0.5">
-                                  {it.fields.map((f) => (
+                                  {(it.fields || []).map((f) => (
                                     <div key={`${sec.id}-${idx}-${f.label}`} className="flex gap-2 text-[11px]">
                                       <span className="text-slate-500 w-24 shrink-0">{f.label}</span>
                                       <span className="text-slate-800 break-words">{f.value || <span className="text-slate-400">—</span>}</span>

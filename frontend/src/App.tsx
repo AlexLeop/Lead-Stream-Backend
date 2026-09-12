@@ -10,10 +10,10 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen w-full bg-[#090A0F] flex items-center justify-center text-slate-400 font-mono text-xs">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-5 h-5 border-2 border-emerald-500/30 border-t-emerald-400 rounded-full animate-spin" />
-          <span>Autenticando sessão LeadStream...</span>
+      <div className="min-h-screen w-full bg-slate-50 flex items-center justify-center text-slate-500 text-xs font-medium">
+        <div className="flex flex-col items-center gap-2.5">
+          <div className="w-5 h-5 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+          <span>Carregando LeadStream...</span>
         </div>
       </div>
     );

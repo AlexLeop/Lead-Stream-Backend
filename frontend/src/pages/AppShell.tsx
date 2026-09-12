@@ -69,8 +69,8 @@ const pageTitles: Record<string, { title: string; description: string }> = {
   lists: { title: 'Listas Comerciais', description: 'Conjuntos selecionados para ativação em vendas e CRM.' },
   'data-health': { title: 'Qualidade da Base', description: 'Indicadores de precisão, frescor e cobertura cadastral.' },
   admin: {
-    title: 'Torre Master de Governança',
-    description: 'Controle de inquilinos, planos, ledger contábil, provedores e motor Zero-Bounce.',
+    title: 'Administração do Sistema',
+    description: 'Gerenciamento de workspaces, planos de preços, usuários, provedores e marca.',
   },
 };
 
@@ -80,7 +80,7 @@ function BrandMark({ logoUrl, platformName }: { logoUrl?: string; platformName?:
       <img
         src={logoUrl}
         alt={platformName || 'LeadStream'}
-        className="h-8 w-8 rounded-lg object-contain bg-black/40 p-1 border border-white/10"
+        className="h-7 w-7 rounded-lg object-contain p-0.5 border border-slate-200 bg-white"
       />
     );
   }
@@ -91,7 +91,7 @@ function BrandMark({ logoUrl, platformName }: { logoUrl?: string; platformName?:
     .slice(0, 2)
     .toUpperCase();
   return (
-    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-mono font-bold text-white shadow-md shadow-emerald-950/50">
+    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-xs font-mono font-bold text-white shadow-xs">
       {initials || 'LS'}
     </div>
   );
@@ -207,9 +207,8 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
         {/* Master Administration Section (Superadmin & Staff) */}
         {(user?.is_superuser || user?.is_staff) && (
           <div className="pt-2 border-t border-slate-200">
-            <p className="mb-2 px-3 text-[10px] font-mono font-bold text-purple-700 uppercase tracking-wider flex items-center justify-between">
-              <span>Governança Master</span>
-              <span className="text-[9px] px-1 py-0.5 rounded bg-purple-100 text-purple-800 font-bold">ADMIN</span>
+            <p className="mb-2 px-3 text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">
+              Sistema & Gestão
             </p>
             <div className="space-y-1">
               <button
@@ -217,19 +216,19 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
                 aria-current={currentRoute === 'admin' ? 'page' : undefined}
                 className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors cursor-pointer ${
                   currentRoute === 'admin'
-                    ? 'bg-purple-50 text-purple-800 border border-purple-200 font-bold shadow-2xs'
-                    : 'text-purple-700 hover:bg-purple-50 hover:text-purple-900 border border-transparent'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200 font-bold shadow-2xs'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
                 }`}
               >
-                <ShieldAlert
+                <ShieldCheck
                   className={`h-4 w-4 shrink-0 ${
-                    currentRoute === 'admin' ? 'text-purple-700' : 'text-purple-500 group-hover:text-purple-700'
+                    currentRoute === 'admin' ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'
                   }`}
                 />
                 <span className="min-w-0">
-                  <span className="block text-xs font-semibold text-purple-900">Torre Master</span>
-                  <span className="block truncate text-[10px] text-purple-600">
-                    Inquilinos, Planos & Marca
+                  <span className="block text-xs font-semibold">Administração</span>
+                  <span className={`block truncate text-[10px] ${currentRoute === 'admin' ? 'text-blue-600/80' : 'text-slate-400'}`}>
+                    Workspaces, planos e marca
                   </span>
                 </span>
               </button>

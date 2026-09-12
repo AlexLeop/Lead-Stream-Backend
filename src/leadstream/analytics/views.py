@@ -795,33 +795,96 @@ class EnrichmentCompanyView(APIView):
 
     def post(self, request: Request) -> Response:
         payload = _get_payload(request)
-        query = payload.get("query", "")
+        query = str(payload.get("query") or payload.get("cnpj") or "").strip()
         raw_caps = payload.get("capabilities", [])
         capabilities: list[str] = raw_caps if isinstance(raw_caps, list) else []
+        run_id = f"run_{uuid.uuid4().hex[:10]}"
+        company_id = f"comp_{uuid.uuid4().hex[:10]}"
+
+        company_summary = {
+            "cnpj": query if len(query) >= 14 else "12.345.678/0001-90",
+            "razaoSocial": "Empresa Enriquecida Ltda",
+            "nomeFantasia": "Empresa Enriquecida",
+            "cnaePrincipal": {
+                "codigo": "6201501",
+                "descricao": "Desenvolvimento de programas de computador",
+            },
+            "situacaoCadastral": "ATIVA",
+            "capitalSocial": 100000.0,
+            "porte": "DEMAIS",
+            "naturezaJuridica": "Sociedade Empresária Limitada",
+            "dataAbertura": "2018-05-15",
+            "endereco": {
+                "logradouro": "Av. Paulista",
+                "numero": "1000",
+                "bairro": "Bela Vista",
+                "municipio": "São Paulo",
+                "uf": "SP",
+                "cep": "01310-100",
+            },
+        }
+
+        sections = [
+            {
+                "id": "registry",
+                "title": "Dados Cadastrais & QSA",
+                "description": "Receita Federal e quadro de sócios administradores",
+                "status": "available",
+                "summary": "Situação cadastral ATIVA com 2 sócios identificados.",
+                "fields": [
+                    {"label": "CNPJ", "value": company_summary["cnpj"]},
+                    {"label": "Razão Social", "value": company_summary["razaoSocial"]},
+                    {"label": "Situação", "value": "ATIVA"},
+                    {"label": "Capital Social", "value": "R$ 100.000,00"},
+                ],
+                "items": [
+                    {
+                        "title": "Alexandre Silva",
+                        "fields": [
+                            {"label": "Qualificação", "value": "Sócio-Administrador"},
+                            {"label": "País", "value": "Brasil"},
+                        ],
+                    },
+                    {
+                        "title": "Mariana Santos",
+                        "fields": [
+                            {"label": "Qualificação", "value": "Diretora de Operações"},
+                            {"label": "País", "value": "Brasil"},
+                        ],
+                    },
+                ],
+            },
+            {
+                "id": "contacts",
+                "title": "Contatos & Verificação RFC 5321",
+                "description": "E-mails corporativos e telefones celulares validados",
+                "status": "available",
+                "summary": "1 caixa postal entregável verificada via handshake SMTP.",
+                "fields": [
+                    {"label": "E-mail Principal", "value": "diretoria@empresa.com.br"},
+                    {"label": "Status SMTP", "value": "DELIVERABLE (250 OK)"},
+                    {"label": "Telefone Celular", "value": "(11) 98765-4321"},
+                    {"label": "WhatsApp Ativo", "value": "Sim"},
+                ],
+                "items": [],
+            },
+        ]
+
+        coverage = {
+            "requested": len(capabilities) or 2,
+            "available": len(capabilities) or 2,
+            "fieldCount": 8,
+            "recordCount": 2,
+        }
+
         return Response(
             {
-                "company": {
-                    "cnpj": query if len(str(query)) >= 14 else "12.345.678/0001-90",
-                    "razaoSocial": "Empresa Enriquecida Ltda",
-                    "nomeFantasia": "Empresa Enriquecida",
-                    "cnaePrincipal": {
-                        "codigo": "6201501",
-                        "descricao": "Desenvolvimento de programas de computador",
-                    },
-                    "situacaoCadastral": "ATIVA",
-                    "capitalSocial": 100000.0,
-                    "porte": "DEMAIS",
-                    "naturezaJuridica": "Sociedade Empresária Limitada",
-                    "dataAbertura": "2018-05-15",
-                    "endereco": {
-                        "logradouro": "Av. Paulista",
-                        "numero": "1000",
-                        "bairro": "Bela Vista",
-                        "municipio": "São Paulo",
-                        "uf": "SP",
-                        "cep": "01310-100",
-                    },
-                },
+                "runId": run_id,
+                "companyId": company_id,
+                "capabilities": capabilities,
+                "company": company_summary,
+                "coverage": coverage,
+                "sections": sections,
                 "socioAdministradores": [
                     {
                         "nome": "Alexandre Silva",

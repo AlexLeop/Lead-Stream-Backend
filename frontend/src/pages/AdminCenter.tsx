@@ -61,29 +61,21 @@ export default function AdminCenter() {
 
   return (
     <div className="space-y-6 max-w-[1440px] mx-auto pb-8">
-      {/* Top Header Bar (MVP Light Design) */}
-      <div className="bg-white p-5 sm:p-6 rounded-[12px] border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Top Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" /> SUPERADMIN PRIVILEGIADO
-            </span>
-            <span className="text-xs text-slate-500 font-semibold bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
-              DRF 5.2 / Master Core
-            </span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1.5">
-            Torre Master de Governança & White-Label
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            Administração do Sistema
           </h1>
-          <p className="text-slate-500 text-xs sm:text-sm font-medium mt-1 max-w-2xl">
-            Controle total de multi-inquilinos, limites operacionais, ledger contábil em Reais (BRL), provedores e motor Zero-Bounce.
+          <p className="text-xs text-slate-500 mt-0.5">
+            Gerenciamento de workspaces, planos de preços, usuários, provedores e personalização.
           </p>
         </div>
       </div>
 
       {feedback && (
         <div
-          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-xs font-semibold border ${
+          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-xs font-medium border ${
             feedback.type === 'success'
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
               : 'bg-rose-50 text-rose-800 border-rose-200'
@@ -98,20 +90,20 @@ export default function AdminCenter() {
         </div>
       )}
 
-      {/* High-density Nav Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 pb-3 scrollbar-none">
+      {/* Clean Horizontal Sub-Nav */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 scrollbar-none -mb-2">
         <TabButton active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} icon={Building2} label="Workspaces & Clientes" />
-        <TabButton active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={Users} label="Usuários & Chaves API" />
-        <TabButton active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={Sliders} label="Planos & Preços BRL" />
+        <TabButton active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={Users} label="Usuários & Chaves" />
+        <TabButton active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={Sliders} label="Planos & Preços (BRL)" />
         <TabButton active={activeTab === 'wallets'} onClick={() => setActiveTab('wallets')} icon={CreditCard} label="Carteiras & Ledger" />
-        <TabButton active={activeTab === 'batches'} onClick={() => setActiveTab('batches')} icon={Layers} label="Lotes & Filas Celery" />
-        <TabButton active={activeTab === 'providers'} onClick={() => setActiveTab('providers')} icon={Cpu} label="Provedores & Custos BRL" />
+        <TabButton active={activeTab === 'batches'} onClick={() => setActiveTab('batches')} icon={Layers} label="Lotes & Celery" />
+        <TabButton active={activeTab === 'providers'} onClick={() => setActiveTab('providers')} icon={Cpu} label="Provedores & Custos" />
         <TabButton active={activeTab === 'governance'} onClick={() => setActiveTab('governance')} icon={ShieldCheck} label="Governança & LGPD" />
         <TabButton active={activeTab === 'smtp_brand'} onClick={() => setActiveTab('smtp_brand')} icon={Palette} label="Zero-Bounce & Marca" />
       </div>
 
       {/* Tab Panels */}
-      <div className="mt-2">
+      <div className="mt-4">
         {activeTab === 'tenants' && <TenantsTab onError={(m) => showFeedback('error', m)} onSuccess={(m) => showFeedback('success', m)} />}
         {activeTab === 'users' && <UsersTab onError={(m) => showFeedback('error', m)} onSuccess={(m) => showFeedback('success', m)} />}
         {activeTab === 'pricing' && <PricingTab onError={(m) => showFeedback('error', m)} onSuccess={(m) => showFeedback('success', m)} />}
@@ -139,13 +131,13 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+      className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer -mb-px ${
         active
-          ? 'bg-blue-600 text-white shadow-xs'
-          : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-900 shadow-2xs'
+          ? 'border-blue-600 text-blue-600 font-semibold'
+          : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
       }`}
     >
-      <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
+      <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? 'text-blue-600' : 'text-slate-400'}`} />
       <span>{label}</span>
     </button>
   );

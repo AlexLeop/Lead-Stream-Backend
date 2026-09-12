@@ -64,50 +64,43 @@ export const Wallet: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-[1440px] mx-auto pb-8">
-      {/* Page Header (Light MVP Style) */}
-      <div className="bg-white p-5 sm:p-6 rounded-[12px] border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-              Carteira & Ledger Contábil (BRL)
-            </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              Custódia com Pay-per-Value
-            </span>
-          </div>
-          <p className="text-slate-500 text-xs sm:text-sm mt-1 font-medium max-w-2xl">
-            Garantia de liquidação por dado útil (linhas sem dados úteis são estornadas automaticamente ao saldo).
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            Carteira & Ledger Contábil
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Registro contábil de dupla entrada em Reais (BRL) com garantia de estorno de dados ausentes (Pay-per-Value).
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => loadData(page)}
-            disabled={refreshing}
-            className="px-4 py-2.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-2xs"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Atualizar</span>
-          </button>
-        </div>
+        <button
+          onClick={() => loadData(page)}
+          disabled={refreshing}
+          className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs w-fit"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${refreshing ? 'animate-spin' : ''}`} />
+          <span>Atualizar</span>
+        </button>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Saldo Disponível */}
-        <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
+        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Saldo Disponível (BRL)
+            <span className="text-xs font-medium text-slate-500">
+              Saldo Disponível
             </span>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center font-bold">
-              <WalletIcon className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <WalletIcon className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              {loading ? '---' : formatCredits(wallet?.available_balance ?? wallet?.balance)} <span className="text-xs font-semibold text-slate-400">créditos</span>
+            <div className="text-xl font-bold text-slate-900">
+              {loading ? '---' : formatCredits(wallet?.available_balance ?? wallet?.balance)} <span className="text-xs font-normal text-slate-500">créditos</span>
             </div>
-            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2 text-[11px] text-emerald-700 font-semibold">
+            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Pronto para novos lotes e validações</span>
             </div>
@@ -115,41 +108,41 @@ export const Wallet: React.FC = () => {
         </div>
 
         {/* Em Custódia / Reserva */}
-        <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
+        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            <span className="text-xs font-medium text-slate-500">
               Em Custódia Preventiva (Hold)
             </span>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center font-bold">
-              <ArrowDownLeft className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <ArrowDownLeft className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-amber-700 tracking-tight">
-              {loading ? '---' : formatCredits(wallet?.reserved_balance)} <span className="text-xs font-semibold text-slate-400">créditos</span>
+            <div className="text-xl font-bold text-amber-700">
+              {loading ? '---' : formatCredits(wallet?.reserved_balance)} <span className="text-xs font-normal text-slate-500">créditos</span>
             </div>
-            <div className="mt-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
+            <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-500">
               Reservados para lotes atualmente em processamento assíncrono.
             </div>
           </div>
         </div>
 
         {/* Modalidade da Conta */}
-        <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
+        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            <span className="text-xs font-medium text-slate-500">
               Modalidade de Faturamento
             </span>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold">
-              <ShieldCheck className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <ShieldCheck className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <div className="text-xl font-extrabold text-slate-900 tracking-tight">
-              {wallet?.is_unlimited ? 'Ilimitado (SaaS Core)' : 'Pré-pago (Pay-per-Value)'}
+            <div className="text-xl font-bold text-slate-900">
+              Pay-per-Value BRL
             </div>
-            <div className="mt-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
-              Isolamento contábil estrito por Workspace.
+            <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-500">
+              Cobrança apenas por blocos verificados e entregues.
             </div>
           </div>
         </div>
