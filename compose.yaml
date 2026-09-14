@@ -8,6 +8,9 @@ x-app-environment: &app-environment
   DATABASE_URL: postgresql://leadstream:${POSTGRES_PASSWORD:-leadstream}@postgres:5432/leadstream
   CELERY_BROKER_URL: amqp://leadstream:${RABBITMQ_PASSWORD:-leadstream}@rabbitmq:5672//
   REDIS_URL: redis://redis:6379/0
+  DATA_HASH_KEY: ${DATA_HASH_KEY:?DATA_HASH_KEY is required}
+  DATA_HASH_KEY_VERSION: ${DATA_HASH_KEY_VERSION:-v1}
+  FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:?FIELD_ENCRYPTION_KEYS is required}
   APPWRITE_ENDPOINT: ${APPWRITE_ENDPOINT:-}
   APPWRITE_PROJECT_ID: ${APPWRITE_PROJECT_ID:-}
   APPWRITE_API_KEY: ${APPWRITE_API_KEY:-}

@@ -48,13 +48,8 @@ import type {
 
 function resolveBaseUrl(): string {
   const envUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
-  // Se veio URL interna de docker ou localhost em produção, ignorar
-  if (envUrl && !envUrl.includes('lead_stream_backend') && !envUrl.includes('localhost') && envUrl.startsWith('http')) {
+  if (envUrl && /^https?:\/\//i.test(envUrl)) {
     return `${envUrl.replace(/\/$/, '')}/api/v1`;
-  }
-  // Se estiver acessando pelo domínio do EasyPanel, usar o backend público em HTTPS
-  if (typeof window !== 'undefined' && window.location.hostname.includes('easypanel.host')) {
-    return 'https://lead-stream-backend.a3rpjn.easypanel.host/api/v1';
   }
   return '/api/v1';
 }
@@ -72,90 +67,75 @@ export class ApiError extends Error {
   }
 }
 
-export function getStoredTokens(): DjangoAuthTokens | null {
-  const access = localStorage.getItem('leadstream_access_token');
-  const refresh = localStorage.getItem('leadstream_refresh_token');
-  if (access && refresh) {
-    return { access, refresh };
-  }
-  return null;
+let accessToken: string | null = null;
+let refreshPromise: Promise<string> | null = null;
+
+// Remove tokens persistidos por versões anteriores. O refresh atual vive somente em cookie HttpOnly.
+if (typeof window !== 'undefined') {
+  window.localStorage.removeItem('leadstream_access_token');
+  window.localStorage.removeItem('leadstream_refresh_token');
 }
 
-export function setStoredTokens(tokens: DjangoAuthTokens | null): void {
-  if (tokens) {
-    localStorage.setItem('leadstream_access_token', tokens.access);
-    localStorage.setItem('leadstream_refresh_token', tokens.refresh);
-  } else {
-    localStorage.removeItem('leadstream_access_token');
-    localStorage.removeItem('leadstream_refresh_token');
-  }
+export function hasAccessToken(): boolean {
+  return Boolean(accessToken);
 }
 
-let isRefreshing = false;
-let refreshSubscribers: ((token: string) => void)[] = [];
+function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
 
-function onRefreshed(token: string) {
-  refreshSubscribers.forEach((cb) => cb(token));
-  refreshSubscribers = [];
+function notifyUnauthorized(): void {
+  setAccessToken(null);
+  window.dispatchEvent(new Event('auth:unauthorized'));
+}
+
+async function refreshAccessToken(): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const response = await fetch(`${BASE_URL}/auth/token/refresh/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || typeof payload.access !== 'string') {
+        notifyUnauthorized();
+        throw new ApiError('Sessão expirada. Faça login novamente.', 401, payload);
+      }
+      setAccessToken(payload.access);
+      return payload.access;
+    })().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
 }
 
 async function request<T>(path: string, init?: RequestInit, retry = true): Promise<T> {
   const url = path.startsWith('http') ? path : `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
-  const tokens = getStoredTokens();
-
   const headers: Record<string, string> = {
     ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(init?.headers as Record<string, string>),
   };
 
-  if (tokens?.access && !headers['Authorization']) {
-    headers['Authorization'] = `Bearer ${tokens.access}`;
+  if (accessToken && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
   }
 
   const response = await fetch(url, {
     ...init,
     headers,
+    credentials: 'include',
   });
 
-  if (response.status === 401 && retry && tokens?.refresh && !path.includes('/auth/token/')) {
-    if (!isRefreshing) {
-      isRefreshing = true;
-      try {
-        const refreshResponse = await fetch(`${BASE_URL}/auth/token/refresh/`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh: tokens.refresh }),
-        });
-
-        if (refreshResponse.ok) {
-          const newTokens = (await refreshResponse.json()) as { access: string };
-          setStoredTokens({ access: newTokens.access, refresh: tokens.refresh });
-          isRefreshing = false;
-          onRefreshed(newTokens.access);
-          return request<T>(path, init, false);
-        } else {
-          setStoredTokens(null);
-          isRefreshing = false;
-          window.dispatchEvent(new Event('auth:unauthorized'));
-          throw new ApiError('Sessão expirada. Faça login novamente.', 401);
-        }
-      } catch (err) {
-        setStoredTokens(null);
-        isRefreshing = false;
-        window.dispatchEvent(new Event('auth:unauthorized'));
-        throw err;
-      }
-    }
-
-    return new Promise((resolve) => {
-      refreshSubscribers.push((newToken: string) => {
-        const retryHeaders = {
-          ...headers,
-          Authorization: `Bearer ${newToken}`,
-        };
-        resolve(request<T>(path, { ...init, headers: retryHeaders }, false));
-      });
-    });
+  if (response.status === 401 && retry && !path.includes('/auth/token')) {
+    const newToken = await refreshAccessToken();
+    return request<T>(
+      path,
+      { ...init, headers: { ...headers, Authorization: `Bearer ${newToken}` } },
+      false,
+    );
   }
 
   if (response.status === 204) return undefined as T;
@@ -183,13 +163,25 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
-    setStoredTokens(tokens);
+    setAccessToken(tokens.access);
     return tokens;
   },
 
-  logout: () => {
-    setStoredTokens(null);
-    window.location.href = '/login';
+  restoreSession: async (): Promise<void> => {
+    await refreshAccessToken();
+  },
+
+  logout: async (): Promise<void> => {
+    try {
+      if (accessToken) {
+        await request<{ detail: string }>('/auth/token/revoke/', {
+          method: 'POST',
+          body: '{}',
+        });
+      }
+    } finally {
+      setAccessToken(null);
+    }
   },
 
   me: () => request<DjangoAuthMeResponse>('/auth/me/'),

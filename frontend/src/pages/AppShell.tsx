@@ -4,6 +4,7 @@ import {
   FolderKanban,
   LayoutDashboard,
   ListOrdered,
+  LogOut,
   MailCheck,
   Menu,
   Search,
@@ -34,6 +35,7 @@ interface NavItem {
   label: string;
   description: string;
   icon: ComponentType<{ className?: string }>;
+  superuserOnly?: boolean;
 }
 
 const navigation: Array<{ label: string; items: NavItem[] }> = [
@@ -58,7 +60,7 @@ const navigation: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { id: 'wallet', label: 'Carteira & Ledger', description: 'Custódia e Pay-per-Value', icon: WalletIcon },
       { id: 'validation', label: 'Validação Zero-Bounce', description: 'Probe RFC 5321 profundo', icon: MailCheck },
-      { id: 'admin', label: 'Administração', description: 'Workspaces, planos e sistema', icon: ShieldAlert },
+      { id: 'admin', label: 'Administração', description: 'Workspaces, planos e sistema', icon: ShieldAlert, superuserOnly: true },
     ],
   },
 ];
@@ -88,7 +90,7 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
-  const { workspace, tenant, wallet, loading, error, refresh } = useLeadStream();
+  const { workspace, tenant, wallet, loading, error, refresh, logout, user } = useLeadStream();
   const page = pageTitles[currentRoute] ?? pageTitles.dashboard;
 
   useEffect(() => {
@@ -150,7 +152,7 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
           <div key={group.label} className="mb-6">
             <p className="mb-2 px-3 text-[11px] font-semibold text-slate-500">{group.label}</p>
             <div className="space-y-1">
-              {group.items.map((item) => {
+              {group.items.filter((item) => !item.superuserOnly || user?.is_superuser).map((item) => {
                 const Icon = item.icon;
                 const active = currentRoute === item.id;
                 return (
@@ -192,6 +194,23 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
             <span>{(workspace.companies || 0).toLocaleString('pt-BR')} {(workspace.companies || 0) === 1 ? 'empresa' : 'empresas'}</span>
             <span>{(workspace.contacts || 0).toLocaleString('pt-BR')} {(workspace.contacts || 0) === 1 ? 'contato' : 'contatos'}</span>
           </div>
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-3 px-1">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-semibold text-slate-200">
+              {user?.first_name || user?.username || 'Operador'}
+            </p>
+            <p className="truncate text-[11px] text-slate-500">{tenant?.name || 'Workspace atual'}</p>
+          </div>
+          <button
+            type="button"
+            onClick={logout}
+            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white focus-visible:ring-2 focus-visible:ring-blue-400"
+            aria-label="Sair da conta"
+            title="Sair da conta"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </>

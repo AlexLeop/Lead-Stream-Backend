@@ -695,7 +695,6 @@ export interface DjangoUser {
 
 export interface DjangoAuthTokens {
   access: string;
-  refresh: string;
 }
 
 export interface DjangoAuthMeResponse {

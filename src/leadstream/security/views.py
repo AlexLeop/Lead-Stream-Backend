@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from datetime import timedelta
+from typing import Any, Literal, cast
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
@@ -32,6 +34,37 @@ from leadstream.security.serializers import (
 )
 from leadstream.security.throttling import AuthRateThrottle, AuthRefreshRateThrottle
 from leadstream.tenancy.models import Tenant
+
+CookieSameSite = Literal["Lax", "Strict", "None", False]
+
+
+def _set_refresh_cookie(response: Response, raw_refresh: str) -> None:
+    refresh_lifetime = settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"]
+    if not isinstance(refresh_lifetime, timedelta):
+        raise TypeError("REFRESH_TOKEN_LIFETIME deve ser um timedelta.")
+    same_site = cast(CookieSameSite, settings.AUTH_COOKIE_SAMESITE)
+    if same_site not in {"Lax", "Strict", "None", False, None}:
+        raise ValueError("AUTH_COOKIE_SAMESITE inválido.")
+    response.set_cookie(
+        key=settings.AUTH_REFRESH_COOKIE_NAME,
+        value=raw_refresh,
+        max_age=int(refresh_lifetime.total_seconds()),
+        secure=settings.AUTH_COOKIE_SECURE,
+        httponly=True,
+        samesite=same_site,
+        domain=settings.AUTH_COOKIE_DOMAIN,
+        path=settings.AUTH_COOKIE_PATH,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    same_site = cast(CookieSameSite, settings.AUTH_COOKIE_SAMESITE)
+    response.delete_cookie(
+        key=settings.AUTH_REFRESH_COOKIE_NAME,
+        samesite=same_site,
+        domain=settings.AUTH_COOKIE_DOMAIN,
+        path=settings.AUTH_COOKIE_PATH,
+    )
 
 
 def get_client_ip(request: Request) -> str | None:
@@ -96,6 +129,9 @@ class TokenObtainPairAuditView(TokenObtainPairView):
             username = str(request.data.get("username", ""))
 
         if response.status_code == status.HTTP_200_OK:
+            raw_refresh = response.data.pop("refresh", None)
+            if isinstance(raw_refresh, str):
+                _set_refresh_cookie(response, raw_refresh)
             log_security_event(
                 request=request,
                 action="LOGIN_SUCCESS",
@@ -118,6 +154,28 @@ class TokenRefreshAuditView(TokenRefreshView):
 
     throttle_classes = (AuthRefreshRateThrottle,)
 
+    def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        request_data = request.data if isinstance(request.data, dict) else {}
+        raw_refresh = request_data.get("refresh") or request.COOKIES.get(
+            settings.AUTH_REFRESH_COOKIE_NAME
+        )
+        if not isinstance(raw_refresh, str) or not raw_refresh:
+            response = Response(
+                {"detail": "Sessão expirada. Faça login novamente."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+            _clear_refresh_cookie(response)
+            return response
+
+        serializer = self.get_serializer(data={"refresh": raw_refresh})
+        serializer.is_valid(raise_exception=True)
+        response_data = dict(serializer.validated_data)
+        rotated_refresh = response_data.pop("refresh", None)
+        response = Response(response_data, status=status.HTTP_200_OK)
+        if isinstance(rotated_refresh, str):
+            _set_refresh_cookie(response, rotated_refresh)
+        return response
+
 
 @extend_schema(
     tags=["Autenticação"],
@@ -136,16 +194,27 @@ class TokenRevokeView(APIView):
     def post(self, request: Request) -> Response:
         serializer = TokenRevokeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        raw_refresh = serializer.validated_data["refresh"]
+        raw_refresh_value = serializer.validated_data.get("refresh") or request.COOKIES.get(
+            settings.AUTH_REFRESH_COOKIE_NAME
+        )
+        if not isinstance(raw_refresh_value, str) or not raw_refresh_value:
+            response = Response(
+                {"detail": "Sessão já encerrada."},
+                status=status.HTTP_200_OK,
+            )
+            _clear_refresh_cookie(response)
+            return response
 
         try:
-            token = RefreshToken(raw_refresh)
+            token = RefreshToken(raw_refresh_value)  # type: ignore[arg-type]
             token.blacklist()
         except TokenError as exc:
-            return Response(
+            response = Response(
                 {"detail": f"Token inválido ou já revogado: {exc}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+            _clear_refresh_cookie(response)
+            return response
 
         log_security_event(
             request=request,
@@ -153,10 +222,12 @@ class TokenRevokeView(APIView):
             status_code=status.HTTP_200_OK,
             details={"revoked_at": timezone.now().isoformat()},
         )
-        return Response(
+        response = Response(
             {"detail": "Token revogado com sucesso."},
             status=status.HTTP_200_OK,
         )
+        _clear_refresh_cookie(response)
+        return response
 
 
 @extend_schema_view(
@@ -552,7 +623,7 @@ class SwitchWorkspaceView(APIView):
             details={"target_tenant_id": str(target_tenant.id), "target_slug": target_tenant.slug},
         )
 
-        return Response(
+        response = Response(
             {
                 "message": f"Workspace alterado para '{target_tenant.name}'.",
                 "active_workspace": {
@@ -562,7 +633,8 @@ class SwitchWorkspaceView(APIView):
                     "role": role,
                 },
                 "access": str(access),
-                "refresh": str(refresh),
             },
             status=status.HTTP_200_OK,
         )
+        _set_refresh_cookie(response, str(refresh))
+        return response

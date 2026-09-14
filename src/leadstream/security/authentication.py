@@ -111,18 +111,20 @@ class CombinedAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Token JWT inválido ou expirado.") from exc
 
         tenant_header = request.headers.get("X-Tenant-ID")
+        token_tenant_id = validated_token.get("tenant_id")
+        tenant_selector = tenant_header or (str(token_tenant_id) if token_tenant_id else None)
 
         is_superuser = bool(getattr(user, "is_superuser", False))
         if is_superuser:
-            if tenant_header:
+            if tenant_selector:
                 try:
-                    if _is_uuid(tenant_header):
-                        tenant = Tenant.objects.get(id=tenant_header, is_active=True)
+                    if _is_uuid(tenant_selector):
+                        tenant = Tenant.objects.get(id=tenant_selector, is_active=True)
                     else:
-                        tenant = Tenant.objects.get(slug=tenant_header, is_active=True)
+                        tenant = Tenant.objects.get(slug=tenant_selector, is_active=True)
                 except Tenant.DoesNotExist as exc:
                     raise AuthenticationFailed(
-                        f"Workspace '{tenant_header}' não encontrado ou inativo."
+                        f"Workspace '{tenant_selector}' não encontrado ou inativo."
                     ) from exc
             else:
                 from leadstream.tenancy.services import get_internal_tenant
@@ -141,14 +143,14 @@ class CombinedAuthentication(BaseAuthentication):
             memberships = WorkspaceMembership.objects.filter(
                 user_id=user_pk, is_active=True
             ).select_related("tenant")
-            if tenant_header:
-                if _is_uuid(tenant_header):
-                    membership = memberships.filter(tenant__id=tenant_header).first()
+            if tenant_selector:
+                if _is_uuid(tenant_selector):
+                    membership = memberships.filter(tenant__id=tenant_selector).first()
                 else:
-                    membership = memberships.filter(tenant__slug=tenant_header).first()
+                    membership = memberships.filter(tenant__slug=tenant_selector).first()
                 if not membership:
                     raise AuthenticationFailed(
-                        f"Usuário não possui acesso ativo ao workspace '{tenant_header}'."
+                        f"Usuário não possui acesso ativo ao workspace '{tenant_selector}'."
                     )
             else:
                 membership = memberships.first()

@@ -40,21 +40,21 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-blue-200 bg-blue-50 text-blue-700 text-xs font-extrabold mb-3 uppercase tracking-wider">
             <ShieldCheck className="w-3.5 h-3.5" />
-            Zero-Bounce & Ledger Multi-Tenant
+            Ambiente protegido
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
             LeadStream
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Plataforma de Inteligência e Enriquecimento de Leads B2B
+            Inteligência comercial com origem, confiança e custo visíveis
           </p>
         </div>
 
-        {/* Card Box (Light MVP Design) */}
         <div className="bg-white border border-slate-200/90 rounded-2xl p-8 shadow-sm">
-          <h2 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider text-center mb-6">
-            Acesso Restrito ao Painel
-          </h2>
+          <div className="mb-6 text-center">
+            <h2 className="text-lg font-bold text-slate-950">Acesse seu workspace</h2>
+            <p className="mt-1 text-sm text-slate-500">Use as credenciais fornecidas pelo administrador.</p>
+          </div>
 
           {error && (
             <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5 font-medium">
@@ -66,7 +66,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Usuário do Administrador
+                Usuário ou e-mail
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -86,7 +86,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Senha de Acesso
+                Senha
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -113,7 +113,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>Entrar no Sistema</span>
+                  <span>Entrar no LeadStream</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

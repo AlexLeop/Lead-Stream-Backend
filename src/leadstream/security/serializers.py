@@ -82,7 +82,8 @@ class APIKeyCreatedResponseSerializer(APIKeyReadSerializer):
 
 class TokenRevokeSerializer(serializers.Serializer[dict[str, Any]]):
     refresh = serializers.CharField(
-        required=True,
+        required=False,
+        allow_blank=False,
         help_text="Refresh token a ser revogado/invalidado na blacklist.",
     )
 

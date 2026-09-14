@@ -102,7 +102,14 @@ class TestAuthMeAndSwitchWorkspaceAPI:
         assert data["active_workspace"]["id"] == str(self.tenant_b.id)
         assert data["active_workspace"]["role"] == "ADMIN"
         assert "access" in data
-        assert "refresh" in data
+        assert "refresh" not in data
+        assert self.client.cookies["leadstream_refresh"]["httponly"] is True
+
+        # O tenant selecionado permanece no token, sem depender de header controlado pelo cliente.
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {data['access']}")
+        me_response = self.client.get("/api/v1/auth/me/")
+        assert me_response.status_code == 200
+        assert me_response.json()["active_workspace"]["id"] == str(self.tenant_b.id)
 
     def test_switch_workspace_denied_when_user_has_no_membership(self):
         token = RefreshToken.for_user(self.user).access_token

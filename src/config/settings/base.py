@@ -249,6 +249,11 @@ SIMPLE_JWT = {
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
+AUTH_REFRESH_COOKIE_NAME = env("AUTH_REFRESH_COOKIE_NAME", default="leadstream_refresh")
+AUTH_COOKIE_SECURE = env_bool("AUTH_COOKIE_SECURE", default=False)
+AUTH_COOKIE_SAMESITE = env("AUTH_COOKIE_SAMESITE", default="Strict")
+AUTH_COOKIE_DOMAIN = env("AUTH_COOKIE_DOMAIN")
+AUTH_COOKIE_PATH = env("AUTH_COOKIE_PATH", default="/api/v1/auth/")
 
 API_DESCRIPTION = """
 # LeadStream API — Plataforma Enterprise de Inteligência Cadastral & Leads B2B

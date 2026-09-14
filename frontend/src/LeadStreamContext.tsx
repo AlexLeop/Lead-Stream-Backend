@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, getStoredTokens, setStoredTokens } from './api';
+import { api, hasAccessToken } from './api';
 import type {
   Activity,
   CampaignList,
@@ -29,6 +29,7 @@ interface LeadStreamContextValue {
   workspace: WorkspaceSummary;
   loading: boolean;
   error: string | null;
+  permissions: string[];
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
@@ -47,7 +48,7 @@ const emptyWorkspace: WorkspaceSummary = { companies: 0, contacts: 0, datasets: 
 const LeadStreamContext = createContext<LeadStreamContextValue | null>(null);
 
 export function LeadStreamProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!getStoredTokens());
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<DjangoUser | null>(null);
   const [tenant, setTenant] = useState<DjangoTenant | null>(null);
   const [wallet, setWallet] = useState<DjangoCreditWallet | null>(null);
@@ -60,14 +61,20 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<WorkspaceSummary>(emptyWorkspace);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
 
-  const logout = useCallback(() => {
-    setStoredTokens(null);
+  const clearSessionState = useCallback(() => {
     setIsAuthenticated(false);
     setUser(null);
     setTenant(null);
     setWallet(null);
+    setPermissions([]);
   }, []);
+
+  const logout = useCallback(() => {
+    void api.logout();
+    clearSessionState();
+  }, [clearSessionState]);
 
   const refreshWallet = useCallback(async () => {
     try {
@@ -78,13 +85,11 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadAuthUser = useCallback(async () => {
-    if (!getStoredTokens()) {
-      setIsAuthenticated(false);
-      setLoading(false);
-      return;
-    }
+  const loadAuthUser = useCallback(async (): Promise<boolean> => {
     try {
+      if (!hasAccessToken()) {
+        await api.restoreSession();
+      }
       const me = await api.me();
       if (me?.user) {
         setUser(me.user);
@@ -93,16 +98,17 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
       if (activeTenant) {
         setTenant(activeTenant);
       }
+      setPermissions(me?.permissions || []);
       setIsAuthenticated(true);
       await refreshWallet().catch(() => {});
-    } catch (err) {
-      console.warn('Não foi possível obter dados completos do perfil, mantendo sessão ativa:', err);
-      // Mantém a sessão autenticada com os tokens armazenados
-      setIsAuthenticated(true);
+      return true;
+    } catch {
+      clearSessionState();
+      return false;
     } finally {
       setLoading(false);
     }
-  }, [refreshWallet]);
+  }, [clearSessionState, refreshWallet]);
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -133,13 +139,15 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
   }, [refreshWallet]);
 
   useEffect(() => {
-    loadAuthUser();
-    void refresh();
+    void (async () => {
+      const authenticated = await loadAuthUser();
+      if (authenticated) await refresh();
+    })();
 
-    const handleUnauthorized = () => logout();
+    const handleUnauthorized = () => clearSessionState();
     window.addEventListener('auth:unauthorized', handleUnauthorized);
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
-  }, [loadAuthUser, logout, refresh]);
+  }, [clearSessionState, loadAuthUser, refresh]);
 
   const mutations = useMemo(
     () => ({
@@ -195,6 +203,7 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
       workspace,
       loading,
       error,
+      permissions,
       login,
       logout,
       refresh,
@@ -202,7 +211,7 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
       refreshWallet,
       ...mutations,
     }),
-    [activities, crmConnections, datasets, error, isAuthenticated, leads, lists, loading, login, logout, mutations, refresh, refreshWallet, tenant, user, wallet, workspace],
+    [activities, crmConnections, datasets, error, isAuthenticated, leads, lists, loading, login, logout, mutations, permissions, refresh, refreshWallet, tenant, user, wallet, workspace],
   );
 
   return <LeadStreamContext.Provider value={value}>{children}</LeadStreamContext.Provider>;

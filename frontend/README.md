@@ -1,12 +1,12 @@
 # LeadStream Frontend
 
-Interface Web Corporativa, Clean e Responsiva para o LeadStream, desenvolvida em React 19, Vite, TypeScript e Tailwind CSS v4.
-
-Desenvolvida sob a premissa de estética corporativa e minimalista (*zero emojis*, tipografia refinada com Inter e JetBrains Mono, bordas finas de 1px e paleta escura de alta densidade informativa inspirada em Bloomberg / Stripe).
+Interface React do LeadStream, servida por Nginx e projetada para operar no mesmo domínio
+lógico da API. A sessão usa access token efêmero em memória e refresh token em cookie
+HttpOnly; nenhum token é persistido em `localStorage`.
 
 ---
 
-## 🚀 Como subir no EasyPanel como Serviço Independente
+## Como subir no EasyPanel como serviço independente
 
 O Frontend foi projetado para rodar como um container Docker desacoplado e independente do backend Django, servido via Nginx Alpine com alta performance e cache de assets estáticos.
 
@@ -17,12 +17,12 @@ O Frontend foi projetado para rodar como um container Docker desacoplado e indep
    - **Build Method**: `Dockerfile`
    - **Root Directory**: `/frontend`
    - **Dockerfile Path**: `Dockerfile`
-4. Em **Environment**:
-   - Defina a variável de conexão com o backend:
+4. Em **Environment**, defina o endereço alcançável pelo Nginx em tempo de execução:
      ```env
-     VITE_API_URL=https://sua-api-leadstream.dominio.com
+     BACKEND_UPSTREAM=https://sua-api-leadstream.dominio.com
      ```
-     *(Substitua pela URL pública ou interna onde o backend Django está respondendo).*
+   Prefira o endereço interno da rede do EasyPanel quando os serviços compartilham rede.
+   Não inclua `/api` no final.
 5. Em **Ports**:
    - Mapeie a porta `80` (HTTP do container Nginx).
 6. Em **Domains**:
@@ -31,7 +31,7 @@ O Frontend foi projetado para rodar como um container Docker desacoplado e indep
 
 ---
 
-## 💻 Desenvolvimento Local
+## Desenvolvimento local
 
 ### Pré-requisitos
 - Node.js 20+ ou 22 LTS
@@ -58,7 +58,7 @@ npm run build
 ---
 
 ## 📁 Estrutura de Diretórios
-- `src/api.ts`: Cliente HTTP com suporte a JWT (tokens `access` e `refresh`), renovação automática transparente, tratamento de erros e integração com todos os endpoints do Django REST.
+- `src/api.ts`: cliente HTTP com access token em memória, refresh em cookie HttpOnly e renovação automática.
 - `src/LeadStreamContext.tsx`: Gerenciador de estado global (autenticação JWT, dados do usuário, tenant, créditos em carteira, listas e conjuntos).
 - `src/types.ts`: Definições TypeScript rigorosas correspondentes aos modelos de domínio e DTOs do backend Django 5.2.
 - `src/pages/Login.tsx`: Tela corporativa de autenticação limpa com validação, indicação de segurança de sessão e lembrete de credenciais.

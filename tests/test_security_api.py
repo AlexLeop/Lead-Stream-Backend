@@ -26,17 +26,18 @@ def test_auth_token_obtain_and_refresh() -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access" in data
-    assert "refresh" in data
+    assert "refresh" not in data
+    assert client.cookies["leadstream_refresh"]["httponly"] is True
 
-    # Refresh valido
-    refresh_token = data["refresh"]
+    # Refresh válido usando somente o cookie HttpOnly
     refresh_response = client.post(
         "/api/v1/auth/token/refresh/",
-        {"refresh": refresh_token},
+        {},
         format="json",
     )
     assert refresh_response.status_code == 200
     assert "access" in refresh_response.json()
+    assert "refresh" not in refresh_response.json()
 
     # Login invalido
     bad_response = client.post(
@@ -59,10 +60,11 @@ def test_auth_token_revoke() -> None:
 
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
+    client.cookies["leadstream_refresh"] = refresh_str
 
     response = client.post(
         "/api/v1/auth/token/revoke/",
-        {"refresh": refresh_str},
+        {},
         format="json",
     )
     assert response.status_code in (200, 204)
@@ -70,7 +72,7 @@ def test_auth_token_revoke() -> None:
     # Tentar dar refresh no token revogado deve falhar
     refresh_attempt = client.post(
         "/api/v1/auth/token/refresh/",
-        {"refresh": refresh_str},
+        {},
         format="json",
     )
     assert refresh_attempt.status_code == 401
