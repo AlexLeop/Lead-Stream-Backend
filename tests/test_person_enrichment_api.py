@@ -195,13 +195,14 @@ def test_api_enrichment_person_endpoint(api_client: APIClient) -> None:
 
 
 @pytest.mark.django_db
-def test_api_enrichment_lookup_cpf(api_client: APIClient) -> None:
-    """Testa detecção automática de CPF (11 dígitos) no GET /api/v1/enrichment/lookup."""
+def test_api_enrichment_lookup_cpf_does_not_trigger_paid_enrichment(
+    api_client: APIClient,
+) -> None:
+    """GET de busca não pode tratar CPF ou acionar provedor de forma implícita."""
     res = api_client.get("/api/v1/enrichment/lookup?q=52998224725")
-    assert res.status_code == 200
+    assert res.status_code == 400
     data = res.json()
-    assert data.get("cpf") == "529.982.247-25"
-    assert "lookup-person" in data.get("id", "") or "Titular" in data.get("name", "")
+    assert data["code"] == "CPF_LOOKUP_REQUIRES_JOB"
 
 
 @pytest.mark.django_db

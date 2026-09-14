@@ -5,18 +5,29 @@ from datetime import timedelta
 from typing import Any
 
 from django.core.cache import cache
+from django.db.models import Count, Sum
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from leadstream.batches.models import Batch
+from leadstream.batches.models import Batch, BatchItem
 from leadstream.common.api import resolve_tenant
-from leadstream.entities.models import Company, ContactPoint, Establishment, Person
+from leadstream.entities.models import (
+    Company,
+    ContactPoint,
+    Establishment,
+    Person,
+    Relationship,
+    SocialProfile,
+)
 from leadstream.entities.normalization import only_digits
+from leadstream.evidence.models import Observation
+from leadstream.integrations.models import CRMConnection
 from leadstream.intelligence.cnae import KNOWN_CNAES
-from leadstream.providers.live_enrichment import enrich_company_live, format_cnpj
+from leadstream.providers.live_enrichment import enrich_company_live
 from leadstream.providers.live_enrichment_person import enrich_person_live
 from leadstream.security.authentication import CombinedAuthentication
 from leadstream.security.models import SecurityAuditLog
@@ -25,6 +36,221 @@ from leadstream.security.permissions import TenantAccessPermission
 
 def _get_payload(request: Request) -> dict[str, Any]:
     return request.data if isinstance(request.data, dict) else {}
+
+
+def _percent(part: int, total: int) -> int:
+    return round((part / total) * 100) if total else 0
+
+
+VALIDATED_CONTACT_STATUSES = (
+    ContactPoint.Status.CAPABILITY_VALID,
+    ContactPoint.Status.CONFIRMED,
+)
+
+
+def _evidence_status(contact: ContactPoint | None) -> str:
+    if contact is None:
+        return "ABSENT"
+    if contact.status == ContactPoint.Status.CONFIRMED:
+        return "CONFIRMED"
+    if contact.status in {
+        ContactPoint.Status.DOMAIN_VALID,
+        ContactPoint.Status.CAPABILITY_VALID,
+    }:
+        return "TECHNICALLY_VALIDATED"
+    if contact.status in {
+        ContactPoint.Status.INVALID,
+        ContactPoint.Status.EXPIRED,
+        ContactPoint.Status.SUPPRESSED,
+    }:
+        return "REJECTED"
+    return "OBSERVED"
+
+
+def _email_status(contact: ContactPoint | None) -> str:
+    if contact is None:
+        return "Não verificado"
+    if contact.status in VALIDATED_CONTACT_STATUSES:
+        return "Verificado"
+    if contact.status == ContactPoint.Status.INVALID:
+        return "Inválido"
+    return "Não verificado"
+
+
+def _preferred_contact(entity_id: uuid.UUID, kinds: tuple[str, ...]) -> ContactPoint | None:
+    return (
+        ContactPoint.objects.filter(owner_id=entity_id, kind__in=kinds)
+        .exclude(status__in=(ContactPoint.Status.SUPPRESSED, ContactPoint.Status.EXPIRED))
+        .order_by("-last_observed_at", "-created_at")
+        .first()
+    )
+
+
+def _preferred_social(entity_id: uuid.UUID, network: str) -> SocialProfile | None:
+    return (
+        SocialProfile.objects.filter(owner_id=entity_id, network=network)
+        .exclude(status__in=(ContactPoint.Status.SUPPRESSED, ContactPoint.Status.EXPIRED))
+        .order_by("-last_observed_at", "-created_at")
+        .first()
+    )
+
+
+def _freshness_score(contact: ContactPoint | None) -> int:
+    if contact is None or contact.last_observed_at is None:
+        return 0
+    age_days = max((timezone.now() - contact.last_observed_at).days, 0)
+    if age_days <= 30:
+        return 100
+    if age_days <= 90:
+        return 80
+    if age_days <= 180:
+        return 60
+    return 30
+
+
+def _contact_confidence(*contacts: ContactPoint | None) -> int:
+    scores: dict[str, int] = {
+        ContactPoint.Status.CONFIRMED: 100,
+        ContactPoint.Status.CAPABILITY_VALID: 85,
+        ContactPoint.Status.DOMAIN_VALID: 65,
+        ContactPoint.Status.OBSERVED: 50,
+    }
+    present = [scores.get(contact.status, 0) for contact in contacts if contact is not None]
+    return round(sum(present) / len(present)) if present else 0
+
+
+def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
+    person = relationship.person
+    company = relationship.company
+    entity_id = person.entity_id
+    email = _preferred_contact(entity_id, (ContactPoint.Kind.EMAIL,))
+    phone = _preferred_contact(
+        entity_id,
+        (ContactPoint.Kind.WHATSAPP, ContactPoint.Kind.PHONE),
+    )
+    linkedin = _preferred_social(entity_id, SocialProfile.Network.LINKEDIN)
+    establishment = company.establishments.order_by("-is_headquarters", "created_at").first()
+    observed_at = max(
+        [
+            value
+            for value in (
+                email.last_observed_at if email else None,
+                phone.last_observed_at if phone else None,
+                linkedin.last_observed_at if linkedin else None,
+            )
+            if value is not None
+        ],
+        default=None,
+    )
+    seniority_label = dict(Relationship.Seniority.choices).get(
+        relationship.seniority,
+        "Não informado",
+    )
+    return {
+        "id": str(entity_id),
+        "leadType": "PF",
+        "name": person.full_name,
+        "title": relationship.observed_title,
+        "seniority": seniority_label,
+        "company": company.legal_name,
+        "domain": "",
+        "location": "",
+        "city": "",
+        "state": "",
+        "country": "Brasil",
+        "email": email.normalized_value if email else "",
+        "phone": phone.normalized_value if phone else "",
+        "status": _email_status(email),
+        "companySize": "",
+        "employeeCount": 0,
+        "industry": "",
+        "annualRevenue": "",
+        "fundingStage": "",
+        "technologies": [],
+        "intentScore": 0,
+        "fitScore": 0,
+        "opportunityScore": 0,
+        "dataConfidenceScore": _contact_confidence(email, phone),
+        "freshnessScore": max(_freshness_score(email), _freshness_score(phone)),
+        "intentTopic": "",
+        "initials": "".join(part[:1] for part in person.full_name.split()[:2]).upper(),
+        "linkedinUrl": linkedin.normalized_url if linkedin else "",
+        "enriched": bool(email or phone or linkedin),
+        "identityEvidenceStatus": "OBSERVED",
+        "emailEvidenceStatus": _evidence_status(email),
+        "phoneEvidenceStatus": _evidence_status(phone),
+        "whatsappEvidenceStatus": (
+            _evidence_status(phone)
+            if phone and phone.kind == ContactPoint.Kind.WHATSAPP
+            else "ABSENT"
+        ),
+        "cpf": person.cpf_masked,
+        "cnpj": establishment.cnpj if establishment else company.cnpj_root,
+        "razaoSocial": company.legal_name,
+        "nomeFantasia": company.trade_name,
+        "situacaoCadastral": company.registration_status,
+        "papelCompra": relationship.buying_role,
+        "observedAt": observed_at.isoformat() if observed_at else None,
+        "createdAt": person.created_at.isoformat(),
+        "updatedAt": person.updated_at.isoformat(),
+    }
+
+
+def _company_lead(company: Company) -> dict[str, Any]:
+    entity_id = company.entity_id
+    email = _preferred_contact(entity_id, (ContactPoint.Kind.EMAIL,))
+    phone = _preferred_contact(
+        entity_id,
+        (ContactPoint.Kind.WHATSAPP, ContactPoint.Kind.PHONE),
+    )
+    linkedin = _preferred_social(entity_id, SocialProfile.Network.LINKEDIN)
+    establishment = company.establishments.order_by("-is_headquarters", "created_at").first()
+    return {
+        "id": str(entity_id),
+        "leadType": "PJ",
+        "name": company.trade_name or company.legal_name,
+        "title": "",
+        "seniority": "Não informado",
+        "company": company.legal_name,
+        "domain": "",
+        "location": "",
+        "city": "",
+        "state": "",
+        "country": "Brasil",
+        "email": email.normalized_value if email else "",
+        "phone": phone.normalized_value if phone else "",
+        "status": _email_status(email),
+        "companySize": "",
+        "employeeCount": 0,
+        "industry": "",
+        "annualRevenue": "",
+        "fundingStage": "",
+        "technologies": [],
+        "intentScore": 0,
+        "fitScore": 0,
+        "opportunityScore": 0,
+        "dataConfidenceScore": _contact_confidence(email, phone),
+        "freshnessScore": max(_freshness_score(email), _freshness_score(phone)),
+        "intentTopic": "",
+        "initials": (company.trade_name or company.legal_name)[:2].upper(),
+        "linkedinUrl": linkedin.normalized_url if linkedin else "",
+        "enriched": bool(email or phone or linkedin),
+        "identityEvidenceStatus": "OBSERVED",
+        "emailEvidenceStatus": _evidence_status(email),
+        "phoneEvidenceStatus": _evidence_status(phone),
+        "whatsappEvidenceStatus": (
+            _evidence_status(phone)
+            if phone and phone.kind == ContactPoint.Kind.WHATSAPP
+            else "ABSENT"
+        ),
+        "cnpj": establishment.cnpj if establishment else company.cnpj_root,
+        "razaoSocial": company.legal_name,
+        "nomeFantasia": company.trade_name,
+        "situacaoCadastral": company.registration_status,
+        "dataAbertura": company.opened_on.isoformat() if company.opened_on else None,
+        "createdAt": company.created_at.isoformat(),
+        "updatedAt": company.updated_at.isoformat(),
+    }
 
 
 class DashboardView(APIView):
@@ -43,69 +269,79 @@ class DashboardView(APIView):
         batches_count = Batch.objects.filter(tenant=tenant).count()
 
         valid_emails = ContactPoint.objects.filter(
-            tenant=tenant, kind=ContactPoint.Kind.EMAIL
+            tenant=tenant,
+            kind=ContactPoint.Kind.EMAIL,
+            status__in=VALIDATED_CONTACT_STATUSES,
         ).count()
-        phones = ContactPoint.objects.filter(tenant=tenant, kind=ContactPoint.Kind.PHONE).count()
+        phones = ContactPoint.objects.filter(
+            tenant=tenant,
+            kind__in=(ContactPoint.Kind.PHONE, ContactPoint.Kind.WHATSAPP),
+            status__in=VALIDATED_CONTACT_STATUSES,
+        ).count()
 
         # Métricas reais da base operacional
         deliverability_rate = (
-            round((valid_emails / max(contacts_count, 1)) * 100, 1) if valid_emails > 0 else 0.0
+            round(
+                (
+                    valid_emails
+                    / max(
+                        ContactPoint.objects.filter(
+                            tenant=tenant, kind=ContactPoint.Kind.EMAIL
+                        ).count(),
+                        1,
+                    )
+                )
+                * 100,
+                1,
+            )
+            if valid_emails > 0
+            else 0.0
         )
 
-        chart_data = []
+        start_date = timezone.now() - timedelta(days=14)
+        history_rows: dict[Any, Any] = {
+            row["day"]: row
+            for row in Batch.objects.filter(tenant=tenant, created_at__gte=start_date)
+            .annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(
+                leads=Sum("total_rows"),
+                validados=Sum("processed_rows"),
+                enriquecidos=Sum("succeeded_rows"),
+            )
+        }
+        chart_data: list[dict[str, object]] = []
         today = timezone.now().date()
         for i in range(14, -1, -1):
             day_date = today - timedelta(days=i)
-            day_str = day_date.strftime("%d/%m")
-            base_leads = companies_count if companies_count > 0 else 0
-            validados = int(base_leads * 0.94) if base_leads > 0 else 0
-            enriquecidos = int(base_leads * 0.88) if base_leads > 0 else 0
+            current: dict[str, Any] = history_rows.get(day_date, {})
             chart_data.append(
                 {
-                    "day": day_str,
-                    "leads": base_leads,
-                    "validados": validados,
-                    "enriquecidos": enriquecidos,
+                    "day": day_date.strftime("%d/%m"),
+                    "leads": int(current.get("leads") or 0),
+                    "validados": int(current.get("validados") or 0),
+                    "enriquecidos": int(current.get("enriquecidos") or 0),
                 }
             )
 
-        industry_breakdown: list[dict[str, object]] = (
-            [
-                {"name": "Tecnologia & SaaS", "value": 34, "count": 340, "color": "#10B981"},
-                {
-                    "name": "Serviços Financeiros & FinTech",
-                    "value": 24,
-                    "count": 240,
-                    "color": "#3B82F6",
-                },
-                {"name": "Indústria & Manufatura", "value": 18, "count": 180, "color": "#6366F1"},
-                {
-                    "name": "Comércio Varejista & E-commerce",
-                    "value": 14,
-                    "count": 140,
-                    "color": "#F59E0B",
-                },
-                {"name": "Saúde & Farmacêutica", "value": 10, "count": 100, "color": "#EC4899"},
-            ]
-            if companies_count > 0
-            else []
+        industry_breakdown: list[dict[str, object]] = []
+        seniority_rows = list(
+            Relationship.objects.filter(tenant=tenant, ended_on__isnull=True)
+            .values("seniority")
+            .annotate(count=Count("id"))
+            .order_by("-count")
         )
-
-        seniority_breakdown: list[dict[str, object]] = (
-            [
-                {
-                    "name": "C-Level (CEO, CTO, CFO, COO)",
-                    "value": 42,
-                    "count": 420,
-                    "color": "#10B981",
-                },
-                {"name": "Diretoria Executiva", "value": 26, "count": 260, "color": "#3B82F6"},
-                {"name": "Gerência & Coordenação", "value": 20, "count": 200, "color": "#8B5CF6"},
-                {"name": "Especialistas Técnicos", "value": 12, "count": 120, "color": "#64748B"},
-            ]
-            if persons_count > 0
-            else []
-        )
+        seniority_total = sum(int(row["count"]) for row in seniority_rows)
+        seniority_breakdown = [
+            {
+                "name": dict(Relationship.Seniority.choices).get(
+                    str(row["seniority"]), "Não informado"
+                ),
+                "value": _percent(int(row["count"]), seniority_total),
+                "count": int(row["count"]),
+            }
+            for row in seniority_rows
+        ]
 
         return Response(
             {
@@ -117,8 +353,14 @@ class DashboardView(APIView):
                     "validEmails": valid_emails,
                     "deliverabilityRate": deliverability_rate,
                     "phones": phones,
-                    "inMarketAccounts": int(companies_count * 0.45),
-                    "actionableRecords": persons_count + contacts_count,
+                    "inMarketAccounts": 0,
+                    "actionableRecords": ContactPoint.objects.filter(
+                        tenant=tenant,
+                        status__in=VALIDATED_CONTACT_STATUSES,
+                    )
+                    .values("owner_id")
+                    .distinct()
+                    .count(),
                 },
                 "chartData": chart_data,
                 "industryBreakdown": industry_breakdown,
@@ -137,71 +379,167 @@ class DataHealthView(APIView):
         tenant = resolve_tenant(request)
         companies_count = Company.objects.filter(entity__tenant=tenant).count()
         contacts_count = ContactPoint.objects.filter(tenant=tenant).count()
-        total_records = companies_count + contacts_count
+        persons_count = Person.objects.filter(entity__tenant=tenant).count()
+        total_entities = companies_count + persons_count
+        validated_contacts = ContactPoint.objects.filter(
+            tenant=tenant,
+            status__in=VALIDATED_CONTACT_STATUSES,
+        )
+        actionable_records = validated_contacts.values("owner_id").distinct().count()
+        stale_records = ContactPoint.objects.filter(
+            tenant=tenant,
+            status__in=(ContactPoint.Status.STALE, ContactPoint.Status.EXPIRED),
+        ).count()
+        invalid_records = ContactPoint.objects.filter(
+            tenant=tenant,
+            status__in=(ContactPoint.Status.INVALID, ContactPoint.Status.SUPPRESSED),
+        ).count()
+        incomplete_records = max(total_entities - actionable_records, 0)
+        qsa_count = (
+            Company.objects.filter(
+                entity__tenant=tenant,
+                relationships__ended_on__isnull=True,
+            )
+            .distinct()
+            .count()
+        )
+        email_count = validated_contacts.filter(kind=ContactPoint.Kind.EMAIL).count()
+        phone_count = validated_contacts.filter(
+            kind__in=(ContactPoint.Kind.PHONE, ContactPoint.Kind.WHATSAPP)
+        ).count()
+        linkedin_count = SocialProfile.objects.filter(
+            tenant=tenant,
+            network=SocialProfile.Network.LINKEDIN,
+            status__in=VALIDATED_CONTACT_STATUSES,
+        ).count()
+        lineage_count = (
+            Observation.objects.filter(tenant=tenant).values("target_id").distinct().count()
+        )
+        identity_score = _percent(companies_count + persons_count, total_entities)
+        contactability_score = _percent(actionable_records, total_entities)
+        profile_score = _percent(linkedin_count, persons_count)
+        verification_score = _percent(validated_contacts.count(), contacts_count)
+        lineage_score = _percent(lineage_count, total_entities)
+        overall_score = round(
+            (
+                identity_score
+                + contactability_score
+                + profile_score
+                + verification_score
+                + lineage_score
+            )
+            / 5
+        )
+        issues: list[dict[str, object]] = []
+        if incomplete_records:
+            issues.append(
+                {
+                    "id": "missing-actionable-contact",
+                    "label": "Registros sem contato validado",
+                    "count": incomplete_records,
+                    "severity": "high",
+                    "description": (
+                        "Entidades sem e-mail, telefone ou WhatsApp tecnicamente validado."
+                    ),
+                    "actionRoute": "enrichment",
+                }
+            )
+        if stale_records:
+            issues.append(
+                {
+                    "id": "stale-contact",
+                    "label": "Contatos desatualizados",
+                    "count": stale_records,
+                    "severity": "medium",
+                    "description": "Contatos que ultrapassaram a janela de atualização.",
+                    "actionRoute": "data-health",
+                }
+            )
+        if invalid_records:
+            issues.append(
+                {
+                    "id": "rejected-contact",
+                    "label": "Contatos inválidos ou suprimidos",
+                    "count": invalid_records,
+                    "severity": "high",
+                    "description": "Registros que não podem ser utilizados para ativação.",
+                    "actionRoute": "data-health",
+                }
+            )
 
         return Response(
             {
                 "generatedAt": timezone.now().isoformat(),
                 "summary": {
-                    "overallScore": 96 if total_records > 0 else 0,
+                    "overallScore": overall_score,
                     "companies": companies_count,
                     "contacts": contacts_count,
-                    "totalEntities": total_records,
-                    "actionableRecords": contacts_count,
-                    "incompleteRecords": 0,
-                    "staleRecords": 0,
+                    "totalEntities": total_entities,
+                    "actionableRecords": actionable_records,
+                    "incompleteRecords": incomplete_records,
+                    "staleRecords": stale_records,
                     "duplicateCandidates": 0,
-                    "lineageCoverage": 100 if total_records > 0 else 0,
+                    "lineageCoverage": lineage_score,
                 },
                 "coverage": [
                     {
                         "id": "cnpj",
                         "label": "CNPJ & Razão Social",
-                        "value": 100 if companies_count > 0 else 0,
+                        "value": _percent(companies_count, companies_count),
                         "count": companies_count,
                         "total": max(companies_count, 1),
                     },
                     {
                         "id": "qsa",
                         "label": "Quadro Societário (QSA)",
-                        "value": 94 if companies_count > 0 else 0,
-                        "count": int(companies_count * 0.94),
+                        "value": _percent(qsa_count, companies_count),
+                        "count": qsa_count,
                         "total": max(companies_count, 1),
                     },
                     {
                         "id": "email",
                         "label": "E-mail Corporativo RFC 5321",
-                        "value": 92 if contacts_count > 0 else 0,
-                        "count": contacts_count,
-                        "total": max(contacts_count, 1),
+                        "value": _percent(email_count, total_entities),
+                        "count": email_count,
+                        "total": max(total_entities, 1),
                     },
                     {
                         "id": "phone",
                         "label": "Telefone / WhatsApp Atribuível",
-                        "value": 86 if contacts_count > 0 else 0,
-                        "count": int(contacts_count * 0.86),
-                        "total": max(contacts_count, 1),
+                        "value": _percent(phone_count, total_entities),
+                        "count": phone_count,
+                        "total": max(total_entities, 1),
                     },
                     {
                         "id": "linkedin",
                         "label": "Perfil Público Decisor",
-                        "value": 78 if contacts_count > 0 else 0,
-                        "count": int(contacts_count * 0.78),
-                        "total": max(contacts_count, 1),
+                        "value": _percent(linkedin_count, persons_count),
+                        "count": linkedin_count,
+                        "total": max(persons_count, 1),
                     },
                 ],
-                "issues": [],
-                "distribution": {"healthy": 88, "attention": 10, "critical": 2},
+                "issues": issues,
+                "distribution": {
+                    "healthy": actionable_records,
+                    "attention": incomplete_records,
+                    "critical": invalid_records,
+                },
                 "dimensions": {
-                    "identityScore": 98,
-                    "contactabilityScore": 94,
-                    "profileScore": 88,
-                    "verificationScore": 96,
-                    "lineageScore": 100,
+                    "identityScore": identity_score,
+                    "contactabilityScore": contactability_score,
+                    "profileScore": profile_score,
+                    "verificationScore": verification_score,
+                    "lineageScore": lineage_score,
                 },
                 "quarantine": {
-                    "quarantined": 0,
-                    "pendingReview": 0,
+                    "quarantined": BatchItem.objects.filter(
+                        tenant=tenant,
+                        hygiene_state=BatchItem.HygieneState.INVALID,
+                    ).count(),
+                    "pendingReview": BatchItem.objects.filter(
+                        tenant=tenant,
+                        status=BatchItem.Status.PENDING,
+                    ).count(),
                     "released": 0,
                     "lastClassifiedAt": timezone.now().isoformat(),
                 },
@@ -209,14 +547,16 @@ class DataHealthView(APIView):
         )
 
     def post(self, request: Request) -> Response:
-        """Executa a rotina de saneamento e reavaliação cadastral."""
+        """Recusa sucesso sintético enquanto a rotina assíncrona não estiver disponível."""
         return Response(
             {
-                "success": True,
-                "repairedContacts": 12,
-                "boostedScores": 18,
-                "health": self.get(request).data,
-            }
+                "code": "DATA_REPAIR_NOT_CONFIGURED",
+                "detail": (
+                    "A correção automática ainda não está configurada. "
+                    "Nenhum registro foi alterado."
+                ),
+            },
+            status=status.HTTP_501_NOT_IMPLEMENTED,
         )
 
 
@@ -233,21 +573,29 @@ class DatasetsCollectionView(APIView):
         results: list[dict[str, Any]] = []
         for b in batches:
             empty_leads: list[str] = []
+            status_labels: dict[str, str] = {
+                Batch.Status.COMPLETED: "Enriquecido",
+                Batch.Status.PARTIAL: "Parcial",
+                Batch.Status.FAILED: "Falhou",
+                Batch.Status.CANCELLED: "Cancelado",
+            }
+            display_status = status_labels.get(b.status, "Processando")
             results.append(
                 {
                     "id": str(b.id),
                     "name": b.name or f"Lote #{str(b.id)[:8]}",
                     "category": "Prospecção Outbound",
                     "description": f"Lote com {b.total_rows} registros",
-                    "leadType": "PJ",
+                    "leadType": "MISTO",
                     "totalLeads": b.total_rows,
-                    "enrichedFields": ["emails_smtp", "phones_whatsapp", "cnpj_qsa"],
-                    "status": "Pronto" if b.status == Batch.Status.COMPLETED else "Processando",
-                    "enrichmentRate": 100
-                    if b.total_rows == 0
-                    else int((b.succeeded_rows / b.total_rows) * 100),
+                    "enrichedFields": [],
+                    "status": display_status,
+                    "enrichmentRate": _percent(b.succeeded_rows, b.total_rows),
                     "createdAt": b.created_at.isoformat(),
                     "leadIds": empty_leads,
+                    "fileOriginName": b.input_original_name,
+                    "costCredits": b.cost_cents,
+                    "lastUpdated": b.updated_at.isoformat(),
                 }
             )
         return Response(results)
@@ -262,7 +610,7 @@ class DatasetsCollectionView(APIView):
             tenant=tenant,
             name=name,
             source_type=Batch.SourceType.DISCOVERY,
-            status=Batch.Status.COMPLETED,
+            status=Batch.Status.RECEIVED,
             total_rows=0,
         )
 
@@ -273,11 +621,11 @@ class DatasetsCollectionView(APIView):
                 "name": batch.name,
                 "category": category,
                 "description": "Conjunto criado pelo operador",
-                "leadType": "PJ",
+                "leadType": "MISTO",
                 "totalLeads": 0,
-                "enrichedFields": ["emails_smtp", "phones_whatsapp", "cnpj_qsa"],
-                "status": "Pronto",
-                "enrichmentRate": 100,
+                "enrichedFields": [],
+                "status": "Processando",
+                "enrichmentRate": 0,
                 "createdAt": batch.created_at.isoformat(),
                 "leadIds": empty_new_leads,
             },
@@ -293,9 +641,17 @@ class DatasetDetailView(APIView):
         tenant = resolve_tenant(request)
         try:
             batch_uuid = uuid.UUID(dataset_id)
-            Batch.objects.filter(tenant=tenant, id=batch_uuid).delete()
-        except (ValueError, TypeError, Batch.DoesNotExist):
-            pass
+        except (ValueError, TypeError):
+            return Response(
+                {"detail": "Identificador de conjunto inválido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        deleted, _ = Batch.objects.filter(tenant=tenant, id=batch_uuid).delete()
+        if deleted == 0:
+            return Response(
+                {"detail": "Conjunto não encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -307,52 +663,21 @@ class LeadsCollectionView(APIView):
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
-        companies = Company.objects.filter(entity__tenant=tenant).select_related("entity")[:50]
-
-        leads_list = []
-        for c in companies:
-            leads_list.append(
-                {
-                    "id": str(c.entity.id),
-                    "leadType": "PJ",
-                    "name": c.trade_name or c.legal_name,
-                    "title": "Diretor Executivo",
-                    "seniority": "C-Level",
-                    "company": c.legal_name,
-                    "domain": f"{c.cnpj_root}.com.br",
-                    "location": "São Paulo, SP",
-                    "city": "São Paulo",
-                    "state": "SP",
-                    "country": "Brasil",
-                    "email": f"contato@{c.cnpj_root}.com.br",
-                    "phone": "(11) 99876-5432",
-                    "status": "Verificado",
-                    "companySize": "50-100",
-                    "employeeCount": 65,
-                    "industry": "Tecnologia da Informação",
-                    "annualRevenue": "R$ 15M - R$ 30M",
-                    "fundingStage": "Bootstrapped",
-                    "technologies": ["React", "Django", "PostgreSQL", "AWS"],
-                    "intentScore": 88,
-                    "fitScore": 92,
-                    "opportunityScore": 85,
-                    "dataConfidenceScore": 94,
-                    "freshnessScore": 96,
-                    "intentTopic": "Expansão de Infraestrutura",
-                    "initials": (c.trade_name or c.legal_name)[:2].upper(),
-                    "linkedinUrl": f"https://linkedin.com/company/{c.cnpj_root}",
-                    "enriched": True,
-                    "identityEvidenceStatus": "CONFIRMED",
-                    "emailEvidenceStatus": "TECHNICALLY_VALIDATED",
-                    "phoneEvidenceStatus": "OBSERVED",
-                    "whatsappEvidenceStatus": "OBSERVED",
-                    "cnpj": c.cnpj_root,
-                    "razaoSocial": c.legal_name,
-                    "nomeFantasia": c.trade_name,
-                    "situacaoCadastral": c.registration_status or "ATIVA",
-                }
+        relationships = list(
+            Relationship.objects.filter(tenant=tenant, ended_on__isnull=True)
+            .select_related("person__entity", "company__entity")
+            .order_by("-updated_at")[:50]
+        )
+        leads_list = [_relationship_lead(relationship) for relationship in relationships]
+        if len(leads_list) < 50:
+            represented_company_ids = {relationship.company_id for relationship in relationships}
+            companies = (
+                Company.objects.filter(entity__tenant=tenant)
+                .exclude(entity_id__in=represented_company_ids)
+                .select_related("entity")
+                .order_by("-updated_at")[: 50 - len(leads_list)]
             )
-
+            leads_list.extend(_company_lead(company) for company in companies)
         return Response(leads_list)
 
 
@@ -363,31 +688,19 @@ class ListsCollectionView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
+        resolve_tenant(request)
         return Response([])
 
     def post(self, request: Request) -> Response:
-        payload = _get_payload(request)
-        name = payload.get("name", "Nova Lista")
-        crm = payload.get("crmTarget", "HubSpot")
-        lead_ids: list[str] = (
-            payload.get("leadIds", []) if isinstance(payload.get("leadIds"), list) else []
-        )
+        resolve_tenant(request)
         return Response(
             {
-                "id": f"lista-{uuid.uuid4().hex[:8]}",
-                "name": name,
-                "description": payload.get("description", ""),
-                "leadCount": 0,
-                "lastSynced": timezone.now().isoformat(),
-                "crmTarget": crm,
-                "crmStatus": "Em preparação",
-                "validCount": 0,
-                "catchAllCount": 0,
-                "invalidCount": 0,
-                "leadIds": lead_ids,
-                "createdAt": timezone.now().isoformat(),
+                "code": "ACTIVATION_LISTS_NOT_CONFIGURED",
+                "detail": (
+                    "Listas de ativação ainda não estão configuradas. Nenhuma lista foi criada."
+                ),
             },
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_501_NOT_IMPLEMENTED,
         )
 
 
@@ -424,36 +737,30 @@ class CrmConnectionsView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
+        tenant = resolve_tenant(request)
+        status_labels = {
+            "UNTESTED": "Não testado",
+            "HEALTHY": "Conectado",
+            "DEGRADED": "Instável",
+            "FAILED": "Falha",
+        }
+        connections = CRMConnection.objects.filter(tenant=tenant).order_by("name")
         return Response(
             [
                 {
-                    "id": "hubspot",
-                    "name": "HubSpot CRM",
-                    "code": "hubspot",
-                    "iconBg": "bg-orange-500",
-                    "status": "Em preparação",
-                },
-                {
-                    "id": "salesforce",
-                    "name": "Salesforce Sales Cloud",
-                    "code": "salesforce",
-                    "iconBg": "bg-sky-500",
-                    "status": "Em preparação",
-                },
-                {
-                    "id": "rdstation",
-                    "name": "RD Station CRM",
-                    "code": "rdstation",
-                    "iconBg": "bg-emerald-500",
-                    "status": "Em preparação",
-                },
-                {
-                    "id": "pipedrive",
-                    "name": "Pipedrive",
-                    "code": "pipedrive",
-                    "iconBg": "bg-emerald-600",
-                    "status": "Em preparação",
-                },
+                    "id": str(connection.id),
+                    "name": connection.name,
+                    "code": connection.connector_type.lower(),
+                    "iconBg": "bg-slate-700",
+                    "status": status_labels.get(connection.last_status, "Não testado"),
+                    "lastTestedAt": (
+                        connection.last_tested_at.isoformat()
+                        if connection.last_tested_at
+                        else None
+                    ),
+                    "lastError": connection.last_error_message,
+                }
+                for connection in connections
             ]
         )
 
@@ -534,9 +841,13 @@ class EnrichmentCatalogView(APIView):
                         "id": "emails_smtp",
                         "groupId": "sales",
                         "label": "E-mails Validados RFC 5321",
-                        "description": "Handshake SMTP direto nos servidores de correio eletrônico",
-                        "highlights": ["Zero-Bounce", "Detecção Catch-All", "Entregabilidade >98%"],
-                        "depth": "Detalhado",
+                        "description": "Validação técnica conforme o provedor configurado",
+                        "highlights": [
+                            "Sintaxe",
+                            "Domínio",
+                            "Capacidade técnica quando disponível",
+                        ],
+                        "depth": "Dependente do provedor",
                     },
                     {
                         "id": "phones_whatsapp",
@@ -559,16 +870,18 @@ class EnrichmentCatalogView(APIView):
                         "depth": "Essencial",
                     },
                     {
-                        "id": "phones_whatsapp_garantido",
+                        "id": "phones_whatsapp_probe",
                         "groupId": "sales",
-                        "label": "WhatsApp Ativo Garantido (Probe)",
-                        "description": "Verificação técnica em tempo real na rede do WhatsApp",
+                        "label": "Sinal técnico de WhatsApp (Probe)",
+                        "description": (
+                            "Consulta técnica quando houver provedor autorizado configurado"
+                        ),
                         "highlights": [
                             "Probe em Tempo Real",
                             "Foto de Perfil",
-                            "Zero Desperdício de Créditos",
+                            "Resultado com horário e origem",
                         ],
-                        "depth": "Garantido",
+                        "depth": "Dependente do provedor",
                     },
                     {
                         "id": "consignado_core",
@@ -584,12 +897,10 @@ class EnrichmentCatalogView(APIView):
                         "id": "filtro_perda_obito",
                         "groupId": "risk",
                         "label": "Filtro de Perda & Expurgo de Óbito",
-                        "description": (
-                            "Detecção de falecimento ou irregularidade na RFB com tarifa zero"
-                        ),
+                        "description": "Detecção conforme sinais fornecidos por fonte autorizada",
                         "highlights": [
                             "Detector de Óbito",
-                            "Expurgo Sem Tarifa",
+                            "Resultado inconclusivo explícito",
                             "Proteção de Carteira",
                         ],
                         "depth": "Essencial",
@@ -611,7 +922,7 @@ class EnrichmentCatalogView(APIView):
                     {
                         "id": "mailing_top3_discagem",
                         "groupId": "sales",
-                        "label": "Mailing Higienizado Top 3 Celulares",
+                        "label": "Priorização de até 3 celulares",
                         "description": (
                             "Top 3 celulares com operadora, WhatsApp ativo e score de discagem"
                         ),
@@ -620,7 +931,7 @@ class EnrichmentCatalogView(APIView):
                             "Operadoras (Claro/Vivo/TIM)",
                             "Score de Discagem",
                         ],
-                        "depth": "Garantido",
+                        "depth": "Dependente do provedor",
                     },
                 ],
                 "presets": [
@@ -632,9 +943,9 @@ class EnrichmentCatalogView(APIView):
                     },
                     {
                         "id": "pf_whatsapp",
-                        "label": "Higienização CPF & WhatsApp Garantido",
+                        "label": "Higienização de CPF e sinal de WhatsApp",
                         "description": "Validação de CPF com checagem de conta ativa no WhatsApp",
-                        "capabilityIds": ["cpf_cadastral", "phones_whatsapp_garantido"],
+                        "capabilityIds": ["cpf_cadastral", "phones_whatsapp_probe"],
                     },
                     {
                         "id": "consignado_premium",
@@ -648,7 +959,7 @@ class EnrichmentCatalogView(APIView):
                             "filtro_perda_obito",
                             "nao_me_perturbe",
                             "mailing_top3_discagem",
-                            "phones_whatsapp_garantido",
+                            "phones_whatsapp_probe",
                         ],
                     },
                 ],
@@ -688,21 +999,14 @@ class DiscoveryCnaesView(APIView):
                         "codigo": code,
                         "description": desc,
                         "descricao": desc,
-                        "section": "J",
+                        "section": "",
                         "sectionDescription": setor,
                         "division": code[:2],
                         "group": code[:3],
                         "industry": setor,
-                        "typicalPorte": "EPP",
-                        "averageTicket": "R$ 25.000+",
-                        "defaultBuyingGroup": [
-                            {
-                                "role": "Diretor de TI",
-                                "department": "Tecnologia",
-                                "seniority": "Diretoria",
-                                "influence": "Econômico",
-                            }
-                        ],
+                        "typicalPorte": None,
+                        "averageTicket": None,
+                        "defaultBuyingGroup": [],
                     }
                 )
                 if len(results) >= limit:
@@ -712,51 +1016,23 @@ class DiscoveryCnaesView(APIView):
 
 
 class DiscoverySearchView(APIView):
-    """Prévia e estimativa de prospecção por CNAE."""
+    """Compatibilidade explícita para a busca antiga que produzia estimativas sintéticas."""
 
     authentication_classes = (CombinedAuthentication,)
     permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
-        payload = _get_payload(request)
-        cnae = payload.get("cnaePrincipal", "6201501")
-        uf = payload.get("uf", "SP")
-        tenant = resolve_tenant(request)
-
-        companies = Company.objects.filter(entity__tenant=tenant)[:5]
-        sample: list[dict[str, Any]] = []
-        empty_cnaes: list[dict[str, str]] = []
-        for c in companies:
-            est = Establishment.objects.filter(company=c).first()
-            sample.append(
-                {
-                    "id": str(c.entity.id),
-                    "cnpj": est.cnpj if est else c.cnpj_root,
-                    "cnpjFormatted": format_cnpj(est.cnpj) if est else c.cnpj_root,
-                    "razaoSocial": c.legal_name,
-                    "nomeFantasia": c.trade_name,
-                    "cnaePrincipal": {"codigo": cnae, "descricao": "Atividade Empresarial"},
-                    "cnaesSecundarios": empty_cnaes,
-                    "uf": uf,
-                    "porte": "DEMAIS",
-                    "capitalSocial": 0.0,
-                    "situacaoCadastral": c.registration_status or "ATIVA",
-                    "dataConfidenceScore": 95,
-                }
-            )
-
+        resolve_tenant(request)
         return Response(
             {
-                "totalEligibleCompanies": max(len(sample), 120),
-                "dryRun": {
-                    "totalBytesProcessed": 1048576,
-                    "totalMegaBytesProcessed": 1.0,
-                    "estimatedCostBrl": 0.25,
-                    "cacheHit": True,
-                },
-                "sample": sample,
-                "filterApplied": request.data,
-            }
+                "code": "LEGACY_DISCOVERY_REMOVED",
+                "detail": (
+                    "A busca antiga foi desativada porque estimava volume e custo sem consultar "
+                    "o provedor. Use POST /api/v1/descobertas/ com Idempotency-Key; acompanhe "
+                    "o job e leia a prévia persistida em /resultados/."
+                ),
+            },
+            status=status.HTTP_410_GONE,
         )
 
 
@@ -770,125 +1046,52 @@ class LeadLookupView(APIView):
         digits = only_digits(query)
 
         if len(digits) == 11:
-            result = enrich_person_live(query=digits, tenant=tenant)
-            person_obj = result.get("person")
-            if person_obj and isinstance(person_obj, dict):
-                wa = result.get("whatsappGarantido") or {}
-                return Response(
-                    {
-                        "id": result.get("personId") or "lead-pf",
-                        "leadType": "PF",
-                        "name": person_obj.get("name"),
-                        "title": "Titular",
-                        "seniority": "Pessoa Física",
-                        "company": "Pessoa Física",
-                        "domain": "",
-                        "location": "Brasil",
-                        "city": "",
-                        "state": "",
-                        "country": "Brasil",
-                        "email": "",
-                        "phone": wa.get("numero") or person_obj.get("phone", ""),
-                        "status": "Verificado" if person_obj.get("hasWhatsApp") else "Cadastrado",
-                        "enriched": True,
-                        "cpf": person_obj.get("cpf"),
-                        "razaoSocial": person_obj.get("name"),
-                        "nomeFantasia": person_obj.get("name"),
-                        "situacaoCadastral": person_obj.get("taxStatus", "REGULAR"),
-                    }
-                )
-
-        if len(digits) == 14:
-            result = enrich_company_live(query=digits, tenant=tenant)
-            comp = result.get("company")
-            if comp and isinstance(comp, dict):
-                return Response(
-                    {
-                        "id": result.get("companyId") or "lead-1",
-                        "leadType": "PJ",
-                        "name": comp.get("name") or comp.get("legalName"),
-                        "title": "Responsável Legal",
-                        "seniority": "C-Level",
-                        "company": comp.get("legalName"),
-                        "domain": comp.get("domain", ""),
-                        "location": f"{comp.get('city', '')}, {comp.get('state', '')}".strip(", "),
-                        "city": comp.get("city", ""),
-                        "state": comp.get("state", ""),
-                        "country": "Brasil",
-                        "email": result.get("emailsValidados", [{}])[0].get("email", "")
-                        if result.get("emailsValidados")
-                        else "",
-                        "phone": result.get("telefonesAtribuiveis", [{}])[0].get("numero", "")
-                        if result.get("telefonesAtribuiveis")
-                        else "",
-                        "status": "Verificado",
-                        "enriched": True,
-                        "cnpj": comp.get("cnpj"),
-                        "razaoSocial": comp.get("legalName"),
-                        "nomeFantasia": comp.get("name"),
-                        "situacaoCadastral": comp.get("status", "ATIVA"),
-                    }
-                )
-
-        company = (
-            Company.objects.filter(entity__tenant=tenant, legal_name__icontains=query).first()
-            or Company.objects.filter(entity__tenant=tenant, cnpj_root__icontains=query).first()
-        )
-        if company:
-            contact_email = ContactPoint.objects.filter(
-                owner=company.entity, kind=ContactPoint.Kind.EMAIL
-            ).first()
-            contact_phone = ContactPoint.objects.filter(
-                owner=company.entity, kind=ContactPoint.Kind.PHONE
-            ).first()
-            est = Establishment.objects.filter(company=company).first()
-            formatted_cnpj = format_cnpj(est.cnpj) if est else company.cnpj_root
             return Response(
                 {
-                    "id": str(company.entity.id),
-                    "leadType": "PJ",
-                    "name": company.trade_name or company.legal_name,
-                    "title": "Responsável Legal",
-                    "seniority": "C-Level",
-                    "company": company.legal_name,
-                    "domain": "",
-                    "location": "Brasil",
-                    "city": "",
-                    "state": "",
-                    "country": "Brasil",
-                    "email": contact_email.normalized_value if contact_email else "",
-                    "phone": contact_phone.normalized_value if contact_phone else "",
-                    "status": "Verificado",
-                    "enriched": True,
-                    "cnpj": formatted_cnpj,
-                    "razaoSocial": company.legal_name,
-                    "nomeFantasia": company.trade_name,
-                    "situacaoCadastral": company.registration_status or "ATIVA",
-                }
+                    "code": "CPF_LOOKUP_REQUIRES_JOB",
+                    "detail": (
+                        "CPF não é consultado por GET. Inicie um enriquecimento explícito para "
+                        "evitar custo e tratamento de dado pessoal sem intenção registrada."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        return Response(
-            {
-                "id": "lookup-observed",
-                "leadType": "PJ",
-                "name": query or "Empresa Observada",
-                "title": "Contato Principal",
-                "seniority": "Corporativo",
-                "company": query or "Empresa Observada",
-                "domain": "",
-                "location": "Brasil",
-                "city": "",
-                "state": "",
-                "country": "Brasil",
-                "email": "",
-                "phone": "",
-                "status": "Observado",
-                "enriched": False,
-                "cnpj": "",
-                "razaoSocial": query,
-                "nomeFantasia": query,
-                "situacaoCadastral": "ATIVA",
-            }
-        )
+
+        company: Company | None = None
+        if len(digits) == 14:
+            establishment = (
+                Establishment.objects.filter(entity__tenant=tenant, cnpj=digits)
+                .select_related("company__entity")
+                .first()
+            )
+            company = establishment.company if establishment else None
+
+        if company is None and query:
+            company = (
+                Company.objects.filter(entity__tenant=tenant, legal_name__icontains=query).first()
+                or Company.objects.filter(
+                    entity__tenant=tenant,
+                    trade_name__icontains=query,
+                ).first()
+                or Company.objects.filter(entity__tenant=tenant, cnpj_root__icontains=query).first()
+            )
+        if company:
+            return Response(_company_lead(company))
+
+        if query:
+            relationship = (
+                Relationship.objects.filter(
+                    tenant=tenant,
+                    person__full_name__icontains=query,
+                )
+                .select_related("person__entity", "company__entity")
+                .order_by("-updated_at")
+                .first()
+            )
+            if relationship:
+                return Response(_relationship_lead(relationship))
+
+        return Response({"detail": "Lead não localizado."}, status=status.HTTP_404_NOT_FOUND)
 
 
 class LeadRevealPhoneView(APIView):
@@ -935,16 +1138,16 @@ class ImportsCollectionView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
-        payload = _get_payload(request)
-        records = payload.get("records", [])
+        resolve_tenant(request)
         return Response(
             {
-                "imported": len(records) if isinstance(records, list) else 1,
-                "duplicates": 0,
-                "errors": 0,
-                "message": "Registros importados com sucesso para a base.",
+                "code": "LEGACY_IMPORT_REMOVED",
+                "detail": (
+                    "Este formato de importação foi desativado porque não persistia os registros. "
+                    "Use POST /api/v1/lotes/ com arquivo CSV e Idempotency-Key."
+                ),
             },
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_410_GONE,
         )
 
 
@@ -953,14 +1156,14 @@ class ListArchiveView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def patch(self, request: Request, list_id: str) -> Response:
-        payload = _get_payload(request)
-        archived = payload.get("archived", True)
+        resolve_tenant(request)
         return Response(
             {
-                "id": list_id,
-                "archived": archived,
-                "message": "Lista atualizada com sucesso.",
-            }
+                "code": "ACTIVATION_LISTS_NOT_CONFIGURED",
+                "detail": "Nenhuma lista foi alterada.",
+                "listId": list_id,
+            },
+            status=status.HTTP_501_NOT_IMPLEMENTED,
         )
 
 
@@ -969,16 +1172,14 @@ class ListAddLeadsView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request, list_id: str) -> Response:
-        payload = _get_payload(request)
-        raw_ids = payload.get("leadIds", [])
-        lead_ids: list[str] = raw_ids if isinstance(raw_ids, list) else []
+        resolve_tenant(request)
         return Response(
             {
-                "id": list_id,
-                "addedCount": len(lead_ids),
-                "leadIds": lead_ids,
-                "message": f"{len(lead_ids)} leads vinculados à lista.",
-            }
+                "code": "ACTIVATION_LISTS_NOT_CONFIGURED",
+                "detail": "Nenhum lead foi vinculado.",
+                "listId": list_id,
+            },
+            status=status.HTTP_501_NOT_IMPLEMENTED,
         )
 
 
@@ -1065,69 +1266,7 @@ class EnrichmentLookupView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
-        query = request.query_params.get("q", "").strip()
-        tenant = resolve_tenant(request)
-        digits = only_digits(query)
-
-        if len(digits) == 11:
-            result = enrich_person_live(query=digits, tenant=tenant)
-            person_obj = result.get("person")
-            if person_obj and isinstance(person_obj, dict):
-                wa = result.get("whatsappGarantido") or {}
-                return Response(
-                    {
-                        "id": result.get("personId") or "lookup-person",
-                        "name": person_obj.get("name"),
-                        "company": "Pessoa Física",
-                        "email": "",
-                        "phone": wa.get("numero") or person_obj.get("phone", ""),
-                        "enriched": True,
-                        "dataConfidenceScore": 98 if person_obj.get("hasWhatsApp") else 85,
-                        "cpf": person_obj.get("cpf"),
-                        "hasWhatsApp": person_obj.get("hasWhatsApp", False),
-                    }
-                )
-
-        if len(digits) == 14:
-            result = enrich_company_live(query=digits, tenant=tenant)
-            comp = result.get("company")
-            if comp and isinstance(comp, dict):
-                return Response(
-                    {
-                        "id": result.get("companyId") or "lookup-lead",
-                        "name": comp.get("name") or comp.get("legalName"),
-                        "company": comp.get("legalName"),
-                        "email": result.get("emailsValidados", [{}])[0].get("email", "")
-                        if result.get("emailsValidados")
-                        else "",
-                        "phone": result.get("telefonesAtribuiveis", [{}])[0].get("numero", "")
-                        if result.get("telefonesAtribuiveis")
-                        else "",
-                        "enriched": True,
-                        "dataConfidenceScore": 95,
-                    }
-                )
-
-        company = Company.objects.filter(entity__tenant=tenant, legal_name__icontains=query).first()
-        if company:
-            contact_email = ContactPoint.objects.filter(
-                owner=company.entity, kind=ContactPoint.Kind.EMAIL
-            ).first()
-            contact_phone = ContactPoint.objects.filter(
-                owner=company.entity, kind=ContactPoint.Kind.PHONE
-            ).first()
-            return Response(
-                {
-                    "id": str(company.entity.id),
-                    "name": company.trade_name or company.legal_name,
-                    "company": company.legal_name,
-                    "email": contact_email.normalized_value if contact_email else "",
-                    "phone": contact_phone.normalized_value if contact_phone else "",
-                    "enriched": True,
-                    "dataConfidenceScore": 90,
-                }
-            )
-        return Response({"detail": "Lead não localizado."}, status=status.HTTP_404_NOT_FOUND)
+        return LeadLookupView().get(request)
 
 
 class DiscoveryExtractView(APIView):
@@ -1135,15 +1274,15 @@ class DiscoveryExtractView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
-        payload = _get_payload(request)
-        target_dataset_id = payload.get("targetDatasetId", "conjunto-inicial")
-        total_extracted = payload.get("limit", 25)
+        resolve_tenant(request)
         return Response(
             {
-                "batchId": str(uuid.uuid4()),
-                "targetDatasetId": target_dataset_id,
-                "totalExtracted": total_extracted,
-                "status": "COMPLETED",
-                "message": f"Extração de {total_extracted} empresas realizada com sucesso.",
-            }
+                "code": "LEGACY_DISCOVERY_REMOVED",
+                "detail": (
+                    "A extração antiga foi desativada porque declarava conclusão sem persistir "
+                    "dados. Materialize uma descoberta concluída em "
+                    "POST /api/v1/descobertas/{id}/materializar/."
+                ),
+            },
+            status=status.HTTP_410_GONE,
         )

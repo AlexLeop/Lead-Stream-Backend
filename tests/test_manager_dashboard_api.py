@@ -45,7 +45,7 @@ def test_manager_dashboard_endpoints() -> None:
     assert isinstance(res_leads.data, list)
 
     res_lookup = client.get("/api/v1/leads/lookup?q=empresa")
-    assert res_lookup.status_code == 200
+    assert res_lookup.status_code == 404
 
     # 5. Lists
     res_lists = client.get("/api/v1/lists")
@@ -87,4 +87,5 @@ def test_manager_dashboard_endpoints() -> None:
     res_disc_search = client.post(
         "/api/v1/discovery/search", {"cnaePrincipal": "6201501"}, format="json"
     )
-    assert res_disc_search.status_code == 200
+    assert res_disc_search.status_code == 410
+    assert res_disc_search.data["code"] == "LEGACY_DISCOVERY_REMOVED"
