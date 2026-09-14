@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from django.test import Client, override_settings
+from django.test import override_settings
+from rest_framework.test import APIClient
 
 from leadstream.canonical.contracts import CanonicalPersonPayload
 from leadstream.entities.models import ContactPoint, Person
@@ -155,11 +156,10 @@ def test_enrich_person_live_with_mock_bureau_and_probe() -> None:
 
 
 @pytest.mark.django_db
-def test_api_enrichment_person_endpoint() -> None:
+def test_api_enrichment_person_endpoint(api_client: APIClient) -> None:
     """Testa a view POST /api/v1/enrichment/person."""
-    client = Client()
     # 1. CPF Inválido
-    res = client.post(
+    res = api_client.post(
         "/api/v1/enrichment/person",
         data={"query": "123"},
         content_type="application/json",
@@ -177,7 +177,7 @@ def test_api_enrichment_person_endpoint() -> None:
         WHATSAPP_PROBE_URL=None,
         WHATSAPP_PROBE_API_KEY=None,
     ):
-        res2 = client.post(
+        res2 = api_client.post(
             "/api/v1/enrichment/person",
             data={"query": "52998224725"},
             content_type="application/json",
@@ -195,10 +195,9 @@ def test_api_enrichment_person_endpoint() -> None:
 
 
 @pytest.mark.django_db
-def test_api_enrichment_lookup_cpf() -> None:
+def test_api_enrichment_lookup_cpf(api_client: APIClient) -> None:
     """Testa detecção automática de CPF (11 dígitos) no GET /api/v1/enrichment/lookup."""
-    client = Client()
-    res = client.get("/api/v1/enrichment/lookup?q=52998224725")
+    res = api_client.get("/api/v1/enrichment/lookup?q=52998224725")
     assert res.status_code == 200
     data = res.json()
     assert data.get("cpf") == "529.982.247-25"
@@ -371,10 +370,9 @@ def test_enrich_person_deceased_zero_credits() -> None:
 
 
 @pytest.mark.django_db
-def test_enrichment_catalog_has_consignado_preset() -> None:
+def test_enrichment_catalog_has_consignado_preset(api_client: APIClient) -> None:
     """Valida presença do preset de consignado no catálogo."""
-    client = Client()
-    res = client.get("/api/v1/enrichment/catalog")
+    res = api_client.get("/api/v1/enrichment/catalog")
     assert res.status_code == 200
     data = res.json()
     presets = {p["id"]: p for p in data.get("presets", [])}
@@ -543,4 +541,3 @@ def test_enrich_person_cpf_14715435799_with_bureau_and_probe() -> None:
         assert payload_obj.identification.lead_score == 90
         assert payload_obj.loss_prevention_filter.is_deceased is False
         assert payload_obj.loss_prevention_filter.elegivel_consignado is True
-

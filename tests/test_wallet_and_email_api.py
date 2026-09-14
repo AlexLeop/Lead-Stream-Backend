@@ -3,20 +3,21 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from leadstream.billing.services import get_or_create_wallet
+from leadstream.security.crypto import generate_api_key
+from leadstream.security.models import WorkspaceRole
 from leadstream.tenancy.models import Tenant
 
 
 @pytest.mark.django_db
 def test_wallet_and_ledger_api():
     client = APIClient()
-    user = User.objects.create_user(username="operador_faturamento", password="password123")
     tenant = Tenant.objects.create(name="Org Financeiro", slug="org-financeiro")
     get_or_create_wallet(tenant)
-    client.force_authenticate(user=user)
+    _, raw_key = generate_api_key(tenant, "financeiro", WorkspaceRole.OPERATOR)
+    client.credentials(HTTP_X_API_KEY=raw_key)
 
     # 1. Consultar carteira
     res = client.get("/api/v1/faturamento/carteira/", HTTP_X_TENANT_ID=str(tenant.id))
@@ -49,9 +50,9 @@ def test_wallet_and_ledger_api():
 @patch("leadstream.validation.smtp_probe.smtplib.SMTP")
 def test_email_validation_api(mock_smtp_cls, mock_mx):
     client = APIClient()
-    user = User.objects.create_user(username="operador_validador", password="password123")
     tenant = Tenant.objects.create(name="Org Validador", slug="org-validador")
-    client.force_authenticate(user=user)
+    _, raw_key = generate_api_key(tenant, "validador", WorkspaceRole.OPERATOR)
+    client.credentials(HTTP_X_API_KEY=raw_key)
 
     mock_mx.return_value = {"mx_found": True, "mail_servers": ["mx.google.com"]}
     mock_client = MagicMock()

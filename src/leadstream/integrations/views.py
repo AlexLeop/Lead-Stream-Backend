@@ -4,7 +4,6 @@ from typing import Any
 from uuid import UUID
 
 from django.db.models import Count
-from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -15,9 +14,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from leadstream.batches.models import Batch
+from leadstream.common.api import resolve_tenant
 from leadstream.security.permissions import IsTenantMember, IsWorkspaceAdmin
-from leadstream.tenancy.models import Tenant
-from leadstream.tenancy.services import get_internal_tenant
 
 from .models import CRMConnection, CRMFieldMapping, CRMOutboxMessage, OutboxStatus
 from .serializers import (
@@ -33,23 +31,6 @@ from .serializers import (
 )
 from .services import verify_crm_connection
 from .tasks import process_crm_outbox_batch, sync_batch_to_crm_task
-
-
-def resolve_tenant(request: Request | None) -> Tenant:
-    """Extrai o tenant autenticado da requisição ou recorre ao tenant padrão."""
-    if request is None:
-        return get_internal_tenant()
-    req_tenant = getattr(request, "tenant", None)
-    if isinstance(req_tenant, Tenant):
-        return req_tenant
-    if hasattr(request, "headers"):
-        tenant_header = request.headers.get("X-Tenant-ID")
-        if tenant_header:
-            try:
-                return Tenant.objects.get(id=UUID(tenant_header))
-            except (Tenant.DoesNotExist, ValueError) as exc:
-                raise Http404("Tenant não encontrado.") from exc
-    return get_internal_tenant()
 
 
 @extend_schema(tags=["Integrações - Conexões CRM"])

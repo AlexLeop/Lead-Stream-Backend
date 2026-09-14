@@ -5,22 +5,19 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from leadstream.common.api import resolve_tenant
+
 from .serializers import WorkspaceSerializer
-from .services import get_internal_tenant
 
 
 class WorkspaceView(APIView):
-    authentication_classes = ()
-    permission_classes = ()
-
     @extend_schema(
-        operation_id="consultar_workspace_interno",
-        summary="Consultar workspace interno",
-        description="Retorna o tenant interno aplicado automaticamente nesta primeira versão.",
+        operation_id="consultar_workspace_atual",
+        summary="Consultar workspace atual",
+        description="Retorna somente o workspace autenticado na requisição.",
         responses={200: WorkspaceSerializer},
-        tags=["Operação interna"],
+        tags=["Workspace"],
     )
     def get(self, request: Request) -> Response:
-        del request
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         return Response(WorkspaceSerializer(tenant).data)

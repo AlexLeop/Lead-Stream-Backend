@@ -37,6 +37,8 @@ from leadstream.integrations.services import (
     dispatch_outbox_message,
     enqueue_batch_to_crm,
 )
+from leadstream.security.crypto import generate_api_key
+from leadstream.security.models import WorkspaceRole
 from leadstream.tenancy.models import Tenant
 from leadstream.tenancy.services import get_internal_tenant
 
@@ -365,7 +367,6 @@ def test_api_connection_crud_and_tenant_isolation(
     client = api_client
 
     # 1. Cria conexão para internal_tenant
-    client.defaults["HTTP_X_TENANT_ID"] = str(internal_tenant.id)
     resp = client.post(
         "/api/v1/integracoes/conexoes/",
         {
@@ -382,8 +383,14 @@ def test_api_connection_crud_and_tenant_isolation(
     assert "credentials" not in resp.data or not resp.data["credentials"]
 
     # 2. Outro tenant NÃO pode ver a conexão (Proteção IDOR)
-    client.defaults["HTTP_X_TENANT_ID"] = str(other_tenant.id)
-    resp_other = client.get(f"/api/v1/integracoes/conexoes/{conn_id}/")
+    _, other_raw_key = generate_api_key(
+        tenant=other_tenant,
+        name="Outro tenant",
+        role=WorkspaceRole.ADMIN,
+    )
+    other_client = APIClient()
+    other_client.credentials(HTTP_X_API_KEY=other_raw_key)
+    resp_other = other_client.get(f"/api/v1/integracoes/conexoes/{conn_id}/")
     assert resp_other.status_code == 404
 
     # 3. Cockpit do CEO: métricas consolidadas

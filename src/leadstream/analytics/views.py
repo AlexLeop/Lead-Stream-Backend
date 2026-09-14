@@ -7,7 +7,6 @@ from typing import Any
 from django.core.cache import cache
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -21,6 +20,7 @@ from leadstream.providers.live_enrichment import enrich_company_live, format_cnp
 from leadstream.providers.live_enrichment_person import enrich_person_live
 from leadstream.security.authentication import CombinedAuthentication
 from leadstream.security.models import SecurityAuditLog
+from leadstream.security.permissions import TenantAccessPermission
 
 
 def _get_payload(request: Request) -> dict[str, Any]:
@@ -31,7 +31,7 @@ class DashboardView(APIView):
     """Retorna o consolidado executivo do Dashboard para gestores e administradores."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
@@ -131,7 +131,7 @@ class DataHealthView(APIView):
     """Métricas de higienização, cobertura e integridade de dados."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
@@ -224,7 +224,7 @@ class DatasetsCollectionView(APIView):
     """Gerenciamento dos Conjuntos de Dados / Lotes de Prospecção."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
@@ -287,7 +287,7 @@ class DatasetsCollectionView(APIView):
 
 class DatasetDetailView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def delete(self, request: Request, dataset_id: str) -> Response:
         tenant = resolve_tenant(request)
@@ -303,7 +303,7 @@ class LeadsCollectionView(APIView):
     """Consulta de Leads unificados."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
@@ -360,7 +360,7 @@ class ListsCollectionView(APIView):
     """Listas de Campanhas e Exportação."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         return Response([])
@@ -395,7 +395,7 @@ class ActivitiesCollectionView(APIView):
     """Log de atividades e auditoria corporativa."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
@@ -421,7 +421,7 @@ class CrmConnectionsView(APIView):
     """Conectores de CRM disponíveis."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         return Response(
@@ -462,7 +462,7 @@ class PixStatusView(APIView):
     """Status de prontidão para checagem de titularidade Pix."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         return Response(
@@ -482,7 +482,7 @@ class EnrichmentStatusView(APIView):
     """Status do motor de enriquecimento e provedores cadastrais."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         return Response({"available": True})
@@ -492,7 +492,7 @@ class EnrichmentCatalogView(APIView):
     """Catálogo de capacidades de inteligência cadastral e prospecção."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         return Response(
@@ -658,7 +658,7 @@ class EnrichmentCatalogView(APIView):
 
 class EnrichmentRunsView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
@@ -670,7 +670,7 @@ class DiscoveryCnaesView(APIView):
     """Busca inteligente de atividades econômicas (CNAE)."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         query = request.query_params.get("q", "").lower().strip()
@@ -715,7 +715,7 @@ class DiscoverySearchView(APIView):
     """Prévia e estimativa de prospecção por CNAE."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
         payload = _get_payload(request)
@@ -762,7 +762,7 @@ class DiscoverySearchView(APIView):
 
 class LeadLookupView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         query = request.query_params.get("q", "").strip()
@@ -893,7 +893,7 @@ class LeadLookupView(APIView):
 
 class LeadRevealPhoneView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def patch(self, request: Request, lead_id: str) -> Response:
         tenant = resolve_tenant(request)
@@ -932,7 +932,7 @@ class LeadRevealPhoneView(APIView):
 
 class ImportsCollectionView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
         payload = _get_payload(request)
@@ -950,7 +950,7 @@ class ImportsCollectionView(APIView):
 
 class ListArchiveView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def patch(self, request: Request, list_id: str) -> Response:
         payload = _get_payload(request)
@@ -966,7 +966,7 @@ class ListArchiveView(APIView):
 
 class ListAddLeadsView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request, list_id: str) -> Response:
         payload = _get_payload(request)
@@ -984,7 +984,7 @@ class ListAddLeadsView(APIView):
 
 class EnrichmentCompanyView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
         payload = _get_payload(request)
@@ -1024,7 +1024,7 @@ class EnrichmentPersonView(APIView):
     """Enriquecimento cadastral de Pessoa Física (CPF) com garantia técnica de WhatsApp."""
 
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
         payload = _get_payload(request)
@@ -1062,7 +1062,7 @@ class EnrichmentPersonView(APIView):
 
 class EnrichmentLookupView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         query = request.query_params.get("q", "").strip()
@@ -1132,7 +1132,7 @@ class EnrichmentLookupView(APIView):
 
 class DiscoveryExtractView(APIView):
     authentication_classes = (CombinedAuthentication,)
-    permission_classes = (AllowAny,)
+    permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
         payload = _get_payload(request)

@@ -203,7 +203,10 @@ REST_FRAMEWORK = {
         "leadstream.security.authentication.CombinedAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+        "leadstream.security.permissions.TenantAccessPermission",
+    ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "leadstream.security.throttling.TenantApiKeyRateThrottle",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "UNAUTHENTICATED_USER": None,

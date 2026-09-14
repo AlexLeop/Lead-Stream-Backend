@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotAuthenticated, ValidationError
 
 from leadstream.tenancy.models import Tenant
 
@@ -28,18 +28,6 @@ def resolve_tenant(request: Request | None) -> Tenant:
     if isinstance(tenant, Tenant):
         return tenant
 
-    if hasattr(request, "headers"):
-        tenant_header = request.headers.get("X-Tenant-ID")
-        if tenant_header:
-            from uuid import UUID
-
-            from django.http import Http404
-
-            try:
-                return Tenant.objects.get(id=UUID(tenant_header))
-            except (Tenant.DoesNotExist, ValueError) as exc:
-                raise Http404("Tenant não encontrado.") from exc
-
-    from leadstream.tenancy.services import get_internal_tenant
-
-    return get_internal_tenant()
+    raise NotAuthenticated(
+        "A requisição não possui um workspace autenticado. Envie um JWT ou chave de API válida."
+    )

@@ -14,9 +14,8 @@ from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 from rest_framework.views import APIView
 
-from leadstream.common.api import reject_tenant_override
+from leadstream.common.api import reject_tenant_override, resolve_tenant
 from leadstream.common.pagination import StandardPagination
-from leadstream.tenancy.services import get_internal_tenant
 
 from .models import (
     CanonicalDecision,
@@ -64,7 +63,7 @@ def _save(serializer: BaseSerializer[Any]) -> Response:
 class PurposeCollectionView(APIView):
     @extend_schema(responses=PurposeSerializer(many=True), tags=["Dados — governança"])
     def get(self, request: Request) -> Response:
-        queryset = ProcessingPurpose.objects.filter(tenant=get_internal_tenant()).order_by("code")
+        queryset = ProcessingPurpose.objects.filter(tenant=resolve_tenant(request)).order_by("code")
         return _paginated(
             request=request, view=self, queryset=queryset, serializer=PurposeSerializer
         )
@@ -74,7 +73,10 @@ class PurposeCollectionView(APIView):
     )
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
-        serializer = PurposeSerializer(data=request.data, context={"tenant": get_internal_tenant()})
+        serializer = PurposeSerializer(
+            data=request.data,
+            context={"tenant": resolve_tenant(request)},
+        )
         serializer.is_valid(raise_exception=True)
         return _save(serializer)
 
@@ -82,7 +84,7 @@ class PurposeCollectionView(APIView):
 class RetentionPolicyCollectionView(APIView):
     @extend_schema(responses=RetentionPolicySerializer(many=True), tags=["Dados — governança"])
     def get(self, request: Request) -> Response:
-        queryset = RetentionPolicy.objects.filter(tenant=get_internal_tenant()).order_by("code")
+        queryset = RetentionPolicy.objects.filter(tenant=resolve_tenant(request)).order_by("code")
         return _paginated(
             request=request, view=self, queryset=queryset, serializer=RetentionPolicySerializer
         )
@@ -95,7 +97,7 @@ class RetentionPolicyCollectionView(APIView):
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
         serializer = RetentionPolicySerializer(
-            data=request.data, context={"tenant": get_internal_tenant()}
+            data=request.data, context={"tenant": resolve_tenant(request)}
         )
         serializer.is_valid(raise_exception=True)
         return _save(serializer)
@@ -104,7 +106,9 @@ class RetentionPolicyCollectionView(APIView):
 class SourceCollectionView(APIView):
     @extend_schema(responses=SourceSerializer(many=True), tags=["Dados — fontes"])
     def get(self, request: Request) -> Response:
-        queryset = Source.objects.filter(tenant=get_internal_tenant()).order_by("-priority", "name")
+        queryset = Source.objects.filter(tenant=resolve_tenant(request)).order_by(
+            "-priority", "name"
+        )
         return _paginated(
             request=request, view=self, queryset=queryset, serializer=SourceSerializer
         )
@@ -114,7 +118,10 @@ class SourceCollectionView(APIView):
     )
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
-        serializer = SourceSerializer(data=request.data, context={"tenant": get_internal_tenant()})
+        serializer = SourceSerializer(
+            data=request.data,
+            context={"tenant": resolve_tenant(request)},
+        )
         serializer.is_valid(raise_exception=True)
         return _save(serializer)
 
@@ -122,7 +129,7 @@ class SourceCollectionView(APIView):
 class SourceRecordCollectionView(APIView):
     @extend_schema(responses=SourceRecordSerializer(many=True), tags=["Dados — fontes"])
     def get(self, request: Request) -> Response:
-        queryset = SourceRecord.objects.filter(tenant=get_internal_tenant()).order_by(
+        queryset = SourceRecord.objects.filter(tenant=resolve_tenant(request)).order_by(
             "-captured_at"
         )
         return _paginated(
@@ -137,7 +144,7 @@ class SourceRecordCollectionView(APIView):
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
         serializer = SourceRecordSerializer(
-            data=request.data, context={"tenant": get_internal_tenant()}
+            data=request.data, context={"tenant": resolve_tenant(request)}
         )
         serializer.is_valid(raise_exception=True)
         return _save(serializer)
@@ -146,7 +153,7 @@ class SourceRecordCollectionView(APIView):
 class EvidenceCollectionView(APIView):
     @extend_schema(responses=EvidenceSerializer(many=True), tags=["Dados — evidências"])
     def get(self, request: Request) -> Response:
-        queryset = Evidence.objects.filter(tenant=get_internal_tenant()).order_by("-captured_at")
+        queryset = Evidence.objects.filter(tenant=resolve_tenant(request)).order_by("-captured_at")
         return _paginated(
             request=request, view=self, queryset=queryset, serializer=EvidenceSerializer
         )
@@ -159,7 +166,7 @@ class EvidenceCollectionView(APIView):
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
         serializer = EvidenceSerializer(
-            data=request.data, context={"tenant": get_internal_tenant()}
+            data=request.data, context={"tenant": resolve_tenant(request)}
         )
         serializer.is_valid(raise_exception=True)
         return _save(serializer)
@@ -168,7 +175,7 @@ class EvidenceCollectionView(APIView):
 class ObservationCollectionView(APIView):
     @extend_schema(responses=ObservationSerializer(many=True), tags=["Dados — observações"])
     def get(self, request: Request) -> Response:
-        queryset = Observation.objects.filter(tenant=get_internal_tenant()).select_related(
+        queryset = Observation.objects.filter(tenant=resolve_tenant(request)).select_related(
             "source_record__source", "source_record__purpose"
         )
         if target := request.query_params.get("target"):
@@ -190,7 +197,7 @@ class ObservationCollectionView(APIView):
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
         serializer = ObservationSerializer(
-            data=request.data, context={"tenant": get_internal_tenant()}
+            data=request.data, context={"tenant": resolve_tenant(request)}
         )
         serializer.is_valid(raise_exception=True)
         return _save(serializer)
@@ -205,7 +212,7 @@ class CanonicalizeView(APIView):
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
         serializer = CanonicalizeInputSerializer(
-            data=request.data, context={"tenant": get_internal_tenant()}
+            data=request.data, context={"tenant": resolve_tenant(request)}
         )
         serializer.is_valid(raise_exception=True)
         try:
@@ -221,7 +228,7 @@ class CanonicalizeView(APIView):
 class CanonicalDecisionCollectionView(APIView):
     @extend_schema(responses=CanonicalDecisionSerializer(many=True), tags=["Dados — canonização"])
     def get(self, request: Request) -> Response:
-        queryset = CanonicalDecision.objects.filter(tenant=get_internal_tenant()).select_related(
+        queryset = CanonicalDecision.objects.filter(tenant=resolve_tenant(request)).select_related(
             "selected_observation__source_record__source"
         )
         if target := request.query_params.get("target"):
@@ -239,7 +246,7 @@ class CanonicalDecisionCollectionView(APIView):
 class ConflictCollectionView(APIView):
     @extend_schema(responses=ConflictSerializer(many=True), tags=["Dados — conflitos"])
     def get(self, request: Request) -> Response:
-        queryset = Conflict.objects.filter(tenant=get_internal_tenant()).order_by("-created_at")
+        queryset = Conflict.objects.filter(tenant=resolve_tenant(request)).order_by("-created_at")
         return _paginated(
             request=request, view=self, queryset=queryset, serializer=ConflictSerializer
         )
@@ -252,7 +259,7 @@ class ConflictCollectionView(APIView):
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
         serializer = ConflictSerializer(
-            data=request.data, context={"tenant": get_internal_tenant()}
+            data=request.data, context={"tenant": resolve_tenant(request)}
         )
         serializer.is_valid(raise_exception=True)
         return _save(serializer)

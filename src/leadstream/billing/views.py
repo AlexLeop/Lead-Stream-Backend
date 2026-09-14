@@ -13,7 +13,6 @@ from rest_framework.views import APIView
 
 from leadstream.batches.models import Batch
 from leadstream.common.api import reject_tenant_override, resolve_tenant
-from leadstream.tenancy.services import get_internal_tenant
 
 from .models import CreditTransaction, PriceBook
 from .serializers import (
@@ -43,8 +42,7 @@ def _domain_error(exc: DjangoValidationError) -> ValidationError:
 class PriceBookCollectionView(APIView):
     @extend_schema(responses=PriceBookSerializer(many=True), tags=["Financeiro — preços"])
     def get(self, request: Request) -> Response:
-        del request
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         ensure_default_price_book(tenant)
         queryset = PriceBook.objects.filter(tenant=tenant).prefetch_related("rules")
         return Response(PriceBookSerializer(queryset, many=True).data)
@@ -60,7 +58,7 @@ class PriceBookCollectionView(APIView):
         serializer.is_valid(raise_exception=True)
         try:
             price_book = create_price_book(
-                tenant=get_internal_tenant(), **serializer.validated_data
+                tenant=resolve_tenant(request), **serializer.validated_data
             )
         except DjangoValidationError as exc:
             raise _domain_error(exc) from exc
@@ -71,8 +69,7 @@ class PriceBookCollectionView(APIView):
 class BatchFinancialSummaryView(APIView):
     @extend_schema(responses=FinancialSummarySerializer, tags=["Financeiro — lotes"])
     def get(self, request: Request, batch_id: UUID) -> Response:
-        del request
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         try:
             batch = Batch.objects.get(pk=batch_id, tenant=tenant)
         except Batch.DoesNotExist as exc:

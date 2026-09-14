@@ -12,21 +12,12 @@ from rest_framework.views import APIView
 from leadstream.batches.models import BatchItem
 from leadstream.canonical.builder import CanonicalLeadBuilder
 from leadstream.canonical.contracts import CanonicalLeadPayload
+from leadstream.common.api import resolve_tenant
 from leadstream.tenancy.models import Tenant
-from leadstream.tenancy.services import get_internal_tenant
 
 
 def resolve_request_tenant(request: Request) -> Tenant:
-    tenant_header = request.headers.get("X-Tenant-Id") or request.META.get("HTTP_X_TENANT_ID")
-    if tenant_header:
-        try:
-            return Tenant.objects.get(slug=tenant_header, is_active=True)
-        except Tenant.DoesNotExist:
-            try:
-                return Tenant.objects.get(pk=tenant_header, is_active=True)
-            except (Tenant.DoesNotExist, ValueError):
-                pass
-    return get_internal_tenant()
+    return resolve_tenant(request)
 
 
 class CanonicalLeadDetailView(APIView):

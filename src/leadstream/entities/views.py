@@ -10,9 +10,8 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from leadstream.common.api import reject_tenant_override
+from leadstream.common.api import reject_tenant_override, resolve_tenant
 from leadstream.common.pagination import StandardPagination
-from leadstream.tenancy.services import get_internal_tenant
 
 from .models import Company, ContactPoint, Establishment, Person, Relationship, SocialProfile
 from .normalization import DataValidationError
@@ -35,7 +34,7 @@ def _domain_error(exc: Exception) -> ValidationError:
 class CompanyCollectionView(APIView):
     @extend_schema(responses=CompanyReadSerializer(many=True), tags=["Dados — empresas"])
     def get(self, request: Request) -> Response:
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         queryset = Company.objects.filter(entity__tenant=tenant).prefetch_related("establishments")
         cnpj_root = request.query_params.get("cnpj_root")
         if cnpj_root:
@@ -51,7 +50,7 @@ class CompanyCollectionView(APIView):
     )
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         serializer = CompanyCreateSerializer(data=request.data, context={"tenant": tenant})
         serializer.is_valid(raise_exception=True)
         try:
@@ -64,7 +63,7 @@ class CompanyCollectionView(APIView):
 class EstablishmentCollectionView(APIView):
     @extend_schema(responses=EstablishmentSerializer(many=True), tags=["Dados — empresas"])
     def get(self, request: Request) -> Response:
-        queryset = Establishment.objects.filter(entity__tenant=get_internal_tenant())
+        queryset = Establishment.objects.filter(entity__tenant=resolve_tenant(request))
         paginator = StandardPagination()
         page = paginator.paginate_queryset(queryset.order_by("cnpj"), request, view=self)
         return paginator.get_paginated_response(EstablishmentSerializer(page, many=True).data)
@@ -73,7 +72,7 @@ class EstablishmentCollectionView(APIView):
 class PersonCollectionView(APIView):
     @extend_schema(responses=PersonReadSerializer(many=True), tags=["Dados — pessoas"])
     def get(self, request: Request) -> Response:
-        queryset = Person.objects.filter(entity__tenant=get_internal_tenant())
+        queryset = Person.objects.filter(entity__tenant=resolve_tenant(request))
         name = request.query_params.get("nome")
         if name:
             queryset = queryset.filter(normalized_name__icontains=name)
@@ -88,7 +87,7 @@ class PersonCollectionView(APIView):
     )
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         serializer = PersonCreateSerializer(data=request.data, context={"tenant": tenant})
         serializer.is_valid(raise_exception=True)
         try:
@@ -101,7 +100,7 @@ class PersonCollectionView(APIView):
 class RelationshipCollectionView(APIView):
     @extend_schema(responses=RelationshipSerializer(many=True), tags=["Dados — vínculos"])
     def get(self, request: Request) -> Response:
-        queryset = Relationship.objects.filter(tenant=get_internal_tenant())
+        queryset = Relationship.objects.filter(tenant=resolve_tenant(request))
         company_id = request.query_params.get("empresa")
         if company_id:
             try:
@@ -119,7 +118,7 @@ class RelationshipCollectionView(APIView):
     )
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         serializer = RelationshipSerializer(data=request.data, context={"tenant": tenant})
         serializer.is_valid(raise_exception=True)
         try:
@@ -132,7 +131,7 @@ class RelationshipCollectionView(APIView):
 class ContactCollectionView(APIView):
     @extend_schema(responses=ContactPointSerializer(many=True), tags=["Dados — contatos"])
     def get(self, request: Request) -> Response:
-        queryset = ContactPoint.objects.filter(tenant=get_internal_tenant())
+        queryset = ContactPoint.objects.filter(tenant=resolve_tenant(request))
         kind = request.query_params.get("tipo")
         if kind:
             queryset = queryset.filter(kind=kind)
@@ -147,7 +146,7 @@ class ContactCollectionView(APIView):
     )
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         serializer = ContactPointSerializer(data=request.data, context={"tenant": tenant})
         serializer.is_valid(raise_exception=True)
         try:
@@ -160,7 +159,7 @@ class ContactCollectionView(APIView):
 class SocialProfileCollectionView(APIView):
     @extend_schema(responses=SocialProfileSerializer(many=True), tags=["Dados — perfis sociais"])
     def get(self, request: Request) -> Response:
-        queryset = SocialProfile.objects.filter(tenant=get_internal_tenant())
+        queryset = SocialProfile.objects.filter(tenant=resolve_tenant(request))
         network = request.query_params.get("rede")
         if network:
             queryset = queryset.filter(network=network)
@@ -175,7 +174,7 @@ class SocialProfileCollectionView(APIView):
     )
     def post(self, request: Request) -> Response:
         reject_tenant_override(request.data)
-        tenant = get_internal_tenant()
+        tenant = resolve_tenant(request)
         serializer = SocialProfileSerializer(data=request.data, context={"tenant": tenant})
         serializer.is_valid(raise_exception=True)
         try:

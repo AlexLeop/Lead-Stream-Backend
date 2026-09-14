@@ -1,6 +1,7 @@
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from leadstream.batches.models import Batch
 from leadstream.tenancy.models import Tenant
@@ -22,7 +23,8 @@ def test_admin_batches_and_clean_analytics():
     )
 
     client = APIClient()
-    client.force_authenticate(user=master)
+    access_token = RefreshToken.for_user(master).access_token
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
 
     # 1. Admin Batches
     batch_resp = client.get("/api/v1/admin/batches/")
@@ -46,8 +48,11 @@ def test_admin_batches_and_clean_analytics():
     assert queue_resp.status_code == 200
 
     # 5. Clean Analytics Verification (Zero Fakes)
-    Tenant.objects.create(name="Empty Corp", slug="empty-corp")
-    client.credentials(HTTP_X_TENANT_SLUG="empty-corp")
+    empty_tenant = Tenant.objects.create(name="Empty Corp", slug="empty-corp")
+    client.credentials(
+        HTTP_AUTHORIZATION=f"Bearer {access_token}",
+        HTTP_X_TENANT_ID=str(empty_tenant.id),
+    )
 
     dash_resp = client.get("/api/v1/dashboard/")
     assert dash_resp.status_code == 200

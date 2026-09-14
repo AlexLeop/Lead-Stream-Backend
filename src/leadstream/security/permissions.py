@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.request import Request
 
 from leadstream.security.models import WorkspaceRole
@@ -54,6 +54,24 @@ class IsTenantMember(BasePermission):
             return bool(membership.is_active and membership.tenant.pk == tenant.pk)
 
         return False
+
+
+class TenantAccessPermission(BasePermission):
+    """Política padrão para APIs pertencentes a um workspace.
+
+    Leitura exige vínculo ativo. Escritas exigem papel de operador ou administrador.
+    Superadministradores continuam autorizados, mas o tenant precisa ter sido resolvido
+    explicitamente pela autenticação.
+    """
+
+    message = "Você não possui permissão para executar esta operação neste workspace."
+
+    def has_permission(self, request: Request, view: Any) -> bool:
+        if not IsTenantMember().has_permission(request, view):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return HasWorkspaceRole(min_role=WorkspaceRole.OPERATOR).has_permission(request, view)
 
 
 class HasWorkspaceRole(BasePermission):

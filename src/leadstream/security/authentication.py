@@ -64,7 +64,7 @@ class CombinedAuthentication(BaseAuthentication):
 
         parts = auth_header.split()
         if len(parts) != 2 or parts[0].lower() != "bearer":
-            return None
+            raise AuthenticationFailed("Cabeçalho Authorization inválido.")
 
         raw_token = parts[1]
         if raw_token.startswith("ls_live_") or raw_token.startswith("ls_test_"):
@@ -92,27 +92,12 @@ class CombinedAuthentication(BaseAuthentication):
         # Atualiza métrica de último uso
         APIKey.objects.filter(pk=api_key.pk).update(last_used_at=timezone.now())
 
-        # Permite chave de admin do tenant interno atuar em outro tenant via cabeçalho
         tenant_header = request.headers.get("X-Tenant-ID")
-        from leadstream.security.models import WorkspaceRole
-
-        if (
-            api_key.tenant.slug == "internal"
-            and api_key.role == WorkspaceRole.ADMIN
-            and tenant_header
-        ):
-            try:
-                if _is_uuid(tenant_header):
-                    target_tenant = Tenant.objects.get(id=tenant_header, is_active=True)
-                else:
-                    target_tenant = Tenant.objects.get(slug=tenant_header, is_active=True)
-                request.tenant = target_tenant  # type: ignore[attr-defined]
-            except Tenant.DoesNotExist as exc:
-                raise AuthenticationFailed(
-                    f"Workspace '{tenant_header}' não encontrado ou inativo."
-                ) from exc
-        else:
-            request.tenant = api_key.tenant  # type: ignore[attr-defined]
+        if tenant_header and tenant_header not in {str(api_key.tenant_id), api_key.tenant.slug}:
+            raise AuthenticationFailed(
+                "Chaves de API são vinculadas a um único workspace e não podem alternar contexto."
+            )
+        request.tenant = api_key.tenant  # type: ignore[attr-defined]
 
         request.auth = api_key
         return ApiKeyUser(api_key), api_key
@@ -123,7 +108,7 @@ class CombinedAuthentication(BaseAuthentication):
             validated_token = jwt_auth.get_validated_token(token.encode("utf-8"))
             user = jwt_auth.get_user(validated_token)
         except Exception as exc:
-            raise AuthenticationFailed(f"Token JWT inválido: {exc}") from exc
+            raise AuthenticationFailed("Token JWT inválido ou expirado.") from exc
 
         tenant_header = request.headers.get("X-Tenant-ID")
 
@@ -140,10 +125,11 @@ class CombinedAuthentication(BaseAuthentication):
                         f"Workspace '{tenant_header}' não encontrado ou inativo."
                     ) from exc
             else:
-                maybe_tenant = Tenant.objects.filter(is_active=True).first()
-                if not maybe_tenant:
-                    raise AuthenticationFailed("Nenhum workspace ativo disponível no sistema.")
-                tenant = maybe_tenant
+                from leadstream.tenancy.services import get_internal_tenant
+
+                tenant = get_internal_tenant()
+                if not tenant.is_active:
+                    raise AuthenticationFailed("O workspace interno está inativo.")
 
             request.tenant = tenant  # type: ignore[attr-defined]
             request.workspace_membership = None  # type: ignore[attr-defined]

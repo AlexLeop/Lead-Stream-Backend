@@ -48,7 +48,7 @@ jobs:
           DATABASE_URL: postgresql://leadstream_ci:ci-only-password@localhost:5432/leadstream_ci
         run: |
           .venv/bin/python manage.py migrate --noinput
-          .venv/bin/python manage.py shell -c "from django.test import Client; c = Client(); assert c.get('/health/ready').status_code == 200; assert c.get('/api/v1/workspace/').status_code == 200"
+          .venv/bin/python manage.py shell -c "from django.test import Client; c = Client(); assert c.get('/health/ready').status_code == 200; assert c.get('/api/v1/workspace/').status_code == 401"
 
       - name: Executar gates de qualidade
         env:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from leadstream.billing.models import CreditWallet
 from leadstream.tenancy.models import Tenant
@@ -13,7 +14,8 @@ def test_manager_dashboard_endpoints() -> None:
     client = APIClient()
     tenant, _ = Tenant.objects.get_or_create(slug="internal", defaults={"name": "Operação interna"})
     user = User.objects.create_superuser(username="manager_admin", password="ManagerPassword123!")
-    client.force_authenticate(user=user)
+    access_token = RefreshToken.for_user(user).access_token
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
 
     # 1. Dashboard (both with and without trailing slash)
     res_dash = client.get("/api/v1/dashboard")

@@ -14,7 +14,6 @@ from rest_framework.views import APIView
 
 from leadstream.common.api import reject_tenant_override, resolve_tenant
 from leadstream.common.pagination import StandardPagination
-from leadstream.tenancy.services import get_internal_tenant
 
 from .exporter import DEFAULT_EXPORT_COLUMNS, compute_export_hash
 from .models import Batch, BatchChunk, BatchExport, BatchItem
@@ -31,7 +30,7 @@ from .storage import open_export
 from .tasks import generate_export_task
 
 
-def _get_batch(batch_id: UUID, request: Request | None = None) -> Batch:
+def _get_batch(batch_id: UUID, request: Request) -> Batch:
     tenant = resolve_tenant(request)
     try:
         return Batch.objects.get(pk=batch_id, tenant=tenant)
@@ -119,14 +118,13 @@ class BatchCollectionView(APIView):
 class BatchDetailView(APIView):
     @extend_schema(responses=BatchSerializer, tags=["Lotes"])
     def get(self, request: Request, batch_id: UUID) -> Response:
-        del request
-        return Response(BatchSerializer(_get_batch(batch_id)).data)
+        return Response(BatchSerializer(_get_batch(batch_id, request)).data)
 
 
 class BatchItemsView(APIView):
     @extend_schema(responses=BatchItemSerializer(many=True), tags=["Lotes"])
     def get(self, request: Request, batch_id: UUID) -> Response:
-        batch = _get_batch(batch_id)
+        batch = _get_batch(batch_id, request)
         queryset = BatchItem.objects.filter(batch=batch, tenant=batch.tenant).order_by("row_number")
         paginator = StandardPagination()
         page = paginator.paginate_queryset(queryset, request, view=self)
@@ -136,7 +134,7 @@ class BatchItemsView(APIView):
 class BatchChunksView(APIView):
     @extend_schema(responses=BatchChunkSerializer(many=True), tags=["Lotes"])
     def get(self, request: Request, batch_id: UUID) -> Response:
-        batch = _get_batch(batch_id)
+        batch = _get_batch(batch_id, request)
         queryset = (
             BatchChunk.objects.filter(batch=batch, tenant=batch.tenant)
             .prefetch_related("attempts")
@@ -150,9 +148,8 @@ class BatchChunksView(APIView):
 class PauseBatchView(APIView):
     @extend_schema(request=None, responses=BatchSerializer, tags=["Lotes — comandos"])
     def post(self, request: Request, batch_id: UUID) -> Response:
-        del request
         try:
-            batch = pause_batch(tenant=get_internal_tenant(), batch_id=batch_id)
+            batch = pause_batch(tenant=resolve_tenant(request), batch_id=batch_id)
         except DjangoValidationError as exc:
             raise _domain_error(exc) from exc
         return Response(BatchSerializer(batch).data)
@@ -161,9 +158,8 @@ class PauseBatchView(APIView):
 class ResumeBatchView(APIView):
     @extend_schema(request=None, responses=BatchSerializer, tags=["Lotes — comandos"])
     def post(self, request: Request, batch_id: UUID) -> Response:
-        del request
         try:
-            batch = resume_batch(tenant=get_internal_tenant(), batch_id=batch_id)
+            batch = resume_batch(tenant=resolve_tenant(request), batch_id=batch_id)
         except DjangoValidationError as exc:
             raise _domain_error(exc) from exc
         return Response(BatchSerializer(batch).data)
@@ -172,8 +168,7 @@ class ResumeBatchView(APIView):
 class CancelBatchView(APIView):
     @extend_schema(request=None, responses=BatchSerializer, tags=["Lotes — comandos"])
     def post(self, request: Request, batch_id: UUID) -> Response:
-        del request
-        batch = cancel_batch(tenant=get_internal_tenant(), batch_id=batch_id)
+        batch = cancel_batch(tenant=resolve_tenant(request), batch_id=batch_id)
         return Response(BatchSerializer(batch).data)
 
 
@@ -184,7 +179,7 @@ class BatchExportCreateView(APIView):
         tags=["Lotes — exportação"],
     )
     def post(self, request: Request, batch_id: UUID) -> Response:
-        batch = _get_batch(batch_id)
+        batch = _get_batch(batch_id, request)
         serializer = BatchExportRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -227,7 +222,7 @@ class BatchExportCreateView(APIView):
 class BatchExportListView(APIView):
     @extend_schema(responses=BatchExportSerializer(many=True), tags=["Lotes — exportação"])
     def get(self, request: Request, batch_id: UUID) -> Response:
-        batch = _get_batch(batch_id)
+        batch = _get_batch(batch_id, request)
         queryset = BatchExport.objects.filter(batch=batch, tenant=batch.tenant).order_by(
             "-created_at"
         )
@@ -239,9 +234,8 @@ class BatchExportListView(APIView):
 class ExportDetailView(APIView):
     @extend_schema(responses=BatchExportSerializer, tags=["Exportações"])
     def get(self, request: Request, export_id: UUID) -> Response:
-        del request
         try:
-            export = BatchExport.objects.get(pk=export_id, tenant=get_internal_tenant())
+            export = BatchExport.objects.get(pk=export_id, tenant=resolve_tenant(request))
         except BatchExport.DoesNotExist as exc:
             raise Http404("Exportação não encontrada.") from exc
         return Response(BatchExportSerializer(export).data)
@@ -258,9 +252,8 @@ class ExportDownloadView(APIView):
     )
     def get(self, request: Request, export_id: UUID) -> HttpResponse | FileResponse:
 
-        del request
         try:
-            export = BatchExport.objects.get(pk=export_id, tenant=get_internal_tenant())
+            export = BatchExport.objects.get(pk=export_id, tenant=resolve_tenant(request))
         except BatchExport.DoesNotExist as exc:
             raise Http404("Exportação não encontrada.") from exc
 
