@@ -248,7 +248,7 @@ function TenantsTab({
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
+      <div className="bg-white border border-slate-200/90 rounded-[12px] overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -312,7 +312,7 @@ function TenantsTab({
       {/* Creation Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-slate-900">
+          <div className="w-full max-w-lg rounded-[12px] border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-slate-900">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-slate-900">Provisionar Novo Workspace</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer">
@@ -596,7 +596,7 @@ function UsersTab({
       </div>
 
       {activeSubTab === 'users' ? (
-        <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
+        <div className="bg-white border border-slate-200/90 rounded-[12px] overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -671,7 +671,7 @@ function UsersTab({
           </div>
         </div>
       ) : (
-        <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
+        <div className="bg-white border border-slate-200/90 rounded-[12px] overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -728,7 +728,7 @@ function UsersTab({
       {/* Key Creation Modal */}
       {showKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-slate-900">
+          <div className="w-full max-w-md rounded-[12px] border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-slate-900">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-slate-900">Gerar Nova Chave de API Criptográfica</h3>
               <button onClick={() => setShowKeyModal(false)} className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer">
@@ -823,7 +823,7 @@ function UsersTab({
       {/* User Creation Modal */}
       {showUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-slate-900">
+          <div className="w-full max-w-md rounded-[12px] border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-slate-900">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-slate-900">Cadastrar Novo Usuário</h3>
               <button onClick={() => setShowUserModal(false)} className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer">
@@ -1035,7 +1035,7 @@ function PricingTab({
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
+      <div className="bg-white border border-slate-200/90 rounded-[12px] overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -1195,7 +1195,7 @@ function WalletsTab({
             <div
               key={w.id}
               onClick={() => setSelectedTenant(w.tenant)}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer shadow-xs ${
+              className={`p-4 rounded-[12px] border transition-all cursor-pointer shadow-xs ${
                 isSelected
                   ? 'bg-blue-50/50 border-blue-500 shadow-sm'
                   : 'bg-white border-slate-200/90 hover:border-slate-300'
@@ -1234,7 +1234,7 @@ function WalletsTab({
       </div>
 
       {/* Ledger Transactions for Selected Tenant */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs space-y-0">
+      <div className="bg-white border border-slate-200/90 rounded-[12px] overflow-hidden shadow-xs space-y-0">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/70">
           <span className="text-xs font-bold text-slate-700">
             Trilha de Auditoria Imutável (Ledger de Dupla Entrada)
@@ -1297,7 +1297,7 @@ function WalletsTab({
       {/* Credit Injection Modal */}
       {showInjectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-slate-900">
+          <div className="w-full max-w-md rounded-[12px] border border-slate-200 bg-white p-6 shadow-2xl space-y-4 text-slate-900">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-slate-900">Injetar Crédito Manual com Auditoria</h3>
               <button onClick={() => setShowInjectModal(false)} className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer">
@@ -1402,19 +1402,19 @@ function BatchesTab({
     <div className="space-y-4">
       {/* Celery Telemetry Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <div className="p-4 rounded-2xl border border-slate-200/90 bg-white shadow-xs">
+        <div className="p-4 rounded-[12px] border border-slate-200/90 bg-white shadow-xs">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Workers Ativos</span>
           <span className="text-2xl font-extrabold text-slate-900 mt-1 block">
             {queuesData?.active_workers ?? 1}
           </span>
         </div>
-        <div className="p-4 rounded-2xl border border-slate-200/90 bg-white shadow-xs">
+        <div className="p-4 rounded-[12px] border border-slate-200/90 bg-white shadow-xs">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Throughput / Hora</span>
           <span className="text-2xl font-extrabold text-emerald-700 mt-1 block">
             {queuesData?.total_throughput_hour ?? 0}
           </span>
         </div>
-        <div className="p-4 rounded-2xl border border-slate-200/90 bg-white shadow-xs col-span-2">
+        <div className="p-4 rounded-[12px] border border-slate-200/90 bg-white shadow-xs col-span-2">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
             Filas RabbitMQ & Mensagens Pendentes
           </span>
@@ -1435,7 +1435,7 @@ function BatchesTab({
       </div>
 
       {/* Global Batches Table */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
+      <div className="bg-white border border-slate-200/90 rounded-[12px] overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -1600,7 +1600,7 @@ function ProvidersTab({
           const isOnline = p.status === 'ONLINE' || p.is_active === true;
           const rate = p.success_rate_24h !== undefined ? (p.success_rate_24h * 100).toFixed(1) : (p.success_rate ?? 99.0).toFixed(1);
           return (
-            <div key={p.name} className="p-4 rounded-2xl border border-slate-200/90 bg-white shadow-xs space-y-2.5">
+            <div key={p.name} className="p-4 rounded-[12px] border border-slate-200/90 bg-white shadow-xs space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-slate-900 text-xs">{p.name}</span>
                 <span
@@ -1629,7 +1629,7 @@ function ProvidersTab({
       </div>
 
       {/* Budget & Circuit Breaker Settings in BRL */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+      <div className="rounded-[12px] border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
         <div>
           <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
             Controle de Orçamento Diário (R$ BRL) & Circuit Breaker
@@ -1780,7 +1780,7 @@ function GovernanceTab({
         <div className="space-y-4">
           <form
             onSubmit={handleAddSuppression}
-            className="p-5 rounded-2xl border border-slate-200/90 bg-white shadow-xs grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs items-end"
+            className="p-5 rounded-[12px] border border-slate-200/90 bg-white shadow-xs grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs items-end"
           >
             <div>
               <label className="block text-slate-700 font-bold mb-1">Tipo</label>
@@ -1826,7 +1826,7 @@ function GovernanceTab({
             </div>
           </form>
 
-          <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
+          <div className="bg-white border border-slate-200/90 rounded-[12px] overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1875,7 +1875,7 @@ function GovernanceTab({
           </div>
         </div>
       ) : (
-        <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
+        <div className="bg-white border border-slate-200/90 rounded-[12px] overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -1995,7 +1995,7 @@ function SmtpBrandTab({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       {/* White-Label Customization Form */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+      <div className="rounded-[12px] border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
         <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
           <Palette className="w-5 h-5 text-blue-600" />
           <h3 className="text-sm font-extrabold text-slate-900">
@@ -2107,7 +2107,7 @@ function SmtpBrandTab({
       </div>
 
       {/* SMTP Zero-Bounce Engine Interactive Probe */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+      <div className="rounded-[12px] border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
         <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
           <Mail className="w-5 h-5 text-blue-600" />
           <h3 className="text-sm font-extrabold text-slate-900">

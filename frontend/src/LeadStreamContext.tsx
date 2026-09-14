@@ -114,7 +114,6 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
   );
 
   const refresh = useCallback(async () => {
-    if (!getStoredTokens()) return;
     setError(null);
     try {
       await Promise.allSettled([
@@ -128,22 +127,19 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
       ]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falha ao sincronizar dados da plataforma.');
+    } finally {
+      setLoading(false);
     }
   }, [refreshWallet]);
 
   useEffect(() => {
     loadAuthUser();
+    void refresh();
 
     const handleUnauthorized = () => logout();
     window.addEventListener('auth:unauthorized', handleUnauthorized);
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
-  }, [loadAuthUser, logout]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      void refresh();
-    }
-  }, [isAuthenticated, refresh]);
+  }, [loadAuthUser, logout, refresh]);
 
   const mutations = useMemo(
     () => ({

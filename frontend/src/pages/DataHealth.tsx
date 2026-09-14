@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -9,33 +9,35 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  WandSparkles,
+  Zap,
 } from 'lucide-react';
 import { api } from '../api';
-import { ensureArray, type DataHealthData } from '../types';
+import type { DataHealthData } from '../types';
 
 interface DataHealthProps {
   onNavigate: (route: string) => void;
 }
 
 const dimensionLabels: Record<keyof DataHealthData['dimensions'], string> = {
-  identityScore: 'Identidade empresarial (Receita Federal)',
-  contactabilityScore: 'Contactabilidade (Email / Telefone)',
-  profileScore: 'Perfil profissional & Decisores',
-  verificationScore: 'Verificação Zero-Bounce RFC 5321',
-  lineageScore: 'Atualização & Linhagem dos dados',
+  identityScore: 'Identidade empresarial',
+  contactabilityScore: 'Contactabilidade',
+  profileScore: 'Perfil profissional',
+  verificationScore: 'Verificação',
+  lineageScore: 'Atualização dos dados',
 };
 
 function scoreColor(value: number) {
   if (value >= 80) return 'bg-emerald-500';
   if (value >= 55) return 'bg-amber-500';
-  return 'bg-rose-500';
+  return 'bg-red-500';
 }
 
 function severityStyle(severity: string) {
-  if (severity === 'high') return { dot: 'bg-rose-500', badge: 'bg-rose-50 text-rose-700 border border-rose-200', label: 'Alta' };
-  if (severity === 'medium') return { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border border-amber-200', label: 'Média' };
-  if (severity === 'low') return { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border border-blue-200', label: 'Baixa' };
-  return { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: 'Resolvido' };
+  if (severity === 'high') return { dot: 'bg-red-500', badge: 'bg-red-50 text-red-800', label: 'Alta' };
+  if (severity === 'medium') return { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-800', label: 'Média' };
+  if (severity === 'low') return { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-800', label: 'Baixa' };
+  return { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-800', label: 'Resolvido' };
 }
 
 export default function DataHealth({ onNavigate }: DataHealthProps) {
@@ -61,15 +63,12 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
     void load();
   }, []);
 
-  const issuesList = useMemo(() => ensureArray<{ id: string; label: string; description: string; severity: string; count: number; actionRoute: string }>(data?.issues), [data]);
-  const coverageList = useMemo(() => ensureArray<{ id: string; label: string; value: number; count: number; total: number }>(data?.coverage), [data]);
-
   const handleAutoRepair = async () => {
     setIsRepairing(true);
     try {
       const result = await api.repairDataHealth();
       setData(result.health);
-      setToastMessage('Revisão concluída: nenhum dado foi promovido sem evidência técnica auditável.');
+      setToastMessage('Revisão concluída: nenhum dado foi promovido sem evidência técnica.');
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao executar o reparo da base.');
@@ -80,11 +79,11 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-[1440px] mx-auto pb-8" aria-busy="true">
-        <div className="h-28 animate-pulse rounded-2xl bg-white border border-slate-200" />
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="h-80 animate-pulse rounded-2xl bg-white border border-slate-200" />
-          <div className="h-80 animate-pulse rounded-2xl bg-white border border-slate-200" />
+      <div className="mx-auto max-w-[1440px] space-y-5" aria-busy="true">
+        <div className="h-28 animate-pulse rounded-[12px] bg-slate-200" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="h-80 animate-pulse rounded-[12px] bg-slate-200" />
+          <div className="h-80 animate-pulse rounded-[12px] bg-slate-200" />
         </div>
       </div>
     );
@@ -92,19 +91,14 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
 
   if (error || !data) {
     return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-900 max-w-[1440px] mx-auto" role="alert">
-        <div className="flex items-start gap-4">
-          <div className="rounded-xl bg-rose-100 p-2.5 border border-rose-200 text-rose-600">
-            <AlertTriangle className="h-6 w-6" />
-          </div>
-          <div className="space-y-2 flex-1">
-            <h2 className="text-base font-bold text-rose-950 tracking-tight">O diagnóstico não pôde ser concluído</h2>
-            <p className="text-xs text-rose-800 leading-relaxed max-w-2xl">{error}</p>
-            <button
-              onClick={() => void load()}
-              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-bold text-white transition-colors cursor-pointer shadow-xs"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Tentar novamente
+      <div className="mx-auto max-w-[1440px] rounded-[12px] bg-red-50 p-6 text-red-950" role="alert">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5" />
+          <div>
+            <h2 className="font-bold">O diagnóstico não pôde ser concluído</h2>
+            <p className="mt-1 text-sm text-red-800">{error}</p>
+            <button onClick={() => void load()} className="mt-4 rounded-lg bg-red-700 px-4 py-2 text-xs font-bold text-white">
+              Tentar novamente
             </button>
           </div>
         </div>
@@ -113,11 +107,48 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
   }
 
   const { summary } = data;
-  const hasData = (summary?.totalEntities ?? 0) > 0;
+  const hasData = summary.totalEntities > 0;
+  const distributionTotal = data.distribution.healthy + data.distribution.attention + data.distribution.critical;
 
   return (
-    <div className="space-y-6 max-w-[1440px] mx-auto pb-8">
-      {/* Toast */}
+    <div className="mx-auto max-w-[1440px] space-y-5">
+      <section className="flex flex-col justify-between gap-5 rounded-[12px] border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:p-6">
+        <div className="max-w-2xl">
+          <div className="flex items-center gap-2 text-xs font-semibold text-blue-700">
+            <ShieldCheck className="h-4 w-4" /> Diagnóstico da sua base
+          </div>
+          <h2 className="mt-2 text-xl font-bold tracking-[-0.03em] text-slate-950">Confiança começa antes do enriquecimento</h2>
+          <p className="mt-1.5 max-w-[68ch] text-sm leading-6 text-slate-600">
+            O score considera identificação, meios de contato, perfil, validação e atualização das informações.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {hasData && (
+            <button
+              onClick={handleAutoRepair}
+              disabled={isRepairing}
+              className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/10 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-blue-200" />
+              <span>{isRepairing ? 'Revisando…' : 'Revisar classificação segura'}</span>
+            </button>
+          )}
+          <span className="text-right text-[11px] text-slate-500">
+            Atualizado
+            <strong className="block font-semibold text-slate-800">
+              {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(data.generatedAt))}
+            </strong>
+          </span>
+          <button
+            onClick={() => void load()}
+            className="rounded-lg border border-slate-200 p-2.5 text-slate-700 hover:bg-slate-50"
+            aria-label="Recalcular diagnóstico"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        </div>
+      </section>
+
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-800 flex items-center gap-2.5 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-300">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -125,240 +156,208 @@ export default function DataHealth({ onNavigate }: DataHealthProps) {
         </div>
       )}
 
-      {/* Header Diagnostic Strip (Light MVP Style) */}
-      <div className="bg-white p-5 sm:p-6 rounded-[12px] border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-        <div className="max-w-2xl space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
-            <ShieldCheck className="h-3.5 w-3.5" /> Diagnóstico de Confiabilidade Cadastral
-          </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-            Confiança e Linhagem de Dados
-          </h1>
-          <p className="text-slate-500 text-xs sm:text-sm font-medium leading-relaxed">
-            Métricas de integridade contínua: identificação CNPJ/QSA, validade RFC 5321, canal móvel observável e trilha de auditoria técnica.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 shrink-0">
-          {hasData && (
-            <button
-              onClick={handleAutoRepair}
-              disabled={isRepairing}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-              <span>{isRepairing ? 'Revisando...' : 'Revisar Classificação'}</span>
-            </button>
-          )}
-          <span className="text-right text-[11px] text-slate-400 font-medium">
-            Atualizado
-            <strong className="block font-bold text-slate-700">
-              {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(data.generatedAt || Date.now()))}
-            </strong>
-          </span>
-          <button
-            onClick={() => void load()}
-            className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
-            title="Recalcular diagnóstico"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Quarantine Banner */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 sm:p-6 text-amber-950">
+      <section className="rounded-[12px] border border-amber-200 bg-amber-50/60 p-5 sm:p-6" aria-labelledby="quarantine-title">
         <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
-          <div className="flex max-w-2xl items-start gap-3.5">
-            <div className="rounded-xl bg-amber-100 p-2.5 text-amber-700 border border-amber-200 shrink-0">
-              <ShieldAlert className="h-5 w-5" />
+          <div className="flex max-w-2xl items-start gap-3">
+            <div className="mt-0.5 rounded-lg bg-amber-100 p-2 text-amber-800">
+              <ShieldAlert className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
-              <h2 className="text-sm font-extrabold text-amber-950 tracking-tight">
-                Registros Isolados por Segurança & LGPD
-              </h2>
-              <p className="mt-1 text-xs leading-relaxed text-amber-800 font-medium">
-                Registros que falharam em validações de consentimento, sintaxe RFC 5321 ou suspeita de honeypot ficam isolados e não afetam o score da sua base ativa.
+              <h2 id="quarantine-title" className="text-sm font-bold text-slate-950">Registros isolados por segurança</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-700">
+                Registros isolados por segurança não aparecem em busca, métricas ou exportações.
               </p>
             </div>
           </div>
           <dl className="grid grid-cols-3 gap-3 text-center sm:min-w-[360px]">
-            <div className="rounded-xl border border-amber-200/80 bg-white p-3 shadow-2xs">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Isolados</dt>
-              <dd className="mt-1 text-lg font-extrabold text-slate-900">{data.quarantine?.quarantined ?? 0}</dd>
+            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2.5">
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Isolados</dt>
+              <dd className="mt-1 text-lg font-extrabold text-slate-950">{data.quarantine.quarantined}</dd>
             </div>
-            <div className="rounded-xl border border-amber-200/80 bg-white p-3 shadow-2xs">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Em Revisão</dt>
-              <dd className="mt-1 text-lg font-extrabold text-slate-900">{data.quarantine?.pendingReview ?? 0}</dd>
+            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2.5">
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Em revisão</dt>
+              <dd className="mt-1 text-lg font-extrabold text-slate-950">{data.quarantine.pendingReview}</dd>
             </div>
-            <div className="rounded-xl border border-amber-200/80 bg-white p-3 shadow-2xs">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Liberados</dt>
-              <dd className="mt-1 text-lg font-extrabold text-emerald-700">{data.quarantine?.released ?? 0}</dd>
+            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2.5">
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Liberados</dt>
+              <dd className="mt-1 text-lg font-extrabold text-slate-950">{data.quarantine.released}</dd>
             </div>
           </dl>
         </div>
-      </div>
+        {data.quarantine.lastClassifiedAt && (
+          <p className="mt-3 text-[10px] text-slate-500">
+            Última classificação: {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(data.quarantine.lastClassifiedAt))}
+          </p>
+        )}
+      </section>
 
       {!hasData ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-xs">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 border border-blue-100">
-            <FileWarning className="h-6 w-6" />
+        <section className="rounded-[12px] border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[12px] bg-blue-50 text-blue-700">
+            <FileWarning className="h-5 w-5" />
           </div>
-          <h2 className="mt-4 text-base font-extrabold text-slate-900">Importe uma base para receber o primeiro diagnóstico</h2>
-          <p className="mx-auto mt-2 max-w-xl text-xs leading-relaxed text-slate-500">
-            A LeadStream mapeará campos ausentes, decisores QSA e integridade de e-mails para garantir máxima entregabilidade.
+          <h2 className="mt-4 text-lg font-bold text-slate-950">Importe uma base para receber o primeiro diagnóstico</h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+            A LeadStream mostrará campos ausentes, registros acionáveis e possíveis duplicidades para você priorizar as melhorias certas.
           </p>
           <button
             onClick={() => onNavigate('datasets')}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2.5 text-xs font-bold text-white transition-all cursor-pointer shadow-xs"
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700"
           >
-            Importar Base <ArrowRight className="h-3.5 w-3.5" />
+            Importar base <ArrowRight className="h-3.5 w-3.5" />
           </button>
-        </div>
+        </section>
       ) : (
         <>
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-            {/* Score & Dimensions */}
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-5">
-              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+            <section className="rounded-[12px] border border-slate-200 bg-white p-5 sm:p-6">
+              <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Score Geral de Integridade</p>
+                  <p className="text-xs font-semibold text-slate-500">Score geral da base</p>
                   <div className="mt-1 flex items-baseline gap-2">
-                    <span className="text-4xl font-extrabold text-slate-900">{summary?.overallScore ?? 0}</span>
+                    <span className="text-4xl font-extrabold tracking-[-0.04em] text-slate-950">{summary.overallScore}</span>
                     <span className="text-sm font-semibold text-slate-400">/ 100</span>
                   </div>
                 </div>
-                <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center font-bold">
-                  <CircleGauge className="h-6 w-6" />
-                </div>
+                <CircleGauge className="h-6 w-6 text-blue-600" />
+              </div>
+              <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100" aria-label={`Score geral: ${summary.overallScore}%`}>
+                <div className={`h-full rounded-full ${scoreColor(summary.overallScore)}`} style={{ width: `${summary.overallScore}%` }} />
               </div>
 
-              <div className="space-y-4 divide-y divide-slate-100">
-                {data.dimensions && (Object.entries(data.dimensions) as Array<[keyof DataHealthData['dimensions'], number]>).map(([key, value]) => (
-                  <div key={key} className="pt-3.5 first:pt-0 grid grid-cols-[1fr_70px] items-center gap-4">
+              <div className="mt-7 divide-y divide-slate-100">
+                {(Object.entries(data.dimensions) as Array<[keyof DataHealthData['dimensions'], number]>).map(([key, value]) => (
+                  <div key={key} className="grid grid-cols-[1fr_48px] items-center gap-4 py-3">
                     <div>
-                      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
-                        <span className="font-semibold text-slate-700">{dimensionLabels[key] || key}</span>
-                        <span className="font-extrabold text-slate-900">{value}%</span>
+                      <div className="mb-1.5 flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium text-slate-700">{dimensionLabels[key]}</span>
+                        <span className="text-[11px] font-bold text-slate-900">{value}%</span>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div className={`h-full rounded-full transition-all ${scoreColor(value)}`} style={{ width: `${value}%` }} />
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                        <div className={`h-full rounded-full ${scoreColor(value)}`} style={{ width: `${value}%` }} />
                       </div>
                     </div>
-                    <span className={`rounded-full px-2.5 py-0.5 text-center text-[10px] font-extrabold uppercase ${
-                      value >= 80 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : value >= 55 ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                    <span className={`rounded-full px-2 py-1 text-center text-[10px] font-bold ${
+                      value >= 80 ? 'bg-emerald-50 text-emerald-800' : value >= 55 ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-800'
                     }`}>
                       {value >= 80 ? 'Boa' : value >= 55 ? 'Atenção' : 'Crítica'}
                     </span>
                   </div>
                 ))}
               </div>
-            </div>
+            </section>
 
-            {/* Quality Queue */}
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <section className="overflow-hidden rounded-[12px] border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
                 <div>
-                  <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">Fila de Prioridades Cadastrais</h2>
-                  <p className="text-[11px] text-slate-500 font-medium">Campos sugeridos para enriquecimento complementar</p>
+                  <h2 className="text-sm font-bold text-slate-950">Fila de qualidade</h2>
+                  <p className="mt-0.5 text-[11px] text-slate-500">Problemas priorizados por impacto operacional.</p>
                 </div>
                 <FileWarning className="h-5 w-5 text-slate-400" />
               </div>
-
-              <div className="space-y-2.5">
-                {issuesList.length > 0 ? (
-                  issuesList.map((issue) => {
-                    const style = severityStyle(issue.severity);
-                    return (
-                      <button
-                        key={issue.id}
-                        onClick={() => onNavigate(issue.actionRoute)}
-                        className="flex w-full items-start gap-3.5 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/40 transition-all text-left cursor-pointer group"
-                      >
-                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <strong className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors">{issue.label}</strong>
-                            <span className={`rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase ${style.badge}`}>{style.label}</span>
-                          </div>
-                          <p className="mt-1 text-[11px] text-slate-500 font-medium leading-relaxed">{issue.description}</p>
-                        </div>
-                        <span className="flex shrink-0 items-center gap-1 text-xs font-extrabold text-slate-900">
-                          {issue.count} <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-blue-600 transition-colors" />
+              <div className="divide-y divide-slate-100">
+                {data.issues.map((issue) => {
+                  const style = severityStyle(issue.severity);
+                  return (
+                    <button
+                      key={issue.id}
+                      onClick={() => onNavigate(issue.actionRoute)}
+                      className="flex w-full items-start gap-4 px-5 py-4 text-left hover:bg-slate-50"
+                    >
+                      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <strong className="text-xs text-slate-900">{issue.label}</strong>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${style.badge}`}>{style.label}</span>
                         </span>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="p-8 text-center text-xs text-slate-500 space-y-1">
-                    <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-2" />
-                    <p className="font-extrabold text-slate-900">Base plenamente saneada</p>
-                    <p className="text-[11px] text-slate-500">Nenhuma inconformidade técnica detectada nas contas ativas.</p>
-                  </div>
-                )}
+                        <span className="mt-1 block text-[11px] leading-5 text-slate-500">{issue.description}</span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 text-sm font-extrabold text-slate-950">
+                        {issue.count.toLocaleString('pt-BR')} <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            </section>
           </div>
 
-          {/* Coverage Table */}
-          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <section className="overflow-hidden rounded-[12px] border border-slate-200 bg-white">
+            <div className="flex flex-col justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center">
               <div>
-                <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">Cobertura por Atributo Chave</h2>
-                <p className="text-[11px] text-slate-500 font-medium">Relação de preenchimento dos campos exigidos para prospecção outbound</p>
+                <h2 className="text-sm font-bold text-slate-950">Cobertura por campo crítico</h2>
+                <p className="mt-0.5 text-[11px] text-slate-500">O denominador respeita o tipo de entidade de cada campo.</p>
               </div>
-              <button
-                onClick={() => onNavigate('enrichment')}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
-              >
-                Planejar Enriquecimento <ArrowRight className="h-3.5 w-3.5" />
+              <button onClick={() => onNavigate('enrichment')} className="inline-flex items-center gap-2 text-xs font-bold text-blue-700">
+                Planejar correção <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
-
             <div className="overflow-x-auto">
-              <table className="w-full text-left font-sans">
-                <thead className="text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200 bg-slate-50/50">
+              <table className="w-full min-w-[700px] text-left">
+                <thead className="bg-slate-50 text-[10px] font-semibold text-slate-500">
                   <tr>
-                    <th className="py-2.5 px-3">Atributo</th>
-                    <th className="py-2.5 px-3">Cobertura (%)</th>
-                    <th className="py-2.5 px-3">Registros Úteis</th>
-                    <th className="py-2.5 px-3">Classificação</th>
+                    <th className="px-5 py-3">Campo</th>
+                    <th className="px-5 py-3">Cobertura</th>
+                    <th className="px-5 py-3">Encontrados</th>
+                    <th className="px-5 py-3">Leitura</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
-                  {coverageList.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 px-3 font-semibold text-slate-800">{item.label}</td>
-                      <td className="py-3 px-3 w-[40%]">
+                <tbody className="divide-y divide-slate-100">
+                  {data.coverage.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-5 py-3.5 text-xs font-semibold text-slate-900">{item.label}</td>
+                      <td className="w-[38%] px-5 py-3.5">
                         <div className="flex items-center gap-3">
-                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                            <div className={`h-full rounded-full transition-all ${scoreColor(item.value)}`} style={{ width: `${item.value}%` }} />
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div className={`h-full rounded-full ${scoreColor(item.value)}`} style={{ width: `${item.value}%` }} />
                           </div>
-                          <span className="w-10 text-right font-extrabold text-slate-900 text-[11px]">{item.value}%</span>
+                          <span className="w-10 text-right text-[11px] font-bold text-slate-800">{item.value}%</span>
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-slate-500 font-medium text-[11px]">
-                        {item.count} de {item.total}
+                      <td className="px-5 py-3.5 text-xs text-slate-600">
+                        {item.count.toLocaleString('pt-BR')} de {item.total.toLocaleString('pt-BR')}
                       </td>
-                      <td className="py-3 px-3">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase ${
-                          item.value >= 80 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : item.value >= 55 ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      <td className="px-5 py-3.5">
+                        <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${
+                          item.value >= 80 ? 'bg-emerald-50 text-emerald-800' : item.value >= 55 ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-800'
                         }`}>
                           {item.value >= 80 ? 'Confiável' : item.value >= 55 ? 'Parcial' : 'Lacuna'}
                         </span>
                       </td>
                     </tr>
                   ))}
-                  {coverageList.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-8 text-center text-xs text-slate-400">
-                        Nenhum registro de cobertura disponível.
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+            <section className="rounded-[12px] border border-slate-200 bg-white p-5">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <h2 className="text-sm font-bold text-slate-950">Distribuição operacional dos contatos</h2>
+              </div>
+              <div className="mt-5 flex h-3 overflow-hidden rounded-full bg-slate-100">
+                {distributionTotal > 0 && (
+                  <>
+                    <div className="bg-emerald-500" style={{ width: `${(data.distribution.healthy / distributionTotal) * 100}%` }} />
+                    <div className="bg-amber-500" style={{ width: `${(data.distribution.attention / distributionTotal) * 100}%` }} />
+                    <div className="bg-red-500" style={{ width: `${(data.distribution.critical / distributionTotal) * 100}%` }} />
+                  </>
+                )}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[11px] text-slate-600">
+                <span><i className="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-500" />{data.distribution.healthy} {data.distribution.healthy === 1 ? 'acionável' : 'acionáveis'}</span>
+                <span><i className="mr-2 inline-block h-2 w-2 rounded-full bg-amber-500" />{data.distribution.attention} em atenção</span>
+                <span><i className="mr-2 inline-block h-2 w-2 rounded-full bg-red-500" />{data.distribution.critical} críticos</span>
+              </div>
+            </section>
+            <aside className="rounded-[12px] bg-slate-900 p-5 text-white">
+              <p className="text-xs font-bold">Como interpretar</p>
+              <p className="mt-2 text-[11px] leading-5 text-slate-300">
+                “Acionável” exige vínculo empresarial, cargo e ao menos e-mail com evidência técnica ou telefone observado. Score zero significa ausência de evidência — não reprovação do registro.
+              </p>
+            </aside>
           </div>
         </>
       )}

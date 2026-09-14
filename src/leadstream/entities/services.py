@@ -7,6 +7,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from django.core.exceptions import ValidationError
@@ -217,7 +218,7 @@ def create_contact_point(
     kind: str,
     value: str,
     status: str = ContactPoint.Status.OBSERVED,
-    capabilities: dict[str, bool] | None = None,
+    capabilities: dict[str, Any] | None = None,
 ) -> ContactPoint:
     _ensure_tenant(tenant, owner)
     if kind == ContactPoint.Kind.EMAIL:

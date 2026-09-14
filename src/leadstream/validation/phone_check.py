@@ -54,7 +54,12 @@ def format_e164_br(phone: str, ddd: str = "") -> str:
     return formatted_num
 
 
-def validate_phone_technical(phone: str, ddd: str = "", is_primary: bool = False) -> dict[str, Any]:
+def validate_phone_technical(
+    phone: str,
+    ddd: str = "",
+    is_primary: bool = False,
+    run_probe: bool = False,
+) -> dict[str, Any]:
     digits = clean_phone_digits(phone)
     clean_ddd = clean_phone_digits(ddd)
 
@@ -98,6 +103,32 @@ def validate_phone_technical(phone: str, ddd: str = "", is_primary: bool = False
         tipo_conta = "NENHUMA"
         confianca = 0.70
 
+    wa_status: dict[str, Any] = {
+        "tem_whatsapp": tem_whatsapp,
+        "tipo_conta": tipo_conta,
+        "foto_perfil": None,
+        "recado": None,
+        "verificado_em": None,
+        "probe_executado": False,
+    }
+
+    if run_probe:
+        from leadstream.validation.whatsapp_probe import verify_whatsapp_active
+
+        probe_res = verify_whatsapp_active(phone, ddd=detected_ddd)
+        if probe_res.get("disponivel"):
+            wa_status["tem_whatsapp"] = bool(probe_res.get("tem_whatsapp"))
+            wa_status["tipo_conta"] = str(probe_res.get("tipo_conta") or "NENHUMA")
+            wa_status["foto_perfil"] = probe_res.get("foto_perfil")
+            wa_status["recado"] = probe_res.get("recado")
+            wa_status["verificado_em"] = probe_res.get("verificado_em")
+            wa_status["probe_executado"] = True
+            wa_status["jid"] = probe_res.get("jid")
+            if probe_res.get("tem_whatsapp"):
+                confianca = 1.0
+            else:
+                confianca = 0.5
+
     return {
         "tipo": tipo,
         "ddd": detected_ddd or None,
@@ -107,11 +138,6 @@ def validate_phone_technical(phone: str, ddd: str = "", is_primary: bool = False
         "status_linha": "ATIVA",
         "principal": is_primary,
         "validado": True,
-        "whatsapp_status": {
-            "tem_whatsapp": tem_whatsapp,
-            "tipo_conta": tipo_conta,
-            "foto_perfil": None,
-            "recado": None,
-        },
+        "whatsapp_status": wa_status,
         "confianca": confianca,
     }

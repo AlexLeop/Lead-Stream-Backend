@@ -103,6 +103,7 @@ rotas de negócio; os health checks são isentos para permitir sondagem interna.
    GET /api/v1/auth/me/                 -> 200 (Perfil, workspace ativo e permissões)
    GET /api/v1/faturamento/carteira/    -> 200 (Saldo e reserva de créditos Pay-Per-Value)
    POST /api/v1/validacao/emails/       -> 200 (Verificação atômica de entregabilidade SMTP)
+   POST /api/v1/enrichment/person/      -> 200 (Enriquecimento PF, consignado e WhatsApp probe)
    GET /api/v1/integracoes/outbox/status/ -> 200 (Métricas da fila transacional de CRM)
    GET /api/v1/workspace/               -> 200 (Autenticado via Bearer ou X-API-Key)
    ```

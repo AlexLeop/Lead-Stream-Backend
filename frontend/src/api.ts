@@ -13,6 +13,7 @@ import type {
   CreateListInput,
   CRMConnection,
   CompanyEnrichmentResult,
+  PersonEnrichmentResult,
   DataHealthData,
   DataHealthRepairResult,
   DashboardData,
@@ -288,6 +289,11 @@ export const api = {
   enrichmentRuns: () => request<EnrichmentRun[]>('/enrichment/runs'),
   enrichCompany: (query: string, capabilities: string[]) =>
     request<CompanyEnrichmentResult>('/enrichment/company', {
+      method: 'POST',
+      body: JSON.stringify({ query, capabilities }),
+    }),
+  enrichPerson: (query: string, capabilities: string[]) =>
+    request<PersonEnrichmentResult>('/enrichment/person', {
       method: 'POST',
       body: JSON.stringify({ query, capabilities }),
     }),

@@ -16,6 +16,8 @@ class MetaPayload(BasePayloadModel):
     tenant_id: str
     pipeline_run_id: str | None = None
     confidence_score_global: float = 0.95
+    entity_type: str | None = None
+    provenance_method: str | None = None
 
 
 class IdentificationPayload(BasePayloadModel):
@@ -267,6 +269,27 @@ class DecisionMakerPayload(BasePayloadModel):
     pep_pessoa_politicamente_exposta: bool = False
 
 
+def _default_historico_importacao() -> dict[str, Any]:
+    empty_paises: list[str] = []
+    empty_ncm: list[str] = []
+    return {
+        "importa_ultimos_12_meses": False,
+        "volume_anual_importado_usd": 0.0,
+        "principais_paises_origem": empty_paises,
+        "categorias_ncm": empty_ncm,
+    }
+
+
+def _default_infraestrutura_web() -> dict[str, Any]:
+    empty_dns: dict[str, Any] = {}
+    return {
+        "servidor_web": None,
+        "certificado_ssl_valido": True,
+        "emissor_ssl": None,
+        "dns_seguranca": empty_dns,
+    }
+
+
 class ForeignTradeAndLogisticsPayload(BasePayloadModel):
     radar_siscomex: dict[str, Any] = Field(
         default_factory=lambda: {
@@ -276,14 +299,7 @@ class ForeignTradeAndLogisticsPayload(BasePayloadModel):
             "data_habilitacao": None,
         }
     )
-    historico_importacao: dict[str, Any] = Field(
-        default_factory=lambda: {
-            "importa_ultimos_12_meses": False,
-            "volume_anual_importado_usd": 0.0,
-            "principais_paises_origem": [],
-            "categorias_ncm": [],
-        }
-    )
+    historico_importacao: dict[str, Any] = Field(default_factory=_default_historico_importacao)
     historico_exportacao: dict[str, Any] = Field(
         default_factory=lambda: {"exporta_ultimos_12_meses": False}
     )
@@ -312,14 +328,7 @@ class LegalAndJudicialPayload(BasePayloadModel):
 class DigitalPresenceAndTechStackPayload(BasePayloadModel):
     tecnologias_detectadas: list[dict[str, Any]] = Field(default_factory=list)
     redes_sociais: dict[str, Any] = Field(default_factory=dict)
-    infraestrutura_web: dict[str, Any] = Field(
-        default_factory=lambda: {
-            "servidor_web": None,
-            "certificado_ssl_valido": True,
-            "emissor_ssl": None,
-            "dns_seguranca": {},
-        }
-    )
+    infraestrutura_web: dict[str, Any] = Field(default_factory=_default_infraestrutura_web)
 
 
 class GovernanceLgpdAndCompliancePayload(BasePayloadModel):
@@ -370,6 +379,237 @@ class CanonicalLeadPayload(BasePayloadModel):
     crm_outbox_integration: CrmOutboxIntegrationPayload = Field(
         default_factory=CrmOutboxIntegrationPayload
     )
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("by_alias", True)
+        return super().model_dump(*args, **kwargs)
+
+
+# =============================================================================
+# CONTRATO CANÔNICO DE PESSOA FÍSICA (PF - HIGIENIZAÇÃO & ENRIQUECIMENTO)
+# =============================================================================
+
+
+class PersonIdentificationPayload(BasePayloadModel):
+    person_id: str
+    entity_type: str = "PERSON"
+    status: str = "QUALIFIED"
+    lead_score: int = 0
+    confidence_score: float = 0.95
+    cost_credits: int = 1
+    tags: list[str] = Field(default_factory=list)
+
+
+class DocumentValidationPayload(BasePayloadModel):
+    cpf_formatado: str
+    cpf_numerico: str
+    digitos_verificadores: str
+    modulo_11_valido: bool = True
+    origem_validacao: str = "ALGORITMO_OFICIAL_RECEITA_FEDERAL"
+    regiao_fiscal: dict[str, Any] | None = None
+
+
+class PersonCadastralDataPayload(BasePayloadModel):
+    nome: str
+    cpf: str
+    cpf_numerico: str
+    data_nascimento: str | None = None
+    idade: int | None = None
+    genero: str | None = None
+    nome_mae: str | None = None
+    nome_pai: str | None = None
+    situacao_cadastral_rfb: str = "REGULAR"
+    data_situacao_cadastral: str | None = None
+    codigo_controle_rfb: str | None = None
+
+
+class LossPreventionFilterPayload(BasePayloadModel):
+    status: str = "REGULAR"
+    is_deceased: bool = False
+    death_date: str | None = None
+    tax_status: str = "REGULAR"
+    elegivel_consignado: bool = True
+    motivo_expurgo: str | None = None
+    deve_cobrar_credito: bool = True
+    fontes_consultadas: list[str] = Field(default_factory=list)
+
+
+class BeneficioInssPayload(BasePayloadModel):
+    numero_beneficio: str
+    especie_codigo: str
+    especie_descricao: str
+    categoria_aptidao: str = "APTO_CONSIGNAVEL"
+    status_beneficio: str = "ATIVO"
+    data_concessao: str | None = None
+    data_cessacao: str | None = None
+    valor_beneficio_bruto: float = 0.0
+    valor_beneficio_liquido: float = 0.0
+    descontos_obrigatorios: float = 0.0
+    bloqueado_para_emprestimo: bool = False
+    alerta_elegibilidade: str | None = None
+    banco_pagador: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConsignadoInssPayload(BasePayloadModel):
+    possui_beneficio_inss: bool = False
+    quantidade_beneficios: int = 0
+    beneficios: list[BeneficioInssPayload] = Field(default_factory=list)
+
+
+class VinculoSiapePayload(BasePayloadModel):
+    matricula: str
+    orgao: str
+    uorg: str | None = None
+    cargo: str | None = None
+    regime_juridico: str | None = None
+    situacao_funcional: str | None = None
+    uf_lotacao: str | None = None
+    rendimento_bruto_declarado: float = 0.0
+
+
+class ConsignadoSiapePayload(BasePayloadModel):
+    possui_vinculo_publico: bool = False
+    quantidade_vinculos: int = 0
+    vinculos: list[VinculoSiapePayload] = Field(default_factory=list)
+
+
+class MargemParcelaPayload(BasePayloadModel):
+    percentual: float = 0.0
+    valor_mensal_permitido: float = 0.0
+
+
+class MargemConsignavelPayload(BasePayloadModel):
+    base_legal: str = "LEI_FEDERAL_14431_2022"
+    elegivel: bool = False
+    vinculo_base: str | None = None
+    numero_beneficio_base: str | None = None
+    salario_base_calculo: float = 0.0
+    margem_emprestimo_35: MargemParcelaPayload | dict[str, Any] = Field(default_factory=dict)
+    margem_rmc_cartao_5: MargemParcelaPayload | dict[str, Any] = Field(default_factory=dict)
+    margem_rcc_beneficio_5: MargemParcelaPayload | dict[str, Any] = Field(default_factory=dict)
+    margem_total_45: MargemParcelaPayload | dict[str, Any] = Field(default_factory=dict)
+
+
+class TelefoneHigienizadoPayload(BasePayloadModel):
+    ddd: str
+    numero: str
+    numero_formatado: str
+    numero_e164: str
+    tipo_linha: str = "MOVEL_CELULAR"
+    operadora: str = ""
+    score_recencia: float = 0.0
+    indicador_atividade: str = ""
+
+
+class TelefoniaHigienizadaPayload(BasePayloadModel):
+    total_linhas_encontradas: int = 0
+    telefones: list[TelefoneHigienizadoPayload] = Field(default_factory=list)
+
+
+class WhatsAppProbeResultadoPayload(BasePayloadModel):
+    garantido: bool = False
+    status: str = "INDISPONIVEL"
+    numero_formatado: str | None = None
+    numero_e164: str | None = None
+    tipo_conta: str = "NENHUMA"
+    jid: str | None = None
+    foto_perfil: str | None = None
+    link_direto: str | None = None
+    verificado_em: str | None = None
+
+
+class WhatsAppProbeTecnicoPayload(BasePayloadModel):
+    gateway_configurado: bool = False
+    provedor: str | None = None
+    resultado: WhatsAppProbeResultadoPayload | dict[str, Any] | None = None
+
+
+class TelefoneNaoMePerturbePayload(BasePayloadModel):
+    numero: str | None = None
+    numero_formatado: str | None = None
+    inscrito_bloqueio: bool = False
+    entidade: str | None = None
+    data_bloqueio: str | None = None
+    motivo: str | None = None
+    seguro_discagem_fria: bool = True
+    risco_multa: str = "BAIXO"
+    badge_texto: str = ""
+
+
+class NaoMePerturbePayload(BasePayloadModel):
+    fonte_reguladora: str = "ANATEL_FEBRABAN"
+    telefones_consultados: list[TelefoneNaoMePerturbePayload] = Field(default_factory=list)
+
+
+class MailingQualificadoItemPayload(BasePayloadModel):
+    ordem_prioridade: int = 1
+    numero_formatado: str
+    numero_raw: str
+    numero_e164: str
+    ddd: str
+    operadora: str = ""
+    whatsapp_disponivel: bool = False
+    whatsapp_tipo_conta: str = "NENHUMA"
+    link_whatsapp: str | None = None
+    nao_me_perturbe_inscrito: bool = False
+    seguro_para_discagem_fria: bool = True
+    risco_multa: str = "BAIXO"
+    score_assertividade: int = 50
+    recomendacao_canal: str = "DISCAGEM_E_WHATSAPP"
+    rotulo_canal: str = ""
+
+
+class AddressCadastralPayload(BasePayloadModel):
+    logradouro: str
+    numero: str = "S/N"
+    complemento: str | None = None
+    bairro: str
+    municipio: str
+    uf: str
+    cep: str
+    codigo_ibge: str | None = None
+
+
+class FinancialIndicatorsPayload(BasePayloadModel):
+    renda_estimada_declarada: float = 0.0
+    faixa_renda: str = ""
+    fontes_renda_identificadas: list[str] = Field(default_factory=list)
+
+
+class GovernanceLgpdPayload(BasePayloadModel):
+    enquadramento_legal: str = "LEI_FEDERAL_13709_LGPD"
+    base_legal: str = "PROTECAO_DO_CREDITO_ART_7_X"
+    finalidade: str = "HIGIENIZACAO_E_ENRIQUECIMENTO_PARA_ANALISE_DE_CREDITO"
+    trilha_auditoria_hash: str | None = None
+    data_consulta: str | None = None
+
+
+class CanonicalPersonPayload(BasePayloadModel):
+    meta_: MetaPayload = Field(alias="_meta")
+    identification: PersonIdentificationPayload
+    document_validation: DocumentValidationPayload
+    cadastral_data: PersonCadastralDataPayload
+    loss_prevention_filter: LossPreventionFilterPayload
+    consignado_inss: ConsignadoInssPayload = Field(default_factory=ConsignadoInssPayload)
+    consignado_siape_publico: ConsignadoSiapePayload = Field(default_factory=ConsignadoSiapePayload)
+    margem_consignavel_calculada: MargemConsignavelPayload = Field(
+        default_factory=MargemConsignavelPayload
+    )
+    telefonia_higienizada: TelefoniaHigienizadaPayload = Field(
+        default_factory=TelefoniaHigienizadaPayload
+    )
+    whatsapp_probe_tecnico: WhatsAppProbeTecnicoPayload = Field(
+        default_factory=WhatsAppProbeTecnicoPayload
+    )
+    nao_me_perturbe_anatel_febraban: NaoMePerturbePayload = Field(
+        default_factory=NaoMePerturbePayload
+    )
+    mailing_qualificado_top3: list[MailingQualificadoItemPayload] = Field(default_factory=list)
+    address_cadastral: AddressCadastralPayload | None = None
+    financial_indicators: FinancialIndicatorsPayload = Field(
+        default_factory=FinancialIndicatorsPayload
+    )
+    governance_and_lgpd: GovernanceLgpdPayload = Field(default_factory=GovernanceLgpdPayload)
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("by_alias", True)

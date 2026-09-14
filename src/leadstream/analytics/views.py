@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -13,8 +14,11 @@ from rest_framework.views import APIView
 
 from leadstream.batches.models import Batch
 from leadstream.common.api import resolve_tenant
-from leadstream.entities.models import Company, ContactPoint, Person
+from leadstream.entities.models import Company, ContactPoint, Establishment, Person
+from leadstream.entities.normalization import only_digits
 from leadstream.intelligence.cnae import KNOWN_CNAES
+from leadstream.providers.live_enrichment import enrich_company_live, format_cnpj
+from leadstream.providers.live_enrichment_person import enrich_person_live
 from leadstream.security.authentication import CombinedAuthentication
 from leadstream.security.models import SecurityAuditLog
 
@@ -546,6 +550,78 @@ class EnrichmentCatalogView(APIView):
                         ],
                         "depth": "Detalhado",
                     },
+                    {
+                        "id": "cpf_cadastral",
+                        "groupId": "company",
+                        "label": "CPF & Dados Cadastrais PF",
+                        "description": "Validação oficial Módulo 11 da RFB e identificação civil",
+                        "highlights": ["Nome Civil", "Data de Nascimento", "Situação do CPF"],
+                        "depth": "Essencial",
+                    },
+                    {
+                        "id": "phones_whatsapp_garantido",
+                        "groupId": "sales",
+                        "label": "WhatsApp Ativo Garantido (Probe)",
+                        "description": "Verificação técnica em tempo real na rede do WhatsApp",
+                        "highlights": [
+                            "Probe em Tempo Real",
+                            "Foto de Perfil",
+                            "Zero Desperdício de Créditos",
+                        ],
+                        "depth": "Garantido",
+                    },
+                    {
+                        "id": "consignado_core",
+                        "groupId": "operations",
+                        "label": "Core Consignado & Margens (35% + 5% + 5%)",
+                        "description": (
+                            "Benefício INSS, Espécie, SIAPE e cálculo de margem (Lei 14.431/2022)"
+                        ),
+                        "highlights": ["Margem Total 45%", "NB & Espécie INSS", "Vínculo SIAPE"],
+                        "depth": "Especializado",
+                    },
+                    {
+                        "id": "filtro_perda_obito",
+                        "groupId": "risk",
+                        "label": "Filtro de Perda & Expurgo de Óbito",
+                        "description": (
+                            "Detecção de falecimento ou irregularidade na RFB com tarifa zero"
+                        ),
+                        "highlights": [
+                            "Detector de Óbito",
+                            "Expurgo Sem Tarifa",
+                            "Proteção de Carteira",
+                        ],
+                        "depth": "Essencial",
+                    },
+                    {
+                        "id": "nao_me_perturbe",
+                        "groupId": "risk",
+                        "label": "Conformidade Não Me Perturbe (Anatel)",
+                        "description": (
+                            "Higienização contra multas do Procon/Febraban no Não Me Perturbe"
+                        ),
+                        "highlights": [
+                            "Blindagem a Multas",
+                            "Lista Anatel/Febraban",
+                            "Score de Conformidade",
+                        ],
+                        "depth": "Conformidade",
+                    },
+                    {
+                        "id": "mailing_top3_discagem",
+                        "groupId": "sales",
+                        "label": "Mailing Higienizado Top 3 Celulares",
+                        "description": (
+                            "Top 3 celulares com operadora, WhatsApp ativo e score de discagem"
+                        ),
+                        "highlights": [
+                            "Top 3 Celulares",
+                            "Operadoras (Claro/Vivo/TIM)",
+                            "Score de Discagem",
+                        ],
+                        "depth": "Garantido",
+                    },
                 ],
                 "presets": [
                     {
@@ -553,7 +629,28 @@ class EnrichmentCatalogView(APIView):
                         "label": "Prospecção Comercial Outbound",
                         "description": "Decisores completos com e-mail corporativo e WhatsApp",
                         "capabilityIds": ["cnpj_qsa", "emails_smtp", "phones_whatsapp"],
-                    }
+                    },
+                    {
+                        "id": "pf_whatsapp",
+                        "label": "Higienização CPF & WhatsApp Garantido",
+                        "description": "Validação de CPF com checagem de conta ativa no WhatsApp",
+                        "capabilityIds": ["cpf_cadastral", "phones_whatsapp_garantido"],
+                    },
+                    {
+                        "id": "consignado_premium",
+                        "label": "Crédito Consignado & Conformidade Total",
+                        "description": (
+                            "Dossiê: margens INSS/SIAPE, filtro de óbito, NMP e Top 3 WhatsApp"
+                        ),
+                        "capabilityIds": [
+                            "cpf_cadastral",
+                            "consignado_core",
+                            "filtro_perda_obito",
+                            "nao_me_perturbe",
+                            "mailing_top3_discagem",
+                            "phones_whatsapp_garantido",
+                        ],
+                    },
                 ],
             }
         )
@@ -564,7 +661,9 @@ class EnrichmentRunsView(APIView):
     permission_classes = (AllowAny,)
 
     def get(self, request: Request) -> Response:
-        return Response([])
+        tenant = resolve_tenant(request)
+        runs = cache.get(f"enrichment_runs:{tenant.pk}", [])
+        return Response(runs if isinstance(runs, list) else [])
 
 
 class DiscoveryCnaesView(APIView):
@@ -622,40 +721,40 @@ class DiscoverySearchView(APIView):
         payload = _get_payload(request)
         cnae = payload.get("cnaePrincipal", "6201501")
         uf = payload.get("uf", "SP")
+        tenant = resolve_tenant(request)
+
+        companies = Company.objects.filter(entity__tenant=tenant)[:5]
+        sample: list[dict[str, Any]] = []
+        empty_cnaes: list[dict[str, str]] = []
+        for c in companies:
+            est = Establishment.objects.filter(company=c).first()
+            sample.append(
+                {
+                    "id": str(c.entity.id),
+                    "cnpj": est.cnpj if est else c.cnpj_root,
+                    "cnpjFormatted": format_cnpj(est.cnpj) if est else c.cnpj_root,
+                    "razaoSocial": c.legal_name,
+                    "nomeFantasia": c.trade_name,
+                    "cnaePrincipal": {"codigo": cnae, "descricao": "Atividade Empresarial"},
+                    "cnaesSecundarios": empty_cnaes,
+                    "uf": uf,
+                    "porte": "DEMAIS",
+                    "capitalSocial": 0.0,
+                    "situacaoCadastral": c.registration_status or "ATIVA",
+                    "dataConfidenceScore": 95,
+                }
+            )
 
         return Response(
             {
-                "totalEligibleCompanies": 12840,
+                "totalEligibleCompanies": max(len(sample), 120),
                 "dryRun": {
-                    "totalBytesProcessed": 10485760,
-                    "totalMegaBytesProcessed": 10.0,
-                    "estimatedCostUsd": 0.05,
+                    "totalBytesProcessed": 1048576,
+                    "totalMegaBytesProcessed": 1.0,
+                    "estimatedCostBrl": 0.25,
                     "cacheHit": True,
                 },
-                "sample": [
-                    {
-                        "id": "sample-1",
-                        "cnpj": "12345678000190",
-                        "cnpjFormatted": "12.345.678/0001-90",
-                        "razaoSocial": "Apex Tecnologia e Desenvolvimento Ltda",
-                        "nomeFantasia": "Apex Tech",
-                        "cnaePrincipal": {
-                            "codigo": cnae,
-                            "descricao": "Desenvolvimento de Software",
-                        },
-                        "cnaesSecundarios": [],
-                        "uf": uf,
-                        "endereco": {"bairro": "Itaim Bibi", "cep": "04538-133"},
-                        "porte": "EPP",
-                        "capitalSocial": 500000.0,
-                        "situacaoCadastral": "ATIVA",
-                        "simplesNacional": True,
-                        "mei": False,
-                        "telefoneComercial": "(11) 3045-8800",
-                        "emailCorporativo": "contato@apextech.com.br",
-                        "dataConfidenceScore": 98,
-                    }
-                ],
+                "sample": sample,
                 "filterApplied": request.data,
             }
         )
@@ -668,29 +767,100 @@ class LeadLookupView(APIView):
     def get(self, request: Request) -> Response:
         query = request.query_params.get("q", "").strip()
         tenant = resolve_tenant(request)
+        digits = only_digits(query)
+
+        if len(digits) == 11:
+            result = enrich_person_live(query=digits, tenant=tenant)
+            person_obj = result.get("person")
+            if person_obj and isinstance(person_obj, dict):
+                wa = result.get("whatsappGarantido") or {}
+                return Response(
+                    {
+                        "id": result.get("personId") or "lead-pf",
+                        "leadType": "PF",
+                        "name": person_obj.get("name"),
+                        "title": "Titular",
+                        "seniority": "Pessoa Física",
+                        "company": "Pessoa Física",
+                        "domain": "",
+                        "location": "Brasil",
+                        "city": "",
+                        "state": "",
+                        "country": "Brasil",
+                        "email": "",
+                        "phone": wa.get("numero") or person_obj.get("phone", ""),
+                        "status": "Verificado" if person_obj.get("hasWhatsApp") else "Cadastrado",
+                        "enriched": True,
+                        "cpf": person_obj.get("cpf"),
+                        "razaoSocial": person_obj.get("name"),
+                        "nomeFantasia": person_obj.get("name"),
+                        "situacaoCadastral": person_obj.get("taxStatus", "REGULAR"),
+                    }
+                )
+
+        if len(digits) == 14:
+            result = enrich_company_live(query=digits, tenant=tenant)
+            comp = result.get("company")
+            if comp and isinstance(comp, dict):
+                return Response(
+                    {
+                        "id": result.get("companyId") or "lead-1",
+                        "leadType": "PJ",
+                        "name": comp.get("name") or comp.get("legalName"),
+                        "title": "Responsável Legal",
+                        "seniority": "C-Level",
+                        "company": comp.get("legalName"),
+                        "domain": comp.get("domain", ""),
+                        "location": f"{comp.get('city', '')}, {comp.get('state', '')}".strip(", "),
+                        "city": comp.get("city", ""),
+                        "state": comp.get("state", ""),
+                        "country": "Brasil",
+                        "email": result.get("emailsValidados", [{}])[0].get("email", "")
+                        if result.get("emailsValidados")
+                        else "",
+                        "phone": result.get("telefonesAtribuiveis", [{}])[0].get("numero", "")
+                        if result.get("telefonesAtribuiveis")
+                        else "",
+                        "status": "Verificado",
+                        "enriched": True,
+                        "cnpj": comp.get("cnpj"),
+                        "razaoSocial": comp.get("legalName"),
+                        "nomeFantasia": comp.get("name"),
+                        "situacaoCadastral": comp.get("status", "ATIVA"),
+                    }
+                )
+
         company = (
             Company.objects.filter(entity__tenant=tenant, legal_name__icontains=query).first()
             or Company.objects.filter(entity__tenant=tenant, cnpj_root__icontains=query).first()
         )
         if company:
+            contact_email = ContactPoint.objects.filter(
+                owner=company.entity, kind=ContactPoint.Kind.EMAIL
+            ).first()
+            contact_phone = ContactPoint.objects.filter(
+                owner=company.entity, kind=ContactPoint.Kind.PHONE
+            ).first()
+            est = Establishment.objects.filter(company=company).first()
+            formatted_cnpj = format_cnpj(est.cnpj) if est else company.cnpj_root
             return Response(
                 {
                     "id": str(company.entity.id),
                     "leadType": "PJ",
                     "name": company.trade_name or company.legal_name,
-                    "title": "Diretor Executivo",
+                    "title": "Responsável Legal",
                     "seniority": "C-Level",
                     "company": company.legal_name,
-                    "domain": f"{company.cnpj_root}.com.br",
-                    "location": "São Paulo, SP",
-                    "city": "São Paulo",
-                    "state": "SP",
+                    "domain": "",
+                    "location": "Brasil",
+                    "city": "",
+                    "state": "",
                     "country": "Brasil",
-                    "email": f"contato@{company.cnpj_root}.com.br",
-                    "phone": "(11) 99876-5432",
+                    "email": contact_email.normalized_value if contact_email else "",
+                    "phone": contact_phone.normalized_value if contact_phone else "",
                     "status": "Verificado",
                     "enriched": True,
-                    "cnpj": company.cnpj_root,
+                    "cnpj": formatted_cnpj,
                     "razaoSocial": company.legal_name,
                     "nomeFantasia": company.trade_name,
                     "situacaoCadastral": company.registration_status or "ATIVA",
@@ -698,24 +868,24 @@ class LeadLookupView(APIView):
             )
         return Response(
             {
-                "id": "lookup-1",
+                "id": "lookup-observed",
                 "leadType": "PJ",
-                "name": query or "Empresa Consultada",
-                "title": "Diretor Executivo",
-                "seniority": "C-Level",
-                "company": query or "Empresa Consultada Ltda",
-                "domain": "empresa.com.br",
-                "location": "São Paulo, SP",
-                "city": "São Paulo",
-                "state": "SP",
+                "name": query or "Empresa Observada",
+                "title": "Contato Principal",
+                "seniority": "Corporativo",
+                "company": query or "Empresa Observada",
+                "domain": "",
+                "location": "Brasil",
+                "city": "",
+                "state": "",
                 "country": "Brasil",
-                "email": "contato@empresa.com.br",
-                "phone": "(11) 98765-4321",
-                "status": "Verificado",
-                "enriched": True,
-                "cnpj": "12.345.678/0001-90",
-                "razaoSocial": query or "Empresa Consultada Ltda",
-                "nomeFantasia": query or "Empresa Consultada",
+                "email": "",
+                "phone": "",
+                "status": "Observado",
+                "enriched": False,
+                "cnpj": "",
+                "razaoSocial": query,
+                "nomeFantasia": query,
                 "situacaoCadastral": "ATIVA",
             }
         )
@@ -726,13 +896,36 @@ class LeadRevealPhoneView(APIView):
     permission_classes = (AllowAny,)
 
     def patch(self, request: Request, lead_id: str) -> Response:
+        tenant = resolve_tenant(request)
+        try:
+            lead_uuid = uuid.UUID(lead_id)
+        except (ValueError, TypeError):
+            return Response(
+                {"detail": "Identificador de lead inválido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        contact = ContactPoint.objects.filter(
+            owner__tenant=tenant,
+            owner_id=lead_uuid,
+            kind=ContactPoint.Kind.PHONE,
+        ).first()
+        if contact:
+            return Response(
+                {
+                    "id": lead_id,
+                    "phone": contact.normalized_value,
+                    "phoneRevealed": True,
+                    "phoneEvidenceStatus": "OBSERVED",
+                    "whatsappEvidenceStatus": "OBSERVED",
+                }
+            )
         return Response(
             {
                 "id": lead_id,
-                "phone": "(11) 98765-4321",
-                "phoneRevealed": True,
-                "phoneEvidenceStatus": "OBSERVED",
-                "whatsappEvidenceStatus": "OBSERVED",
+                "phone": None,
+                "phoneRevealed": False,
+                "message": "Nenhum telefone registrado para este lead.",
             }
         )
 
@@ -798,126 +991,73 @@ class EnrichmentCompanyView(APIView):
         query = str(payload.get("query") or payload.get("cnpj") or "").strip()
         raw_caps = payload.get("capabilities", [])
         capabilities: list[str] = raw_caps if isinstance(raw_caps, list) else []
-        run_id = f"run_{uuid.uuid4().hex[:10]}"
-        company_id = f"comp_{uuid.uuid4().hex[:10]}"
+        tenant = resolve_tenant(request)
 
-        company_summary = {
-            "cnpj": query if len(query) >= 14 else "12.345.678/0001-90",
-            "razaoSocial": "Empresa Enriquecida Ltda",
-            "nomeFantasia": "Empresa Enriquecida",
-            "cnaePrincipal": {
-                "codigo": "6201501",
-                "descricao": "Desenvolvimento de programas de computador",
-            },
-            "situacaoCadastral": "ATIVA",
-            "capitalSocial": 100000.0,
-            "porte": "DEMAIS",
-            "naturezaJuridica": "Sociedade Empresária Limitada",
-            "dataAbertura": "2018-05-15",
-            "endereco": {
-                "logradouro": "Av. Paulista",
-                "numero": "1000",
-                "bairro": "Bela Vista",
-                "municipio": "São Paulo",
-                "uf": "SP",
-                "cep": "01310-100",
-            },
+        result = enrich_company_live(query=query, tenant=tenant, capabilities=capabilities)
+
+        run_record = {
+            "id": result.get("runId", f"run_{uuid.uuid4().hex[:8]}"),
+            "entityType": "COMPANY",
+            "query": query,
+            "capabilities": capabilities,
+            "status": "COMPLETED" if result.get("company") else "FAILED",
+            "matchedEntityId": result.get("companyId") or None,
+            "errorMessage": (
+                result["sections"][0].get("errorMessage")
+                if not result.get("company") and result.get("sections")
+                else None
+            ),
+            "startedAt": timezone.now().isoformat(),
+            "completedAt": timezone.now().isoformat(),
         }
-
-        empty_contact_items: list[dict[str, object]] = []
-        sections: list[dict[str, object]] = [
-            {
-                "id": "registry",
-                "title": "Dados Cadastrais & QSA",
-                "description": "Receita Federal e quadro de sócios administradores",
-                "status": "available",
-                "summary": "Situação cadastral ATIVA com 2 sócios identificados.",
-                "fields": [
-                    {"label": "CNPJ", "value": company_summary["cnpj"]},
-                    {"label": "Razão Social", "value": company_summary["razaoSocial"]},
-                    {"label": "Situação", "value": "ATIVA"},
-                    {"label": "Capital Social", "value": "R$ 100.000,00"},
-                ],
-                "items": [
-                    {
-                        "title": "Alexandre Silva",
-                        "fields": [
-                            {"label": "Qualificação", "value": "Sócio-Administrador"},
-                            {"label": "País", "value": "Brasil"},
-                        ],
-                    },
-                    {
-                        "title": "Mariana Santos",
-                        "fields": [
-                            {"label": "Qualificação", "value": "Diretora de Operações"},
-                            {"label": "País", "value": "Brasil"},
-                        ],
-                    },
-                ],
-            },
-            {
-                "id": "contacts",
-                "title": "Contatos & Verificação RFC 5321",
-                "description": "E-mails corporativos e telefones celulares validados",
-                "status": "available",
-                "summary": "1 caixa postal entregável verificada via handshake SMTP.",
-                "fields": [
-                    {"label": "E-mail Principal", "value": "diretoria@empresa.com.br"},
-                    {"label": "Status SMTP", "value": "DELIVERABLE (250 OK)"},
-                    {"label": "Telefone Celular", "value": "(11) 98765-4321"},
-                    {"label": "WhatsApp Ativo", "value": "Sim"},
-                ],
-                "items": empty_contact_items,
-            },
-        ]
-
-        coverage = {
-            "requested": len(capabilities) or 2,
-            "available": len(capabilities) or 2,
-            "fieldCount": 8,
-            "recordCount": 2,
-        }
-
-        return Response(
-            {
-                "runId": run_id,
-                "companyId": company_id,
-                "capabilities": capabilities,
-                "company": company_summary,
-                "coverage": coverage,
-                "sections": sections,
-                "socioAdministradores": [
-                    {
-                        "nome": "Alexandre Silva",
-                        "qualificacao": "Sócio-Administrador",
-                        "paisOrigem": "Brasil",
-                    },
-                    {
-                        "nome": "Mariana Santos",
-                        "qualificacao": "Diretora de Operações",
-                        "paisOrigem": "Brasil",
-                    },
-                ],
-                "emailsValidados": [
-                    {
-                        "email": "diretoria@empresa.com.br",
-                        "status": "DELIVERABLE",
-                        "smtpCheck": True,
-                        "score": 99,
-                    },
-                ],
-                "telefonesAtribuiveis": [
-                    {
-                        "numero": "(11) 98765-4321",
-                        "tipo": "Movel",
-                        "whatsappDisponivel": True,
-                        "atribuicao": "Alexandre Silva",
-                    },
-                ],
-                "capabilitiesApplied": capabilities,
-                "costCredits": 3,
-            }
+        current_runs = cache.get(f"enrichment_runs:{tenant.pk}", [])
+        cache.set(
+            f"enrichment_runs:{tenant.pk}",
+            [run_record, *(current_runs if isinstance(current_runs, list) else [])[:19]],
+            timeout=86400 * 7,
         )
+
+        return Response(result)
+
+
+class EnrichmentPersonView(APIView):
+    """Enriquecimento cadastral de Pessoa Física (CPF) com garantia técnica de WhatsApp."""
+
+    authentication_classes = (CombinedAuthentication,)
+    permission_classes = (AllowAny,)
+
+    def post(self, request: Request) -> Response:
+        payload = _get_payload(request)
+        query = str(payload.get("query") or payload.get("cpf") or "").strip()
+        raw_caps = payload.get("capabilities", [])
+        capabilities: list[str] = raw_caps if isinstance(raw_caps, list) else []
+        tenant = resolve_tenant(request)
+
+        result = enrich_person_live(query=query, tenant=tenant, capabilities=capabilities)
+
+        run_record = {
+            "id": result.get("runId", f"run_{uuid.uuid4().hex[:8]}"),
+            "entityType": "PERSON",
+            "query": query,
+            "capabilities": capabilities,
+            "status": "COMPLETED" if result.get("person") else "FAILED",
+            "matchedEntityId": result.get("personId") or None,
+            "errorMessage": (
+                result["sections"][0].get("errorMessage")
+                if not result.get("person") and result.get("sections")
+                else None
+            ),
+            "startedAt": timezone.now().isoformat(),
+            "completedAt": timezone.now().isoformat(),
+        }
+        current_runs = cache.get(f"enrichment_runs:{tenant.pk}", [])
+        cache.set(
+            f"enrichment_runs:{tenant.pk}",
+            [run_record, *(current_runs if isinstance(current_runs, list) else [])[:19]],
+            timeout=86400 * 7,
+        )
+
+        return Response(result)
 
 
 class EnrichmentLookupView(APIView):
@@ -926,17 +1066,68 @@ class EnrichmentLookupView(APIView):
 
     def get(self, request: Request) -> Response:
         query = request.query_params.get("q", "").strip()
-        return Response(
-            {
-                "id": "enrich-lookup-1",
-                "name": query or "Lead Enriquecido",
-                "company": query or "Empresa Enriquecida",
-                "email": "contato@empresa.com.br",
-                "phone": "(11) 98765-4321",
-                "enriched": True,
-                "dataConfidenceScore": 96,
-            }
-        )
+        tenant = resolve_tenant(request)
+        digits = only_digits(query)
+
+        if len(digits) == 11:
+            result = enrich_person_live(query=digits, tenant=tenant)
+            person_obj = result.get("person")
+            if person_obj and isinstance(person_obj, dict):
+                wa = result.get("whatsappGarantido") or {}
+                return Response(
+                    {
+                        "id": result.get("personId") or "lookup-person",
+                        "name": person_obj.get("name"),
+                        "company": "Pessoa Física",
+                        "email": "",
+                        "phone": wa.get("numero") or person_obj.get("phone", ""),
+                        "enriched": True,
+                        "dataConfidenceScore": 98 if person_obj.get("hasWhatsApp") else 85,
+                        "cpf": person_obj.get("cpf"),
+                        "hasWhatsApp": person_obj.get("hasWhatsApp", False),
+                    }
+                )
+
+        if len(digits) == 14:
+            result = enrich_company_live(query=digits, tenant=tenant)
+            comp = result.get("company")
+            if comp and isinstance(comp, dict):
+                return Response(
+                    {
+                        "id": result.get("companyId") or "lookup-lead",
+                        "name": comp.get("name") or comp.get("legalName"),
+                        "company": comp.get("legalName"),
+                        "email": result.get("emailsValidados", [{}])[0].get("email", "")
+                        if result.get("emailsValidados")
+                        else "",
+                        "phone": result.get("telefonesAtribuiveis", [{}])[0].get("numero", "")
+                        if result.get("telefonesAtribuiveis")
+                        else "",
+                        "enriched": True,
+                        "dataConfidenceScore": 95,
+                    }
+                )
+
+        company = Company.objects.filter(entity__tenant=tenant, legal_name__icontains=query).first()
+        if company:
+            contact_email = ContactPoint.objects.filter(
+                owner=company.entity, kind=ContactPoint.Kind.EMAIL
+            ).first()
+            contact_phone = ContactPoint.objects.filter(
+                owner=company.entity, kind=ContactPoint.Kind.PHONE
+            ).first()
+            return Response(
+                {
+                    "id": str(company.entity.id),
+                    "name": company.trade_name or company.legal_name,
+                    "company": company.legal_name,
+                    "email": contact_email.normalized_value if contact_email else "",
+                    "phone": contact_phone.normalized_value if contact_phone else "",
+                    "enriched": True,
+                    "dataConfidenceScore": 90,
+                }
+            )
+        return Response({"detail": "Lead não localizado."}, status=status.HTTP_404_NOT_FOUND)
 
 
 class DiscoveryExtractView(APIView):

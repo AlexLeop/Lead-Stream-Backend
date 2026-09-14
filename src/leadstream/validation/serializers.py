@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
 
@@ -8,7 +10,7 @@ class EmailValidationRequestSerializer(serializers.Serializer[object]):
     emails = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     deep_smtp = serializers.BooleanField(default=True)
 
-    def validate(self, attrs: dict) -> dict:
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         if not attrs.get("email") and not attrs.get("emails"):
             raise serializers.ValidationError("Informe 'email' ou uma lista em 'emails'.")
         return attrs

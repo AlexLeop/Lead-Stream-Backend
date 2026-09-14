@@ -37,7 +37,7 @@ class APIKeyCreateSerializer(serializers.Serializer[dict[str, Any]]):
 
 
 class APIKeyReadSerializer(serializers.ModelSerializer[APIKey]):
-    class Meta:  # type: ignore[override]
+    class Meta:
         model = APIKey
         fields = (
             "id",
@@ -62,9 +62,18 @@ class APIKeyCreatedResponseSerializer(APIKeyReadSerializer):
         read_only=True,
     )
 
-    class Meta(APIKeyReadSerializer.Meta):
+    class Meta:
+        model = APIKey
         fields = (
-            *APIKeyReadSerializer.Meta.fields,
+            "id",
+            "name",
+            "prefix",
+            "role",
+            "scopes",
+            "is_active",
+            "expires_at",
+            "last_used_at",
+            "created_at",
             "raw_key",
             "notice",
         )
@@ -79,7 +88,7 @@ class TokenRevokeSerializer(serializers.Serializer[dict[str, Any]]):
 
 
 class SecurityAuditLogSerializer(serializers.ModelSerializer[SecurityAuditLog]):
-    class Meta:  # type: ignore[override]
+    class Meta:
         model = SecurityAuditLog
         fields = (
             "id",

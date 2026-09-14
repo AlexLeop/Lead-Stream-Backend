@@ -16,11 +16,21 @@ import {
   Info,
   SlidersHorizontal,
   ShieldCheck,
+  Building2,
+  User,
+  PhoneCall,
+  Skull,
+  CreditCard,
+  Landmark,
+  Ban,
+  Phone,
+  MessageSquare,
 } from 'lucide-react';
 import { api } from '../api';
 import { useLeadStream } from '../LeadStreamContext';
 import type {
   CompanyEnrichmentResult,
+  PersonEnrichmentResult,
   EnrichmentCatalog,
   EnrichmentRun,
   EnrichmentStatus,
@@ -100,6 +110,36 @@ function preflightCnpj(raw: string): { digits: string; valid: boolean; reason?: 
   return { digits, valid: true };
 }
 
+function preflightCpf(raw: string): { digits: string; valid: boolean; reason?: string } {
+  const trimmed = String(raw || '').trim();
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length !== 11) {
+    return {
+      digits,
+      valid: false,
+      reason: `Comprimento inválido (${digits.length} dígitos numéricos; são necessários 11 para o CPF).`,
+    };
+  }
+  if (/^(\d)\1{10}$/.test(digits)) {
+    return { digits, valid: false, reason: 'O CPF não pode conter todos os dígitos iguais.' };
+  }
+  const w1 = [10, 9, 8, 7, 6, 5, 4, 3, 2];
+  const s1 = digits.slice(0, 9).split('').reduce((acc, d, i) => acc + Number(d) * w1[i], 0);
+  const r1 = s1 % 11;
+  const dv1 = r1 < 2 ? 0 : 11 - r1;
+  if (dv1 !== Number(digits[9])) {
+    return { digits, valid: false, reason: `Primeiro dígito verificador inválido (esperado ${dv1}, encontrado ${digits[9]}).` };
+  }
+  const w2 = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
+  const s2 = (digits.slice(0, 9) + String(dv1)).split('').reduce((acc, d, i) => acc + Number(d) * w2[i], 0);
+  const r2 = s2 % 11;
+  const dv2 = r2 < 2 ? 0 : 11 - r2;
+  if (dv2 !== Number(digits[10])) {
+    return { digits, valid: false, reason: `Segundo dígito verificador inválido (esperado ${dv2}, encontrado ${digits[10]}).` };
+  }
+  return { digits, valid: true };
+}
+
 function formatCnpj(digits: string) {
   if (digits.length !== 14) return digits;
   return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
@@ -146,8 +186,10 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
   const [runs, setRuns] = useState<EnrichmentRun[]>([]);
   const [pixStatus, setPixStatus] = useState<PixLookupStatus | null>(null);
   const [query, setQuery] = useState('');
+  const [docType, setDocType] = useState<'CNPJ' | 'CPF'>('CNPJ');
   const [selectedCapabilities, setSelectedCapabilities] = useState<string[]>([]);
   const [result, setResult] = useState<CompanyEnrichmentResult | null>(null);
+  const [personResult, setPersonResult] = useState<PersonEnrichmentResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -280,7 +322,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
   const submitIndividual = async (event: FormEvent) => {
     event.preventDefault();
     if (!query.trim()) {
-      setIndividualError('Informe um CNPJ, domínio ou nome da empresa para a consulta individual.');
+      setIndividualError(docType === 'CPF' ? 'Informe um CPF para a consulta individual.' : 'Informe um CNPJ, domínio ou nome da empresa para a consulta individual.');
       return;
     }
     if (!status?.available) {
@@ -295,6 +337,29 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
     setIndividualError(null);
     setError(null);
     setResult(null);
+    setPersonResult(null);
+
+    if (docType === 'CPF') {
+      const { valid, reason } = preflightCpf(query.trim());
+      if (!valid) {
+        setIndividualError(reason ?? 'CPF inválido perante os algoritmos oficiais da Receita Federal.');
+        setSubmitting(false);
+        return;
+      }
+      try {
+        const enriched = await api.enrichPerson(query.trim(), selectedCapabilities);
+        setPersonResult(enriched);
+        setRuns(await api.enrichmentRuns().catch(() => runs));
+        await refresh();
+      } catch (cause) {
+        setIndividualError(cause instanceof Error ? cause.message : 'Não foi possível enriquecer este CPF.');
+        setRuns(await api.enrichmentRuns().catch(() => runs));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     try {
       const enriched = await api.enrichCompany(query.trim(), selectedCapabilities);
       setResult(enriched);
@@ -777,12 +842,56 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
           </div>
 
           <div className="space-y-6 p-5 sm:p-6">
+            {/* Seletor Tipo de Documento: CNPJ vs CPF */}
+            <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl w-fit">
+              <button
+                type="button"
+                onClick={() => {
+                  setDocType('CNPJ');
+                  setResult(null);
+                  setPersonResult(null);
+                  setIndividualError(null);
+                  setSelectedCapabilities(['cnpj_qsa', 'emails_smtp', 'phones_whatsapp']);
+                }}
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  docType === 'CNPJ'
+                    ? 'bg-white text-blue-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                Empresa (CNPJ)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDocType('CPF');
+                  setResult(null);
+                  setPersonResult(null);
+                  setIndividualError(null);
+                  setSelectedCapabilities(['cpf_cadastral', 'phones_whatsapp_garantido']);
+                }}
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  docType === 'CPF'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                Pessoa Física (CPF & WhatsApp Garantido)
+              </button>
+            </div>
+
             <div>
               <label htmlFor="enrichment-query" className="text-xs font-semibold text-slate-800">
-                Qual empresa você quer analisar?
+                {docType === 'CPF'
+                  ? 'Qual CPF você deseja enriquecer com WhatsApp garantido?'
+                  : 'Qual empresa você quer analisar?'}
               </label>
               <div className="mt-1.5 text-[11px] text-slate-500">
-                Cole um CNPJ (formatado ou não), o domínio do site institucional ou o nome da empresa.
+                {docType === 'CPF'
+                  ? 'Informe os 11 dígitos do CPF (com ou sem pontuação). O sistema valida os dados cadastrais e executa probe ativo no WhatsApp.'
+                  : 'Cole um CNPJ (formatado ou não), o domínio do site institucional ou o nome da empresa.'}
               </div>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <div className="relative flex-1">
@@ -792,7 +901,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                     value={query}
                     onChange={(event) => { setQuery(event.target.value); setIndividualError(null); }}
                     onKeyDown={(e) => { if (e.key === 'Enter') void submitIndividual(e as unknown as FormEvent); }}
-                    placeholder="Ex.: 33.000.167/0001-01, petrobras.com.br ou Petrobras"
+                    placeholder={docType === 'CPF' ? 'Ex.: 529.982.247-25 ou 52998224725' : 'Ex.: 33.000.167/0001-01, petrobras.com.br ou Petrobras'}
                     disabled={!status?.available || submitting}
                     className="h-11 w-full rounded-[10px] border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-950 outline-none placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
                   />
@@ -800,13 +909,17 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                 <button
                   type="submit"
                   disabled={!status?.available || submitting || !query.trim() || !selectedCapabilities.length}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] bg-blue-600 px-5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 cursor-pointer"
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-[10px] px-5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300 cursor-pointer ${
+                    docType === 'CPF' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
                 >
                   {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
                   {submitting
                     ? 'Consultando…'
                     : selectedCapabilities.length > 0
-                      ? `Consultar ${selectedCapabilities.length} dimensões`
+                      ? docType === 'CPF'
+                        ? 'Enriquecer CPF & WhatsApp'
+                        : `Consultar ${selectedCapabilities.length} dimensões`
                       : 'Selecione dimensões'}
                 </button>
               </div>
@@ -976,6 +1089,386 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
               )}
             </fieldset>
 
+            {/* Resultado de Pessoa Física (CPF & Consignado & WhatsApp) */}
+            {personResult && (
+              <div className="space-y-4">
+                {/* 1. Camada 1: Filtro de Perda (Óbito & Expurgo) */}
+                {personResult.filtroPerda?.status === 'EXPURGADO_OBITO' ? (
+                  <div className="rounded-xl border-2 border-red-500 bg-red-950/20 p-5 shadow-lg">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-xl shadow-md shrink-0">
+                          <Skull className="w-8 h-8 text-white" />
+                        </div>
+                        <div>
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-600 text-white shadow-sm mb-1">
+                            <Ban className="w-3.5 h-3.5" /> Lead Expurgado por Óbito
+                          </div>
+                          <h3 className="text-base font-extrabold text-red-900 dark:text-red-300">
+                            Falecimento Confirmado no Cadastro Central
+                          </h3>
+                          <p className="text-xs text-red-700 dark:text-red-400 mt-1">
+                            {personResult.filtroPerda.death_date
+                              ? `Data de Óbito registrada: ${personResult.filtroPerda.death_date}.`
+                              : 'Registro de óbito identificado em bases previdenciárias e cartorárias.'}
+                            {' '}Este lead foi classificado como <strong>inapto</strong> para operações de crédito consignado.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="rounded-lg bg-emerald-100 border border-emerald-300 px-4 py-2 text-center text-xs font-bold text-emerald-800 shadow-sm shrink-0">
+                        🛡️ Tarifa Zero Aplicada<br />
+                        <span className="font-normal text-[11px] text-emerald-700">0 créditos cobrados</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : personResult.filtroPerda?.status === 'EXPURGADO_RECEITA_IRREGULAR' ? (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 flex items-start gap-3 text-xs text-amber-900 shadow-sm">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold uppercase tracking-wider">Situação Cadastral Irregular na Receita Federal</div>
+                      <p className="mt-0.5">
+                        O CPF encontra-se com situação <strong>{personResult.filtroPerda.tax_status}</strong>. Inapto para operações financeiras.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-2.5 flex items-center justify-between text-xs text-emerald-900 shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        Filtro de Perda: <strong>Lead Apto & Regular</strong> · Situação RFB:{' '}
+                        <strong>{personResult.person?.taxStatus ?? 'REGULAR'}</strong>
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                      Zero Óbito
+                    </span>
+                  </div>
+                )}
+
+                {/* 2. Destaque do WhatsApp Ativo Garantido */}
+                {personResult.whatsappGarantido?.garantido ? (
+                  <div className="rounded-xl border border-emerald-300 bg-emerald-50/90 p-5 shadow-sm">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        {personResult.whatsappGarantido.fotoPerfil ? (
+                          <img
+                            src={personResult.whatsappGarantido.fotoPerfil}
+                            alt="Foto WhatsApp"
+                            className="w-14 h-14 rounded-full object-cover border-2 border-emerald-500 shadow"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xl shadow">
+                            <PhoneCall className="w-6 h-6" />
+                          </div>
+                        )}
+                        <div>
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-200 text-emerald-900 mb-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" /> WhatsApp Ativo Garantido (Probe Oficial)
+                          </div>
+                          <h3 className="text-base font-bold text-slate-900">{personResult.whatsappGarantido.numero}</h3>
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            Conta: <span className="font-semibold text-slate-800">{personResult.whatsappGarantido.tipoConta}</span> · Titular: <span className="font-semibold text-slate-900">{personResult.person?.name}</span> (CPF: <span className="font-mono font-bold text-slate-900">{personResult.person?.cpf}</span>)
+                          </p>
+                        </div>
+                      </div>
+                      <a
+                        href={personResult.whatsappGarantido.linkDireto}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors shadow cursor-pointer whitespace-nowrap"
+                      >
+                        <Zap className="w-4 h-4" /> Abrir conversa no WhatsApp
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex items-start gap-3 text-xs text-slate-700">
+                    <Info className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold uppercase tracking-wider text-slate-800">Status do WhatsApp Probe</div>
+                      <p className="mt-0.5 text-slate-600">
+                        {personResult.telefonesAtribuiveis && personResult.telefonesAtribuiveis.length > 0
+                          ? 'Nenhum dos telefones identificados no cadastro possui conta ativa no WhatsApp no momento.'
+                          : 'Nenhum número de celular com WhatsApp ativo foi atestado para este CPF.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Camada 2: Core Consignado (INSS / SIAPE & 4 Cards de Margem) */}
+                {personResult.consignado && personResult.consignado.salarioBase > 0 && (
+                  <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/70 via-white to-blue-50/50 p-5 shadow-sm space-y-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-indigo-100 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Landmark className="w-5 h-5 text-indigo-600" />
+                          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                            Core Consignado · {personResult.consignado.vinculoPrincipal}
+                          </h3>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
+                              personResult.consignado.categoriaElegibilidade === 'APTO_CONSIGNAVEL'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : personResult.consignado.categoriaElegibilidade === 'RESTRITO_BPC'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : 'bg-slate-100 text-slate-800'
+                            }`}
+                          >
+                            {personResult.consignado.categoriaElegibilidade === 'APTO_CONSIGNAVEL'
+                              ? '✅ Apto para Consignado'
+                              : personResult.consignado.categoriaElegibilidade === 'RESTRITO_BPC'
+                              ? '⚠️ BPC/LOAS (Regras Específicas)'
+                              : personResult.consignado.categoriaElegibilidade}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-1">
+                          {personResult.consignado.numeroBeneficio && personResult.consignado.numeroBeneficio !== 'N/A' && (
+                            <>
+                              NB: <strong className="font-mono text-slate-800">{personResult.consignado.numeroBeneficio}</strong> ·{' '}
+                            </>
+                          )}
+                          Espécie: <strong>{personResult.consignado.especieDescricao}</strong>
+                        </p>
+                        {personResult.consignado.alerta && (
+                          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1.5 inline-block">
+                            ℹ️ {personResult.consignado.alerta}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[11px] text-slate-500 block">Salário/Benefício Base</span>
+                        <span className="text-base font-extrabold text-slate-900">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                            personResult.consignado.salarioBase
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Os 4 Cards de Margem Consignável (Lei 14.431/2022) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
+                        <div className="flex items-center justify-between text-slate-500 mb-1">
+                          <span className="text-[11px] font-semibold">Empréstimo (35%)</span>
+                          <CreditCard className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <div className="text-base font-extrabold text-blue-700">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                            personResult.consignado.margemEmprestimo35
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400">Parcelas fixas mensais</span>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
+                        <div className="flex items-center justify-between text-slate-500 mb-1">
+                          <span className="text-[11px] font-semibold">Cartão RMC (5%)</span>
+                          <CreditCard className="w-4 h-4 text-purple-600" />
+                        </div>
+                        <div className="text-base font-extrabold text-purple-700">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                            personResult.consignado.margemRmcCartao5
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400">Reserva de margem cartão</span>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
+                        <div className="flex items-center justify-between text-slate-500 mb-1">
+                          <span className="text-[11px] font-semibold">Cartão RCC (5%)</span>
+                          <CreditCard className="w-4 h-4 text-teal-600" />
+                        </div>
+                        <div className="text-base font-extrabold text-teal-700">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                            personResult.consignado.margemRccBeneficio5
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400">Benefício consignado</span>
+                      </div>
+
+                      <div className="rounded-lg border-2 border-indigo-500 bg-indigo-600 text-white p-3 shadow-sm">
+                        <div className="flex items-center justify-between text-indigo-100 mb-1">
+                          <span className="text-[11px] font-bold uppercase tracking-wider">Margem Total (45%)</span>
+                          <Zap className="w-4 h-4 text-amber-300" />
+                        </div>
+                        <div className="text-base font-black text-white">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                            personResult.consignado.margemTotal45
+                          )}
+                        </div>
+                        <span className="text-[10px] text-indigo-200">Total estimada (Lei 14.431)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Camada 4: Mailing Higienizado Top 3 com Operadora & Não Me Perturbe */}
+                {personResult.mailingTop3 && personResult.mailingTop3.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-emerald-600" />
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                            Mailing Higienizado · Top 3 Telefones Qualificados
+                          </h3>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Telefones ordenados por probabilidade de conversão, operadora ativa e conformidade regulatória.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase bg-slate-100 px-2.5 py-1 rounded-full">
+                        Blindagem Anatel & Febraban
+                      </span>
+                    </div>
+
+                    <div className="grid gap-2.5">
+                      {personResult.mailingTop3.map((phone) => (
+                        <div
+                          key={phone.numeroRaw}
+                          className={`rounded-lg border p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors ${
+                            phone.naoMePerturbe.inscrito_nao_me_perturbe
+                              ? 'border-red-200 bg-red-50/40 hover:bg-red-50/70'
+                              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-extrabold shrink-0">
+                              {phone.ordemRecomendada}º
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono text-sm font-bold text-slate-900">
+                                  {phone.numeroFormatado}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                                    phone.operadora === 'VIVO'
+                                      ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                      : phone.operadora === 'CLARO'
+                                      ? 'bg-red-100 text-red-800 border border-red-200'
+                                      : phone.operadora === 'TIM'
+                                      ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                      : 'bg-slate-200 text-slate-700'
+                                  }`}
+                                >
+                                  {phone.operadora}
+                                </span>
+
+                                {phone.naoMePerturbe.inscrito_nao_me_perturbe ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-red-600 text-white shadow-xs inline-flex items-center gap-1">
+                                    <Ban className="w-3 h-3" /> Não Me Perturbe
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-700" /> Liberado p/ Discagem
+                                  </span>
+                                )}
+
+                                {phone.whatsappDisponivel ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-emerald-600 text-white inline-flex items-center gap-1 shadow-xs">
+                                    <Zap className="w-3 h-3 text-emerald-200" /> WhatsApp Ativo
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-normal text-slate-500 bg-slate-100">
+                                    Sem WhatsApp
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-600 mt-1">
+                                {phone.rotuloCanal} · Score de Assertividade: <strong>{phone.scoreAssertividade}/100</strong>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => void navigator.clipboard?.writeText(phone.numeroFormatado)}
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                              title="Copiar número"
+                            >
+                              <Copy className="w-3.5 h-3.5" /> Copiar
+                            </button>
+                            {phone.whatsappDisponivel && phone.linkWhatsApp && (
+                              <a
+                                href={phone.linkWhatsApp}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold inline-flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" /> Conversar
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Seções de dados de Pessoa Física */}
+                <div className="space-y-3 border border-slate-200 rounded-xl bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-800">Dossiê da Pessoa Física</div>
+                      <div className="mt-0.5 text-[11px] text-slate-600">
+                        Titular: <strong>{personResult.person?.name}</strong> · CPF:{' '}
+                        <strong className="font-mono">{personResult.person?.cpf}</strong>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (personResult.person?.cpf) void navigator.clipboard?.writeText(personResult.person.cpf);
+                      }}
+                      className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-1"
+                      title="Copiar CPF"
+                    >
+                      <Copy className="h-3.5 w-3.5" /> Copiar CPF
+                    </button>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
+                    {(personResult.sections || []).map((sec) => {
+                      const st = sectionState(sec.status);
+                      return (
+                        <div key={sec.id} className="p-3 sm:p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-block h-2 w-2 rounded-full ${st.dot}`} />
+                                <h4 className="text-sm font-semibold text-slate-900">{sec.title}</h4>
+                                <span className={`text-[10px] font-semibold uppercase tracking-wider ${st.className}`}>{st.label}</span>
+                              </div>
+                              <p className="mt-0.5 text-[11px] text-slate-500">{sec.description}</p>
+                              {sec.summary && <p className="mt-1 text-[11px] text-slate-700">{sec.summary}</p>}
+                              {sec.errorMessage && (
+                                <p className="mt-1 text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-md px-2 py-1 inline-block">
+                                  {sec.errorMessage}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          {(sec.fields || []).length > 0 && (
+                            <div className="mt-2 grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
+                              {(sec.fields || []).map((f) => (
+                                <div key={`${sec.id}-${f.label}`} className="flex gap-2 items-start">
+                                  <span className="text-slate-500 shrink-0 w-36">{f.label}</span>
+                                  <span className="text-slate-800 flex-1 font-medium break-words">{f.value || <span className="text-slate-400">—</span>}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Resultado de Empresa (CNPJ) */}
             {result && (
               <div className="space-y-3 border border-slate-200 rounded-xl bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">

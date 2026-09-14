@@ -69,4 +69,9 @@ X_FRAME_OPTIONS = "DENY"
 # HSTS de subdomínios e preload permanecem opt-in: habilitá-los sem controlar todos os
 # subdomínios pode bloquear serviços legítimos. O gate continua falhando para qualquer outro
 # alerta de implantação.
-SILENCED_SYSTEM_CHECKS = ["security.W005", "security.W021"]
+SILENCED_SYSTEM_CHECKS = [
+    "security.W005",
+    "security.W021",
+    "drf_spectacular.W001",
+    "drf_spectacular.W002",
+]

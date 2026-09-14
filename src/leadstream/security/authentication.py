@@ -127,7 +127,8 @@ class CombinedAuthentication(BaseAuthentication):
 
         tenant_header = request.headers.get("X-Tenant-ID")
 
-        if user.is_superuser:
+        is_superuser = bool(getattr(user, "is_superuser", False))
+        if is_superuser:
             if tenant_header:
                 try:
                     if _is_uuid(tenant_header):
@@ -139,15 +140,20 @@ class CombinedAuthentication(BaseAuthentication):
                         f"Workspace '{tenant_header}' não encontrado ou inativo."
                     ) from exc
             else:
-                tenant = Tenant.objects.filter(is_active=True).first()
-                if not tenant:
+                maybe_tenant = Tenant.objects.filter(is_active=True).first()
+                if not maybe_tenant:
                     raise AuthenticationFailed("Nenhum workspace ativo disponível no sistema.")
+                tenant = maybe_tenant
 
             request.tenant = tenant  # type: ignore[attr-defined]
             request.workspace_membership = None  # type: ignore[attr-defined]
         else:
+            pk_val = getattr(user, "pk", None)
+            if pk_val is None:
+                raise AuthenticationFailed("Usuário sem chave primária válida.")
+            user_pk: int | str = pk_val if isinstance(pk_val, (int, str)) else str(pk_val)
             memberships = WorkspaceMembership.objects.filter(
-                user=user, is_active=True
+                user_id=user_pk, is_active=True
             ).select_related("tenant")
             if tenant_header:
                 if _is_uuid(tenant_header):
@@ -172,7 +178,7 @@ class CombinedAuthentication(BaseAuthentication):
         return user, validated_token
 
 
-class CombinedAuthenticationScheme(OpenApiAuthenticationExtension):
+class CombinedAuthenticationScheme(OpenApiAuthenticationExtension):  # type: ignore[no-untyped-call]
     target_class = "leadstream.security.authentication.CombinedAuthentication"
     name = "BearerAuth"
 

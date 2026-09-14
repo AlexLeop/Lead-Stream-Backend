@@ -454,6 +454,132 @@ export interface CompanyEnrichmentResult {
   }>;
 }
 
+export interface FiltroPerdaData {
+  status: 'REGULAR' | 'EXPURGADO_OBITO' | 'EXPURGADO_RECEITA_IRREGULAR' | 'SUSPEITO';
+  is_deceased: boolean;
+  death_date?: string | null;
+  tax_status: string;
+  elegivel_consignado: boolean;
+  motivo_expurgo?: string | null;
+  deve_cobrar_credito: boolean;
+  badge_texto: string;
+  badge_variante: 'success' | 'warning' | 'danger' | 'secondary';
+}
+
+export interface ConsignadoData {
+  elegivel: boolean;
+  vinculoPrincipal: string;
+  numeroBeneficio: string;
+  especieCodigo: string;
+  especieDescricao: string;
+  categoriaElegibilidade: string;
+  alerta?: string | null;
+  salarioBase: number;
+  margemEmprestimo35: number;
+  margemRmcCartao5: number;
+  margemRccBeneficio5: number;
+  margemTotal45: number;
+  percentualTotal: number;
+}
+
+export interface NaoMePerturbeStatus {
+  inscrito_nao_me_perturbe: boolean;
+  entidade: string;
+  data_bloqueio?: string | null;
+  motivo: string;
+  seguro_para_discagem_fria: boolean;
+  risco_multa: 'ALTO' | 'BAIXO';
+  badge_texto: string;
+  badge_variante: 'success' | 'danger' | 'secondary';
+}
+
+export interface MailingPhone {
+  ordemRecomendada: number;
+  numeroFormatado: string;
+  numeroRaw: string;
+  numeroE164: string;
+  ddd: string;
+  tipo: 'Celular' | 'Fixo';
+  operadora: string;
+  whatsappDisponivel: boolean;
+  tipoConta: string;
+  linkWhatsApp?: string | null;
+  naoMePerturbe: NaoMePerturbeStatus;
+  scoreAssertividade: number;
+  recomendacao: string;
+  rotuloCanal: string;
+}
+
+export interface EnrichedPersonSummary {
+  id: string;
+  name: string;
+  cpf: string;
+  cpfDigits: string;
+  birthDate?: string | null;
+  age?: number | null;
+  motherName?: string | null;
+  gender?: string | null;
+  taxStatus: string;
+  isDeceased?: boolean;
+  deathDate?: string | null;
+  phone: string;
+  whatsapp?: string | null;
+  hasWhatsApp: boolean;
+  observedAt: string;
+}
+
+export interface PersonEnrichmentResult {
+  runId: string;
+  personId: string;
+  entityType: 'PERSON';
+  capabilities: string[];
+  person: EnrichedPersonSummary | null;
+  filtroPerda?: FiltroPerdaData | null;
+  consignado?: ConsignadoData | null;
+  mailingTop3?: MailingPhone[];
+  coverage: {
+    requested: number;
+    available: number;
+    fieldCount: number;
+    recordCount: number;
+  };
+  sections: Array<{
+    id: string;
+    title: string;
+    description: string;
+    status: 'available' | 'empty' | 'unavailable';
+    summary: string;
+    fields: Array<{ label: string; value: string }>;
+    items: Array<{ title: string; fields: Array<{ label: string; value: string }> }>;
+    errorMessage?: string;
+  }>;
+  telefonesAtribuiveis?: Array<{
+    numero: string;
+    numeroE164: string;
+    tipo: string;
+    whatsappDisponivel: boolean;
+    tipoConta: string;
+    jid?: string | null;
+    fotoPerfil?: string | null;
+    linkWhatsApp?: string | null;
+    atribuicao: string;
+    scoreBureau?: number;
+  }>;
+  whatsappGarantido?: {
+    garantido: boolean;
+    numero: string;
+    numeroE164: string;
+    tipoConta: string;
+    jid?: string;
+    fotoPerfil?: string | null;
+    linkDireto: string;
+    verificadoEm?: string;
+    provedorProbe?: string;
+  } | null;
+  costCredits?: number;
+}
+
+
 export interface CnaeItem {
   code: string;
   codeRaw: string;

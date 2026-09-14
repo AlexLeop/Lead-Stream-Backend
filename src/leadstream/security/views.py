@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from django.contrib.auth.models import AbstractBaseUser
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
@@ -360,72 +361,93 @@ class AuthMeView(APIView):
                     "is_current": True,
                 }
             ]
-        elif getattr(request.user, "is_superuser", False):
-            role = "SUPER_ADMIN"
-            permissions = ROLE_PERMISSIONS["SUPER_ADMIN"]
-            user_data = {
-                "id": str(request.user.pk),
-                "username": request.user.username,
-                "email": request.user.email,
-                "first_name": request.user.first_name,
-                "last_name": request.user.last_name,
-                "is_superuser": True,
-                "is_staff": request.user.is_staff,
-            }
-            auth_type = "JWT"
-            all_tenants = Tenant.objects.filter(is_active=True).order_by("name")
-            workspaces_list = [
-                {
-                    "id": t.id,
-                    "name": t.name,
-                    "slug": t.slug,
-                    "role": "SUPER_ADMIN",
-                    "is_active": t.is_active,
-                    "is_current": (t.id == tenant.id),
-                }
-                for t in all_tenants
-            ]
-            active_workspace_data = {
-                "id": tenant.id,
-                "name": tenant.name,
-                "slug": tenant.slug,
-                "role": "SUPER_ADMIN",
-                "is_owner": True,
-                "stats": {
-                    "total_batches": Batch.objects.filter(tenant=tenant).count(),
-                    "total_leads_processed": BatchItem.objects.filter(batch__tenant=tenant).count(),
-                    "active_api_keys": APIKey.objects.filter(tenant=tenant, is_active=True).count(),
-                },
-            }
         else:
-            memberships = (
-                WorkspaceMembership.objects.filter(user=request.user, is_active=True)
-                .select_related("tenant")
-                .order_by("tenant__name")
-            )
-            current_membership = getattr(request, "workspace_membership", None)
-            current_role = current_membership.role if current_membership else WorkspaceRole.OPERATOR
-            permissions = ROLE_PERMISSIONS.get(current_role, ["batches:view", "leads:view"])
+            user = request.user
+            if not user or not user.is_authenticated:
+                return Response(
+                    {"detail": "Não autenticado."}, status=status.HTTP_401_UNAUTHORIZED
+                )
 
-            user_data = {
-                "id": str(request.user.pk),
-                "username": request.user.username,
-                "email": request.user.email,
-                "first_name": request.user.first_name,
-                "last_name": request.user.last_name,
-                "is_superuser": False,
-                "is_staff": request.user.is_staff,
-            }
-            auth_type = "JWT"
-            workspaces_list = [
-                {
-                    "id": m.tenant.id,
-                    "name": m.tenant.name,
-                    "slug": m.tenant.slug,
-                    "role": m.role,
-                    "is_active": m.is_active,
-                    "is_current": (m.tenant_id == tenant.id),
+            is_super = bool(getattr(user, "is_superuser", False))
+            user_id = str(user.pk)
+            username = getattr(user, "username", "")
+            email = getattr(user, "email", None)
+            first_name = getattr(user, "first_name", "")
+            last_name = getattr(user, "last_name", "")
+            is_staff = bool(getattr(user, "is_staff", False))
+
+            if is_super:
+                role = "SUPER_ADMIN"
+                permissions = ROLE_PERMISSIONS["SUPER_ADMIN"]
+                user_data = {
+                    "id": user_id,
+                    "username": username,
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "is_superuser": True,
+                    "is_staff": is_staff,
                 }
+                auth_type = "JWT"
+                all_tenants = Tenant.objects.filter(is_active=True).order_by("name")
+                workspaces_list = [
+                    {
+                        "id": t.id,
+                        "name": t.name,
+                        "slug": t.slug,
+                        "role": "SUPER_ADMIN",
+                        "is_active": t.is_active,
+                        "is_current": (t.id == tenant.id),
+                    }
+                    for t in all_tenants
+                ]
+                active_workspace_data = {
+                    "id": tenant.id,
+                    "name": tenant.name,
+                    "slug": tenant.slug,
+                    "role": "SUPER_ADMIN",
+                    "is_owner": True,
+                    "stats": {
+                        "total_batches": Batch.objects.filter(tenant=tenant).count(),
+                        "total_leads_processed": BatchItem.objects.filter(
+                            batch__tenant=tenant
+                        ).count(),
+                        "active_api_keys": APIKey.objects.filter(
+                            tenant=tenant, is_active=True
+                        ).count(),
+                    },
+                }
+            else:
+                memberships = (
+                    WorkspaceMembership.objects.filter(user_id=user.pk, is_active=True)
+                    .select_related("tenant")
+                    .order_by("tenant__name")
+                )
+                current_membership = getattr(request, "workspace_membership", None)
+                current_role = (
+                    current_membership.role if current_membership else WorkspaceRole.OPERATOR
+                )
+                permissions = ROLE_PERMISSIONS.get(current_role, ["batches:view", "leads:view"])
+
+                user_data = {
+                    "id": user_id,
+                    "username": username,
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "is_superuser": False,
+                    "is_staff": is_staff,
+                }
+                auth_type = "JWT"
+                workspaces_list = [
+                    {
+                        "id": m.tenant.id,
+                        "name": m.tenant.name,
+                        "slug": m.tenant.slug,
+                        "role": m.role,
+                        "is_active": m.is_active,
+                        "is_current": (m.tenant.id == tenant.id),
+                    }
                 for m in memberships
             ]
             active_workspace_data = {
@@ -492,11 +514,18 @@ class SwitchWorkspaceView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if request.user.is_superuser:
+        user = request.user
+        if not user or not user.is_authenticated or not isinstance(user, AbstractBaseUser):
+            return Response(
+                {"detail": "Não autenticado."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        if bool(getattr(user, "is_superuser", False)):
             role = "SUPER_ADMIN"
         else:
             membership = WorkspaceMembership.objects.filter(
-                user=request.user,
+                user_id=user.pk,
                 tenant=target_tenant,
                 is_active=True,
             ).first()
@@ -510,7 +539,7 @@ class SwitchWorkspaceView(APIView):
                 )
             role = membership.role
 
-        refresh = RefreshToken.for_user(request.user)
+        refresh = RefreshToken.for_user(user)
         refresh["tenant_id"] = str(target_tenant.id)
         access = refresh.access_token
         access["tenant_id"] = str(target_tenant.id)
