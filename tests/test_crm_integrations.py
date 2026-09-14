@@ -6,6 +6,9 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
+from django.db import connection
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from leadstream.batches.models import Batch, BatchItem
@@ -398,6 +401,68 @@ def test_api_connection_crud_and_tenant_isolation(
     assert resp_admin.status_code == 200
     assert "outbox_status_summary" in resp_admin.data
     assert "active_connectors_summary" in resp_admin.data
+
+
+def test_crm_credentials_are_encrypted_at_rest(internal_tenant: Tenant) -> None:
+    secret = "segredo-que-nao-pode-aparecer-no-banco"
+    crm_connection = CRMConnection.objects.create(
+        tenant=internal_tenant,
+        name="HubSpot cifrado",
+        connector_type=CRMConnectorType.HUBSPOT,
+        credentials={"access_token": secret},
+    )
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT credentials FROM leadstream_crm_connection WHERE name = %s",
+            ["HubSpot cifrado"],
+        )
+        raw_credentials = str(cursor.fetchone()[0])
+
+    assert raw_credentials.startswith("enc:v1:")
+    assert secret not in raw_credentials
+    crm_connection.refresh_from_db()
+    assert crm_connection.credentials == {"access_token": secret}
+
+
+def test_crm_encryption_key_rotation_preserves_existing_secrets(
+    internal_tenant: Tenant,
+) -> None:
+    old_key = Fernet.generate_key().decode("ascii")
+    new_key = Fernet.generate_key().decode("ascii")
+    with override_settings(FIELD_ENCRYPTION_KEYS=[old_key]):
+        crm_connection = CRMConnection.objects.create(
+            tenant=internal_tenant,
+            name="Conexão antes da rotação",
+            connector_type=CRMConnectorType.PIPEDRIVE,
+            credentials={"api_token": "token-historico"},
+        )
+
+    with override_settings(FIELD_ENCRYPTION_KEYS=[new_key, old_key]):
+        recovered = CRMConnection.objects.get(pk=crm_connection.pk)
+        assert recovered.credentials == {"api_token": "token-historico"}
+
+
+def test_admin_crm_metrics_do_not_cross_tenants(
+    api_client: APIClient, internal_tenant: Tenant, other_tenant: Tenant
+) -> None:
+    CRMConnection.objects.create(
+        tenant=internal_tenant,
+        name="Visível",
+        connector_type=CRMConnectorType.HUBSPOT,
+        credentials={"access_token": "visible"},
+    )
+    CRMConnection.objects.create(
+        tenant=other_tenant,
+        name="Isolado",
+        connector_type=CRMConnectorType.PIPEDRIVE,
+        credentials={"api_token": "hidden"},
+    )
+
+    response = api_client.get("/api/v1/admin/integracoes/metricas/")
+
+    assert response.status_code == 200
+    assert response.data["active_connectors_summary"] == {"HUBSPOT": 1}
 
 
 def test_batch_sync_to_crm_api(api_client: APIClient, sample_batch_with_data: Batch) -> None:

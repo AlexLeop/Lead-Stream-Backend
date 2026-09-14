@@ -122,6 +122,12 @@ APPWRITE_STORAGE_BUCKET_EXPORTS = env("APPWRITE_STORAGE_BUCKET_EXPORTS", default
 DATA_HASH_KEY = env("DATA_HASH_KEY", default="dev-only-data-hash-key")
 DATA_HASH_KEY_VERSION = env("DATA_HASH_KEY_VERSION", default="v1")
 DATA_HASH_PREVIOUS_KEYS = env_list("DATA_HASH_PREVIOUS_KEYS", default=[])
+# A primeira chave cifra novos valores; as demais permitem rotação e leitura histórica.
+# A chave pública abaixo existe somente para desenvolvimento local e é substituída em produção.
+FIELD_ENCRYPTION_KEYS = env_list(
+    "FIELD_ENCRYPTION_KEYS",
+    default=["OkGiQUn8hkcGWPMhkXlYkVh9lBo2Cmjo-6O3F0PQRpY="],
+)
 BATCH_STORAGE_ROOT = Path(env("BATCH_STORAGE_ROOT", default=str(BASE_DIR / "data" / "batches")))
 BATCH_MAX_UPLOAD_BYTES = env_int("BATCH_MAX_UPLOAD_BYTES", default=50 * 1024 * 1024)
 BATCH_MAX_ROWS = env_int("BATCH_MAX_ROWS", default=100_000)

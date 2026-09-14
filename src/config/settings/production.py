@@ -3,6 +3,7 @@ from __future__ import annotations
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 
+from leadstream.common.encrypted_fields import validate_encryption_keys
 from leadstream.common.env import env_bool, env_int, env_list, required_env
 
 from .base import *  # noqa: F403
@@ -26,6 +27,8 @@ CELERY_BROKER_URL = required_env("CELERY_BROKER_URL")
 REDIS_URL = required_env("REDIS_URL")
 DATA_HASH_KEY = required_env("DATA_HASH_KEY")
 DATA_HASH_KEY_VERSION = required_env("DATA_HASH_KEY_VERSION")
+FIELD_ENCRYPTION_KEYS = env_list("FIELD_ENCRYPTION_KEYS", required=True)
+validate_encryption_keys(FIELD_ENCRYPTION_KEYS)
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",

@@ -6,6 +6,7 @@ from typing import ClassVar
 from django.db import models
 from django.utils import timezone
 
+from leadstream.common.encrypted_fields import EncryptedJSONField
 from leadstream.tenancy.models import TenantOwnedModel
 
 
@@ -36,7 +37,7 @@ class CRMConnection(TenantOwnedModel):
     name = models.CharField(max_length=160)
     connector_type = models.CharField(max_length=32, choices=CRMConnectorType.choices)
     is_active = models.BooleanField(default=True)
-    credentials = models.JSONField(default=dict, blank=True)
+    credentials = EncryptedJSONField(default=dict, blank=True)
     settings = models.JSONField(default=dict, blank=True)
     last_tested_at = models.DateTimeField(null=True, blank=True)
     last_status = models.CharField(

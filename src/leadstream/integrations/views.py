@@ -170,14 +170,19 @@ class BatchSyncToCRMView(APIView):
 class AdminCRMOverviewView(APIView):
     """Cockpit do CEO: Métricas globais de integrações e entregas de CRM."""
 
+    permission_classes = (IsAuthenticated, IsWorkspaceAdmin)
+
     def get(self, request: Request) -> Response:
+        tenant = resolve_tenant(request)
         status_counts = dict(
-            CRMOutboxMessage.objects.values("status")
+            CRMOutboxMessage.objects.filter(tenant=tenant)
+            .values("status")
             .annotate(total=Count("id"))
             .values_list("status", "total")
         )
         connector_counts = dict(
-            CRMConnection.objects.values("connector_type")
+            CRMConnection.objects.filter(tenant=tenant, is_active=True)
+            .values("connector_type")
             .annotate(total=Count("id"))
             .values_list("connector_type", "total")
         )
