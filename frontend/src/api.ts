@@ -20,6 +20,7 @@ import type {
   DiscoveryFilterInput,
   DiscoverySearchResult,
   EnrichmentRun,
+  EnrichmentJob,
   EnrichmentCatalog,
   EnrichmentStatus,
   ImportPayload,
@@ -203,6 +204,15 @@ export const api = {
 
   batchDetail: (batchId: string) => request<DjangoBatch>(`/batches/${batchId}/`),
 
+  startBatchEnrichment: (batchId: string, blocks: string[]) =>
+    request<{ batch_id: string; status: DjangoBatch['status']; stage: string }>(
+      `/lotes/${batchId}/enriquecer/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ blocks }),
+      },
+    ),
+
   uploadBatch: (formData: FormData, idempotencyKey?: string) => {
     const headers: Record<string, string> = {};
     if (idempotencyKey) {
@@ -279,14 +289,18 @@ export const api = {
   enrichmentStatus: () => request<EnrichmentStatus>('/enrichment/status'),
   enrichmentCatalog: () => request<EnrichmentCatalog>('/enrichment/catalog'),
   enrichmentRuns: () => request<EnrichmentRun[]>('/enrichment/runs'),
-  enrichCompany: (query: string, capabilities: string[]) =>
-    request<CompanyEnrichmentResult>('/enrichment/company', {
+  enrichmentJob: <T>(jobId: string) =>
+    request<EnrichmentJob<T>>(`/enrichment/runs/${encodeURIComponent(jobId)}/`),
+  enrichCompany: (query: string, capabilities: string[], idempotencyKey = crypto.randomUUID()) =>
+    request<EnrichmentJob<CompanyEnrichmentResult>>('/enrichment/company', {
       method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ query, capabilities }),
     }),
-  enrichPerson: (query: string, capabilities: string[]) =>
-    request<PersonEnrichmentResult>('/enrichment/person', {
+  enrichPerson: (query: string, capabilities: string[], idempotencyKey = crypto.randomUUID()) =>
+    request<EnrichmentJob<PersonEnrichmentResult>>('/enrichment/person', {
       method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ query, capabilities }),
     }),
   enrichmentLookup: (query: string) =>

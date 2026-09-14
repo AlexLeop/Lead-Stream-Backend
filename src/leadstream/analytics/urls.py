@@ -14,6 +14,7 @@ from .views import (
     DiscoverySearchView,
     EnrichmentCatalogView,
     EnrichmentCompanyView,
+    EnrichmentJobDetailView,
     EnrichmentLookupView,
     EnrichmentPersonView,
     EnrichmentRunsView,
@@ -69,6 +70,11 @@ urlpatterns = [
         name="manager-enrichment-catalog",
     ),
     re_path(r"^enrichment/runs/?$", EnrichmentRunsView.as_view(), name="manager-enrichment-runs"),
+    re_path(
+        r"^enrichment/runs/(?P<job_id>[0-9a-f-]+)/?$",
+        EnrichmentJobDetailView.as_view(),
+        name="manager-enrichment-job-detail",
+    ),
     re_path(
         r"^enrichment/company/?$",
         EnrichmentCompanyView.as_view(),

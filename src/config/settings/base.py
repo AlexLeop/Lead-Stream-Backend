@@ -107,6 +107,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "leadstream.providers.recover_discovery",
         "schedule": 60.0,
     },
+    "recover-stalled-enrichment-jobs": {
+        "task": "leadstream.providers.recover_enrichment_jobs",
+        "schedule": 60.0,
+    },
+    "purge-expired-enrichment-payloads": {
+        "task": "leadstream.providers.purge_enrichment_payloads",
+        "schedule": 3600.0,
+    },
     "process-crm-outbox": {
         "task": "leadstream.integrations.process_crm_outbox_batch",
         "schedule": 30.0,
@@ -132,6 +140,8 @@ BATCH_STORAGE_ROOT = Path(env("BATCH_STORAGE_ROOT", default=str(BASE_DIR / "data
 BATCH_MAX_UPLOAD_BYTES = env_int("BATCH_MAX_UPLOAD_BYTES", default=50 * 1024 * 1024)
 BATCH_MAX_ROWS = env_int("BATCH_MAX_ROWS", default=100_000)
 BATCH_LEASE_SECONDS = env_int("BATCH_LEASE_SECONDS", default=300)
+ENRICHMENT_JOB_LEASE_SECONDS = env_int("ENRICHMENT_JOB_LEASE_SECONDS", default=600)
+ENRICHMENT_JOB_RETENTION_DAYS = env_int("ENRICHMENT_JOB_RETENTION_DAYS", default=30)
 BIGQUERY_PROJECT_ID = env("BIGQUERY_PROJECT_ID")
 GOOGLE_CREDENTIALS_JSON = env("GOOGLE_CREDENTIALS_JSON")
 GOOGLE_APPLICATION_CREDENTIALS = env("GOOGLE_APPLICATION_CREDENTIALS")

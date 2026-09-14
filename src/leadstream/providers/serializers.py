@@ -7,7 +7,7 @@ from rest_framework import serializers
 from leadstream.billing.models import DataBlock
 
 from .discovery import normalize_discovery_filters
-from .models import DiscoveryResult, DiscoverySearch, ProviderPolicy
+from .models import DiscoveryResult, DiscoverySearch, EnrichmentJob, ProviderPolicy
 
 
 class ProviderPolicySerializer(serializers.ModelSerializer[ProviderPolicy]):
@@ -172,3 +172,58 @@ class DiscoveryMaterializeSerializer(serializers.Serializer[object]):
     result_ids = serializers.ListField(
         child=serializers.UUIDField(), required=False, allow_empty=False, max_length=100_000
     )
+
+
+class IndividualEnrichmentRequestSerializer(serializers.Serializer[object]):
+    query = serializers.CharField(max_length=32)
+    capabilities = serializers.ListField(
+        child=serializers.CharField(max_length=64),
+        required=False,
+        default=list,
+        max_length=30,
+    )
+
+
+class EnrichmentJobSerializer(serializers.ModelSerializer[EnrichmentJob]):
+    entityType = serializers.CharField(source="entity_type", read_only=True)
+    query = serializers.CharField(source="query_label", read_only=True)
+    matchedEntityId = serializers.CharField(source="matched_entity_id", read_only=True)
+    costCredits = serializers.IntegerField(source="cost_credits", read_only=True)
+    errorCode = serializers.CharField(source="last_error_code", read_only=True)
+    errorMessage = serializers.CharField(source="last_error_message", read_only=True)
+    attemptCount = serializers.IntegerField(source="attempt_count", read_only=True)
+    startedAt = serializers.DateTimeField(source="started_at", read_only=True)
+    completedAt = serializers.DateTimeField(source="completed_at", read_only=True)
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    purgeAfter = serializers.DateTimeField(source="purge_after", read_only=True)
+    purgedAt = serializers.DateTimeField(source="purged_at", read_only=True)
+    result = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EnrichmentJob
+        fields = (
+            "id",
+            "entityType",
+            "query",
+            "capabilities",
+            "status",
+            "matchedEntityId",
+            "costCredits",
+            "errorCode",
+            "errorMessage",
+            "attemptCount",
+            "startedAt",
+            "completedAt",
+            "createdAt",
+            "updatedAt",
+            "purgeAfter",
+            "purgedAt",
+            "result",
+        )
+        read_only_fields = fields
+
+    def get_result(self, obj: EnrichmentJob) -> dict[str, Any] | None:
+        if not self.context.get("include_result"):
+            return None
+        return obj.result_payload or None

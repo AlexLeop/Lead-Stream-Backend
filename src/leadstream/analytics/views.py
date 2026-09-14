@@ -4,7 +4,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -27,8 +27,12 @@ from leadstream.entities.normalization import only_digits
 from leadstream.evidence.models import Observation
 from leadstream.integrations.models import CRMConnection
 from leadstream.intelligence.cnae import KNOWN_CNAES
-from leadstream.providers.live_enrichment import enrich_company_live
-from leadstream.providers.live_enrichment_person import enrich_person_live
+from leadstream.providers.enrichment_jobs import create_enrichment_job
+from leadstream.providers.models import EnrichmentJob
+from leadstream.providers.serializers import (
+    EnrichmentJobSerializer,
+    IndividualEnrichmentRequestSerializer,
+)
 from leadstream.security.authentication import CombinedAuthentication
 from leadstream.security.models import SecurityAuditLog
 from leadstream.security.permissions import TenantAccessPermission
@@ -823,7 +827,7 @@ class EnrichmentCatalogView(APIView):
                     {
                         "id": "risk",
                         "label": "Compliance & Risco",
-                        "description": "PGFN, Simples e regularidade fiscal",
+                        "description": "Sinais de conformidade disponíveis nas fontes configuradas",
                     },
                 ],
                 "capabilities": [
@@ -832,7 +836,7 @@ class EnrichmentCatalogView(APIView):
                         "groupId": "company",
                         "label": "CNPJ & Quadro Societário",
                         "description": (
-                            "Receita Federal com sócios, cargos e participações societárias"
+                            "Dados cadastrais e societários conforme fontes configuradas"
                         ),
                         "highlights": ["Razão Social", "CNAE", "Sócios & Administradores"],
                         "depth": "Essencial",
@@ -840,23 +844,23 @@ class EnrichmentCatalogView(APIView):
                     {
                         "id": "emails_smtp",
                         "groupId": "sales",
-                        "label": "E-mails Validados RFC 5321",
-                        "description": "Validação técnica conforme o provedor configurado",
+                        "label": "E-mails e sinais técnicos",
+                        "description": "Sintaxe, domínio e validações realmente executadas",
                         "highlights": [
                             "Sintaxe",
                             "Domínio",
-                            "Capacidade técnica quando disponível",
+                            "Resultado inconclusivo quando a caixa não é testada",
                         ],
                         "depth": "Dependente do provedor",
                     },
                     {
                         "id": "phones_whatsapp",
                         "groupId": "sales",
-                        "label": "Telefone e WhatsApp Atribuível",
-                        "description": "Localização de linhas móveis vinculadas aos decisores",
+                        "label": "Telefone e WhatsApp atribuíveis",
+                        "description": "Canais ligados à pessoa somente quando houver evidência",
                         "highlights": [
                             "Formato E.164",
-                            "Link Direto WhatsApp",
+                            "Sinal de WhatsApp quando consultado",
                             "Evidência Atribuível",
                         ],
                         "depth": "Detalhado",
@@ -864,9 +868,9 @@ class EnrichmentCatalogView(APIView):
                     {
                         "id": "cpf_cadastral",
                         "groupId": "company",
-                        "label": "CPF & Dados Cadastrais PF",
-                        "description": "Validação oficial Módulo 11 da RFB e identificação civil",
-                        "highlights": ["Nome Civil", "Data de Nascimento", "Situação do CPF"],
+                        "label": "CPF e dados cadastrais PF",
+                        "description": "Validação estrutural local e dados de fonte autorizada",
+                        "highlights": ["Formato", "Dígitos verificadores", "Origem dos atributos"],
                         "depth": "Essencial",
                     },
                     {
@@ -878,19 +882,19 @@ class EnrichmentCatalogView(APIView):
                         ),
                         "highlights": [
                             "Probe em Tempo Real",
-                            "Foto de Perfil",
                             "Resultado com horário e origem",
+                            "Ausência explícita quando não consultado",
                         ],
                         "depth": "Dependente do provedor",
                     },
                     {
                         "id": "consignado_core",
                         "groupId": "operations",
-                        "label": "Core Consignado & Margens (35% + 5% + 5%)",
+                        "label": "Cenários de crédito consignado",
                         "description": (
-                            "Benefício INSS, Espécie, SIAPE e cálculo de margem (Lei 14.431/2022)"
+                            "Sinais de benefício e simulações, sem declarar elegibilidade"
                         ),
-                        "highlights": ["Margem Total 45%", "NB & Espécie INSS", "Vínculo SIAPE"],
+                        "highlights": ["Cenário de margem", "Sinais INSS", "Sinais SIAPE"],
                         "depth": "Especializado",
                     },
                     {
@@ -910,26 +914,26 @@ class EnrichmentCatalogView(APIView):
                         "groupId": "risk",
                         "label": "Conformidade Não Me Perturbe (Anatel)",
                         "description": (
-                            "Higienização contra multas do Procon/Febraban no Não Me Perturbe"
+                            "Consulta de bloqueio quando a integração for aplicável"
                         ),
                         "highlights": [
-                            "Blindagem a Multas",
-                            "Lista Anatel/Febraban",
-                            "Score de Conformidade",
+                            "Status consultado",
+                            "Canal e fonte",
+                            "Resultado inconclusivo explícito",
                         ],
                         "depth": "Conformidade",
                     },
                     {
                         "id": "mailing_top3_discagem",
                         "groupId": "sales",
-                        "label": "Priorização de até 3 celulares",
+                        "label": "Priorização de até 3 telefones",
                         "description": (
-                            "Top 3 celulares com operadora, WhatsApp ativo e score de discagem"
+                            "Ordenação por evidência, sem presumir operadora ou WhatsApp"
                         ),
                         "highlights": [
                             "Top 3 Celulares",
-                            "Operadoras (Claro/Vivo/TIM)",
-                            "Score de Discagem",
+                            "Evidência por canal",
+                            "Restrições de contato",
                         ],
                         "depth": "Dependente do provedor",
                     },
@@ -938,20 +942,20 @@ class EnrichmentCatalogView(APIView):
                     {
                         "id": "commercial",
                         "label": "Prospecção Comercial Outbound",
-                        "description": "Decisores completos com e-mail corporativo e WhatsApp",
+                        "description": "Decisores e canais atribuíveis encontrados nas fontes",
                         "capabilityIds": ["cnpj_qsa", "emails_smtp", "phones_whatsapp"],
                     },
                     {
                         "id": "pf_whatsapp",
                         "label": "Higienização de CPF e sinal de WhatsApp",
-                        "description": "Validação de CPF com checagem de conta ativa no WhatsApp",
+                        "description": "Validação estrutural e sinal de WhatsApp quando consultado",
                         "capabilityIds": ["cpf_cadastral", "phones_whatsapp_probe"],
                     },
                     {
                         "id": "consignado_premium",
-                        "label": "Crédito Consignado & Conformidade Total",
+                        "label": "Crédito consignado e conformidade",
                         "description": (
-                            "Dossiê: margens INSS/SIAPE, filtro de óbito, NMP e Top 3 WhatsApp"
+                            "Dossiê de sinais, cenários de margem, NMP e canais priorizados"
                         ),
                         "capabilityIds": [
                             "cpf_cadastral",
@@ -973,8 +977,25 @@ class EnrichmentRunsView(APIView):
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
-        runs = cache.get(f"enrichment_runs:{tenant.pk}", [])
-        return Response(runs if isinstance(runs, list) else [])
+        jobs = EnrichmentJob.objects.filter(tenant=tenant).order_by("-created_at")[:50]
+        return Response(EnrichmentJobSerializer(jobs, many=True).data)
+
+
+class EnrichmentJobDetailView(APIView):
+    authentication_classes = (CombinedAuthentication,)
+    permission_classes = (TenantAccessPermission,)
+
+    def get(self, request: Request, job_id: uuid.UUID) -> Response:
+        job = EnrichmentJob.objects.filter(
+            pk=job_id,
+            tenant=resolve_tenant(request),
+        ).first()
+        if not job:
+            return Response(
+                {"detail": "Execução de enriquecimento não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(EnrichmentJobSerializer(job, context={"include_result": True}).data)
 
 
 class DiscoveryCnaesView(APIView):
@@ -1188,37 +1209,10 @@ class EnrichmentCompanyView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
-        payload = _get_payload(request)
-        query = str(payload.get("query") or payload.get("cnpj") or "").strip()
-        raw_caps = payload.get("capabilities", [])
-        capabilities: list[str] = raw_caps if isinstance(raw_caps, list) else []
-        tenant = resolve_tenant(request)
-
-        result = enrich_company_live(query=query, tenant=tenant, capabilities=capabilities)
-
-        run_record = {
-            "id": result.get("runId", f"run_{uuid.uuid4().hex[:8]}"),
-            "entityType": "COMPANY",
-            "query": query,
-            "capabilities": capabilities,
-            "status": "COMPLETED" if result.get("company") else "FAILED",
-            "matchedEntityId": result.get("companyId") or None,
-            "errorMessage": (
-                result["sections"][0].get("errorMessage")
-                if not result.get("company") and result.get("sections")
-                else None
-            ),
-            "startedAt": timezone.now().isoformat(),
-            "completedAt": timezone.now().isoformat(),
-        }
-        current_runs = cache.get(f"enrichment_runs:{tenant.pk}", [])
-        cache.set(
-            f"enrichment_runs:{tenant.pk}",
-            [run_record, *(current_runs if isinstance(current_runs, list) else [])[:19]],
-            timeout=86400 * 7,
+        return _create_individual_enrichment_job(
+            request=request,
+            entity_type=EnrichmentJob.EntityType.COMPANY,
         )
-
-        return Response(result)
 
 
 class EnrichmentPersonView(APIView):
@@ -1228,37 +1222,35 @@ class EnrichmentPersonView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def post(self, request: Request) -> Response:
-        payload = _get_payload(request)
-        query = str(payload.get("query") or payload.get("cpf") or "").strip()
-        raw_caps = payload.get("capabilities", [])
-        capabilities: list[str] = raw_caps if isinstance(raw_caps, list) else []
-        tenant = resolve_tenant(request)
-
-        result = enrich_person_live(query=query, tenant=tenant, capabilities=capabilities)
-
-        run_record = {
-            "id": result.get("runId", f"run_{uuid.uuid4().hex[:8]}"),
-            "entityType": "PERSON",
-            "query": query,
-            "capabilities": capabilities,
-            "status": "COMPLETED" if result.get("person") else "FAILED",
-            "matchedEntityId": result.get("personId") or None,
-            "errorMessage": (
-                result["sections"][0].get("errorMessage")
-                if not result.get("person") and result.get("sections")
-                else None
-            ),
-            "startedAt": timezone.now().isoformat(),
-            "completedAt": timezone.now().isoformat(),
-        }
-        current_runs = cache.get(f"enrichment_runs:{tenant.pk}", [])
-        cache.set(
-            f"enrichment_runs:{tenant.pk}",
-            [run_record, *(current_runs if isinstance(current_runs, list) else [])[:19]],
-            timeout=86400 * 7,
+        return _create_individual_enrichment_job(
+            request=request,
+            entity_type=EnrichmentJob.EntityType.PERSON,
         )
 
-        return Response(result)
+
+def _create_individual_enrichment_job(*, request: Request, entity_type: str) -> Response:
+    payload = _get_payload(request)
+    if "query" not in payload:
+        legacy_key = "cnpj" if entity_type == EnrichmentJob.EntityType.COMPANY else "cpf"
+        payload = {**payload, "query": payload.get(legacy_key, "")}
+    serializer = IndividualEnrichmentRequestSerializer(data=payload)
+    serializer.is_valid(raise_exception=True)
+    try:
+        creation = create_enrichment_job(
+            tenant=resolve_tenant(request),
+            entity_type=entity_type,
+            query=serializer.validated_data["query"],
+            capabilities=serializer.validated_data.get("capabilities", []),
+            idempotency_key=request.headers.get("Idempotency-Key", ""),
+        )
+    except DjangoValidationError as exc:
+        detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+        return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+    response_status = status.HTTP_202_ACCEPTED if creation.created else status.HTTP_200_OK
+    return Response(
+        EnrichmentJobSerializer(creation.job, context={"include_result": True}).data,
+        status=response_status,
+    )
 
 
 class EnrichmentLookupView(APIView):

@@ -8,7 +8,7 @@ import httpx
 from django.db import transaction
 from django.utils import timezone
 
-from leadstream.entities.models import Company, ContactPoint
+from leadstream.entities.models import Company, ContactPoint, Relationship
 from leadstream.entities.normalization import (
     DataValidationError,
     cnpj_root,
@@ -24,6 +24,17 @@ from leadstream.entities.services import (
 from leadstream.tenancy.models import Tenant
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_external_qualification(value: str) -> str:
+    normalized = value.strip().casefold()
+    if "administrador" in normalized or "diretor" in normalized or "presidente" in normalized:
+        return Relationship.Qualification.ADMINISTRATOR
+    if "representante" in normalized or "procurador" in normalized:
+        return Relationship.Qualification.LEGAL_REPRESENTATIVE
+    if "sócio" in normalized or "socio" in normalized or "titular" in normalized:
+        return Relationship.Qualification.PARTNER
+    return Relationship.Qualification.OTHER
 
 
 def calculate_expected_dv(base12: str) -> str:
@@ -347,7 +358,8 @@ def enrich_company_live(
                     tenant=tenant,
                     person=person,
                     company=company_record,
-                    qualification=socio["qualificacao"],
+                    qualification=normalize_external_qualification(socio["qualificacao"]),
+                    observed_title=socio["qualificacao"],
                 )
             except (KeyError, ValueError, TypeError) as exc:
                 logger.debug("Falha menor ao persistir sócio %s: %s", socio["nome"], exc)

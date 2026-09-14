@@ -70,9 +70,13 @@ def test_manager_dashboard_endpoints() -> None:
     assert res_enr_cat.status_code == 200
 
     res_enr_comp = client.post(
-        "/api/v1/enrichment/company", {"query": "12345678000190"}, format="json"
+        "/api/v1/enrichment/company",
+        {"query": "12345678000190"},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="manager-dashboard-enrichment",
     )
-    assert res_enr_comp.status_code == 200
+    assert res_enr_comp.status_code == 202
+    assert res_enr_comp.data["status"] in {"QUEUED", "NO_DATA"}
 
     # 10. Billing Wallet & Transactions
     CreditWallet.objects.get_or_create(tenant=tenant)

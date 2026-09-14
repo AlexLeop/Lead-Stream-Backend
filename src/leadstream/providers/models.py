@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
+from leadstream.common.encrypted_fields import EncryptedJSONField
 from leadstream.tenancy.models import TenantOwnedModel
 
 
@@ -161,3 +162,61 @@ class DiscoveryResult(TenantOwnedModel):
     def clean(self) -> None:
         if self.search.tenant_id != self.tenant_id:
             raise ValidationError({"search": "Resultado e busca devem pertencer ao mesmo tenant."})
+
+
+class EnrichmentJob(TenantOwnedModel):
+    class EntityType(models.TextChoices):
+        COMPANY = "COMPANY", "Pessoa jurídica"
+        PERSON = "PERSON", "Pessoa física"
+
+    class Status(models.TextChoices):
+        QUEUED = "QUEUED", "Na fila"
+        RUNNING = "RUNNING", "Em execução"
+        SUCCEEDED = "SUCCEEDED", "Concluído"
+        NO_DATA = "NO_DATA", "Sem resultado"
+        FAILED = "FAILED", "Falhou"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    entity_type = models.CharField(max_length=16, choices=EntityType.choices)
+    idempotency_key = models.CharField(max_length=128)
+    query_digest = models.CharField(max_length=64)
+    query_label = models.CharField(max_length=32)
+    input_payload = EncryptedJSONField(default=dict)
+    capabilities = models.JSONField(default=list)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    result_payload = EncryptedJSONField(default=dict, blank=True)
+    matched_entity_id = models.CharField(max_length=64, blank=True)
+    cost_credits = models.PositiveIntegerField(default=0)
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    max_attempts = models.PositiveSmallIntegerField(default=5)
+    lease_owner = models.CharField(max_length=255, blank=True)
+    leased_until = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True)
+    last_error_message = models.CharField(max_length=500, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    purge_after = models.DateTimeField()
+    purged_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "leadstream_enrichment_job"
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=("tenant", "idempotency_key"),
+                name="enrichment_job_tenant_idem_uniq",
+            ),
+            models.CheckConstraint(
+                condition=Q(max_attempts__gte=1) & Q(max_attempts__lte=10),
+                name="enrichment_job_attempts_range",
+            ),
+        ]
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(
+                fields=("tenant", "status", "created_at"),
+                name="enrich_job_status_idx",
+            ),
+            models.Index(fields=("status", "leased_until"), name="enrich_job_lease_idx"),
+        ]

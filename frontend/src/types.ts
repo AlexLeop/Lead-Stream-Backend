@@ -403,11 +403,21 @@ export interface EnrichmentRun {
   entityType: string;
   query: string;
   capabilities: string[];
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED';
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'NO_DATA' | 'FAILED';
   matchedEntityId?: string;
   errorMessage?: string;
-  startedAt: string;
-  completedAt?: string;
+  costCredits?: number;
+  attemptCount?: number;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  purgeAfter?: string;
+  purgedAt?: string | null;
+}
+
+export interface EnrichmentJob<T> extends EnrichmentRun {
+  result?: T | null;
 }
 
 export interface EnrichedCompanySummary {
@@ -737,15 +747,32 @@ export interface DjangoCreditTransaction {
 export interface DjangoBatch {
   id: string;
   name: string;
-  source_type: 'CSV' | 'MANUAL' | 'DISCOVERY' | 'API';
-  status: 'PENDING' | 'PROCESSING' | 'PAUSED' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+  source_type: 'CSV' | 'DISCOVERY';
+  status: 'RECEIVED' | 'INGESTING' | 'QUEUED' | 'RUNNING' | 'PAUSED' | 'CANCEL_REQUESTED' | 'CANCELLED' | 'COMPLETED' | 'PARTIAL' | 'FAILED';
+  current_stage: 'INGESTION' | 'HYGIENE' | 'ENRICHMENT' | string;
+  input_original_name: string;
+  input_size_bytes: number;
+  input_sha256: string;
+  chunk_size: number;
   total_rows: number;
   processed_rows: number;
   succeeded_rows: number;
+  absent_rows: number;
   failed_rows: number;
+  duplicate_rows: number;
+  corrected_rows: number;
+  invalid_rows: number;
+  progress_percent: number;
+  eta_seconds: number | null;
+  cost_cents: number;
+  revenue_cents: number;
+  gross_profit_cents: number;
+  last_error_code: string;
+  last_error_message: string;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  updated_at: string;
 }
 
 export interface DjangoBatchItem {

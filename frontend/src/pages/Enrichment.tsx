@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -33,29 +33,14 @@ import type {
   PersonEnrichmentResult,
   EnrichmentCatalog,
   EnrichmentRun,
+  EnrichmentJob,
   EnrichmentStatus,
   PixLookupStatus,
+  DjangoBatch,
 } from '../types';
 
 interface EnrichmentProps {
   onNavigate: (route: string) => void;
-}
-
-interface CnpjBatchProgress {
-  batchId?: string;
-  id?: string;
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'PARTIAL' | 'FAILED';
-  totalRequested?: number;
-  totalUnique?: number;
-  totalValidCnpjs?: number;
-  invalidCnpjs?: number;
-  duplicatesRemoved?: number;
-  totalCnpjs?: number;
-  processedCnpjs?: number;
-  successCount?: number;
-  partialCount?: number;
-  failedCount?: number;
-  invalidItems?: Array<{ raw: string; formatted: string; reason: string; digits?: string; digitCount?: number }>;
 }
 
 interface PreflightInvalidItem {
@@ -65,7 +50,12 @@ interface PreflightInvalidItem {
   reason: string;
 }
 
-const terminalBatchStatuses = new Set<CnpjBatchProgress['status']>(['COMPLETED', 'PARTIAL', 'FAILED']);
+const terminalBatchStatuses = new Set<DjangoBatch['status']>(['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED']);
+
+function batchIsTerminal(batch: DjangoBatch) {
+  if (batch.status === 'FAILED' || batch.status === 'CANCELLED') return true;
+  return batch.current_stage === 'ENRICHMENT' && terminalBatchStatuses.has(batch.status);
+}
 
 const CNPJ_WEIGHTS_1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
 const CNPJ_WEIGHTS_2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
@@ -146,8 +136,10 @@ function formatCnpj(digits: string) {
 }
 
 function runStatus(run: EnrichmentRun) {
-  if (run.status === 'COMPLETED') return { label: 'Concluído', className: 'bg-emerald-50 text-emerald-800' };
+  if (run.status === 'SUCCEEDED') return { label: 'Concluído', className: 'bg-emerald-50 text-emerald-800' };
+  if (run.status === 'NO_DATA') return { label: 'Sem resultado', className: 'bg-amber-50 text-amber-800' };
   if (run.status === 'FAILED') return { label: 'Falhou', className: 'bg-red-50 text-red-800' };
+  if (run.status === 'QUEUED') return { label: 'Na fila', className: 'bg-slate-100 text-slate-700' };
   return { label: 'Processando', className: 'bg-blue-50 text-blue-800' };
 }
 
@@ -157,11 +149,28 @@ function sectionState(status: CompanyEnrichmentResult['sections'][number]['statu
   return { label: 'Sem registros', className: 'text-slate-500', dot: 'bg-slate-300' };
 }
 
-function formatRunDate(value: string) {
+function formatRunDate(value?: string | null) {
+  if (!value) return 'Aguardando início';
   const date = new Date(`${value.replace(' ', 'T')}Z`);
   return Number.isNaN(date.getTime())
     ? value
     : new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
+}
+
+async function waitForEnrichmentJob<T>(initial: EnrichmentJob<T>): Promise<EnrichmentJob<T>> {
+  let current = initial;
+  const finalStatuses = new Set<EnrichmentRun['status']>(['SUCCEEDED', 'NO_DATA', 'FAILED']);
+  for (let attempt = 0; attempt < 150 && !finalStatuses.has(current.status); attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+    current = await api.enrichmentJob<T>(current.id);
+  }
+  if (!finalStatuses.has(current.status)) {
+    throw new Error('A consulta continua em processamento. Ela permanecerá no histórico para acompanhamento.');
+  }
+  if (current.status === 'FAILED') {
+    throw new Error(current.errorMessage || 'A consulta falhou após as tentativas automáticas.');
+  }
+  return current;
 }
 
 function toggleAll(
@@ -199,7 +208,8 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
   const [batchName, setBatchName] = useState('Lote Prospecção B2B');
   const [batchCnpjsText, setBatchCnpjsText] = useState('');
   const [batchSubmitting, setBatchSubmitting] = useState(false);
-  const [batchResult, setBatchResult] = useState<CnpjBatchProgress | null>(null);
+  const [batchResult, setBatchResult] = useState<DjangoBatch | null>(null);
+  const enrichmentStarted = useRef(new Set<string>());
   const [batchSuccessMsg, setBatchSuccessMsg] = useState<string | null>(null);
   const [batchPreflightError, setBatchPreflightError] = useState<string | null>(null);
 
@@ -265,30 +275,48 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
   }, []);
 
   useEffect(() => {
-    const batchId = batchResult?.batchId ?? batchResult?.id;
-    if (!batchResult || !batchId || terminalBatchStatuses.has(batchResult.status)) return;
+    const batchId = batchResult?.id;
+    if (!batchResult || !batchId || batchIsTerminal(batchResult)) return;
 
     let cancelled = false;
     let timer: number | undefined;
     const poll = async () => {
       try {
-        const response = await fetch(`/api/cnpj-agent/batches/${encodeURIComponent(batchId)}`);
-        if (!response.ok) throw new Error('Não foi possível consultar o andamento do lote.');
-        const progress = (await response.json()) as CnpjBatchProgress;
+        let progress = await api.batchDetail(batchId);
         if (cancelled) return;
-        setBatchResult({ ...progress, batchId });
-        if (terminalBatchStatuses.has(progress.status)) {
-          const hasInvalid = (progress.invalidCnpjs ?? 0) > 0 || (progress.invalidItems?.length ?? 0) > 0;
+
+        if (
+          progress.current_stage === 'HYGIENE'
+          && terminalBatchStatuses.has(progress.status)
+          && !enrichmentStarted.current.has(batchId)
+        ) {
+          enrichmentStarted.current.add(batchId);
+          setBatchSuccessMsg('Higienização concluída. Preparando o enriquecimento com os provedores configurados.');
+          await api.startBatchEnrichment(batchId, [
+            'COMPANY_REGISTRY',
+            'DECISION_MAKER',
+            'DIRECT_EMAIL',
+            'DIRECT_PHONE',
+            'WHATSAPP',
+            'SOCIAL_PROFILES',
+            'BANKING',
+          ]);
+          progress = await api.batchDetail(batchId);
+        }
+
+        setBatchResult(progress);
+        if (batchIsTerminal(progress)) {
+          const hasInvalid = progress.invalid_rows > 0;
           setBatchSuccessMsg(
             progress.status === 'FAILED'
-              ? `Lote encerrado sem processamento: ${progress.failedCount ?? 0} ${(progress.failedCount ?? 0) === 1 ? 'item processou com falha ou era inválido' : 'itens processaram com falha ou eram inválidos'}.${hasInvalid ? ' Confira a lista de CNPJs inválidos abaixo.' : ''}`
-              : `Lote finalizado com status ${progress.status === 'PARTIAL' ? 'parcial' : 'concluído'}: ${progress.processedCnpjs ?? 0} de ${progress.totalCnpjs ?? 0} ${(progress.totalCnpjs ?? 0) === 1 ? 'item processado' : 'itens processados'}.${hasInvalid ? ' Confira os itens inválidos abaixo.' : ''}`,
+              ? `Lote encerrado sem processamento: ${progress.failed_rows} ${progress.failed_rows === 1 ? 'item falhou' : 'itens falharam'}.`
+              : `Lote ${progress.status === 'PARTIAL' ? 'concluído parcialmente' : 'concluído'}: ${progress.processed_rows} de ${progress.total_rows} ${progress.total_rows === 1 ? 'item processado' : 'itens processados'}.${hasInvalid ? ` ${progress.invalid_rows} item(ns) foram classificados como inválidos.` : ''}`,
           );
           await refresh();
           return;
         }
         setBatchSuccessMsg(
-          `Lote em processamento: ${progress.processedCnpjs ?? 0} de ${progress.totalCnpjs ?? 0} item(ns).`,
+          `Lote em processamento: ${progress.processed_rows} de ${progress.total_rows} item(ns).`,
         );
       } catch (cause) {
         if (!cancelled) {
@@ -303,7 +331,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [batchResult?.batchId, batchResult?.id]);
+  }, [batchResult?.id]);
 
   const selectedSet = useMemo(() => new Set(selectedCapabilities), [selectedCapabilities]);
   const activePreset = catalog?.presets.find((preset) =>
@@ -347,8 +375,10 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
         return;
       }
       try {
-        const enriched = await api.enrichPerson(query.trim(), selectedCapabilities);
-        setPersonResult(enriched);
+        const queued = await api.enrichPerson(query.trim(), selectedCapabilities);
+        setRuns((current) => [queued, ...current.filter((run) => run.id !== queued.id)]);
+        const completed = await waitForEnrichmentJob(queued);
+        if (completed.result) setPersonResult(completed.result);
         setRuns(await api.enrichmentRuns().catch(() => runs));
         await refresh();
       } catch (cause) {
@@ -361,8 +391,10 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
     }
 
     try {
-      const enriched = await api.enrichCompany(query.trim(), selectedCapabilities);
-      setResult(enriched);
+      const queued = await api.enrichCompany(query.trim(), selectedCapabilities);
+      setRuns((current) => [queued, ...current.filter((run) => run.id !== queued.id)]);
+      const completed = await waitForEnrichmentJob(queued);
+      if (completed.result) setResult(completed.result);
       setRuns(await api.enrichmentRuns().catch(() => runs));
       await refresh();
     } catch (cause) {
@@ -397,56 +429,17 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
     setBatchResult(null);
 
     try {
-      const res = await fetch('/api/cnpj-agent/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: batchName || 'Lote Enriquecido 360',
-          cnpjs: batchPreflight.valid,
-          maxConcurrency: 1,
-          smtp: false,
-          whatsapp: false,
-          social: true,
-          website: true,
-          pix: pixStatus?.lookupReady === true,
-        }),
-      });
+      const csvRows = batchPreflight.valid.map((value) => preflightCnpj(value).digits);
+      const csv = `\uFEFFcnpj\r\n${csvRows.join('\r\n')}\r\n`;
+      const formData = new FormData();
+      formData.append('name', batchName || 'Lote Enriquecido 360');
+      formData.append('chunk_size', '500');
+      formData.append('arquivo', new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'cnpjs.csv');
+      const data = await api.uploadBatch(formData, crypto.randomUUID());
 
-      const contentType = res.headers.get('content-type') || '';
-      const data = contentType.includes('application/json') ? await res.json() : null;
-      if (!res.ok) {
-        const msg = (data?.error as string | undefined) || 'Erro ao processar lote.';
-        const details = data?.details && typeof data.details === 'object' && !Array.isArray(data.details)
-          ? (data.details as Record<string, unknown>)
-          : null;
-        const invalidList = details && Array.isArray((details as { invalidItems?: unknown[] }).invalidItems)
-          ? ((details as { invalidItems: PreflightInvalidItem[] }).invalidItems)
-          : undefined;
-        if (invalidList && invalidList.length > 0) {
-          setBatchResult({ status: 'FAILED', invalidItems: invalidList.map((i) => ({ ...i, formatted: formatCnpj(i.digits) })) });
-        }
-        throw new Error(msg);
-      }
-
+      enrichmentStarted.current.delete(data.id);
       setBatchResult(data);
-      if (Array.isArray((data as CnpjBatchProgress).invalidItems) && (data as CnpjBatchProgress).invalidItems!.length > 0) {
-        setBatchSuccessMsg(
-          (data as CnpjBatchProgress).invalidItems!.length === batchPreflight.valid.length + batchPreflight.invalid.length
-            ? 'Todos os itens foram rejeitados na validação do servidor.'
-            : `${(data as CnpjBatchProgress).invalidItems!.length} item(ns) não passaram na validação do servidor.`,
-        );
-      } else if (terminalBatchStatuses.has((data as CnpjBatchProgress).status)) {
-        setBatchSuccessMsg(
-          (data as CnpjBatchProgress).status === 'FAILED'
-            ? `Lote encerrado: nenhum CNPJ válido foi recebido (${(data as CnpjBatchProgress).invalidCnpjs ?? 0} inválido(s)).`
-            : `Lote finalizado com status ${String((data as CnpjBatchProgress).status).toLowerCase()}.`,
-        );
-        await refresh();
-      } else {
-        setBatchSuccessMsg(
-          `Lote recebido: ${(data as CnpjBatchProgress).totalValidCnpjs ?? 0} CNPJ(s) válido(s) aguardam processamento durável.`,
-        );
-      }
+      setBatchSuccessMsg(`Lote recebido: ${batchPreflight.valid.length} CNPJ(s) aguardam higienização.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falha ao executar o enriquecimento em lote.');
     } finally {
@@ -454,15 +447,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
     }
   };
 
-  const invalidItemsToDisplay = useMemo<NonNullable<CnpjBatchProgress['invalidItems']>>(() => {
-    const fromPoll = batchResult?.invalidItems ?? [];
-    if (fromPoll.length > 0) {
-      return fromPoll.map((i) => ({
-        raw: i.raw,
-        formatted: i.formatted || formatCnpj(i.digits ?? ''),
-        reason: i.reason,
-      }));
-    }
+  const invalidItemsToDisplay = useMemo(() => {
     if (batchPreflight.invalid.length > 0) {
       return batchPreflight.invalid.map((i) => ({
         raw: i.raw,
@@ -473,7 +458,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
       }));
     }
     return [];
-  }, [batchResult?.invalidItems, batchPreflight.invalid]);
+  }, [batchPreflight.invalid]);
 
   if (loading) {
     return (
@@ -548,41 +533,37 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
             : 'bg-blue-50 border-blue-200 text-blue-900'
         }`}>
           <div className="flex items-start gap-3">
-            {batchResult?.status === 'COMPLETED'
+            {batchResult && batchIsTerminal(batchResult) && batchResult.status === 'COMPLETED'
               ? <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-              : batchResult && terminalBatchStatuses.has(batchResult.status)
+              : batchResult && batchIsTerminal(batchResult)
                 ? <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
                 : <LoaderCircle className="h-5 w-5 animate-spin text-blue-600 shrink-0 mt-0.5" />}
             <div>
               <span className="font-bold text-sm block">{batchSuccessMsg}</span>
               <span className="text-xs opacity-80">
-                {batchResult && terminalBatchStatuses.has(batchResult.status)
+                {batchResult && batchIsTerminal(batchResult)
                   ? 'Revise os itens e as evidências antes de usar ou exportar os resultados.'
                   : 'O lote pode continuar após fechar esta página ou reiniciar a aplicação.'}
               </span>
-              {batchResult && (batchResult.totalRequested || batchResult.totalValidCnpjs) && (
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] opacity-90">
-                  {batchResult.totalRequested !== undefined && (
-                    <span>Solicitados: <strong>{batchResult.totalRequested}</strong></span>
+              {batchResult && batchResult.total_rows > 0 && (
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-90">
+                  <span>Total: <strong>{batchResult.total_rows}</strong></span>
+                  <span>Processados: <strong>{batchResult.processed_rows}</strong></span>
+                  {batchResult.duplicate_rows > 0 && (
+                    <span>Duplicatas: <strong>{batchResult.duplicate_rows}</strong></span>
                   )}
-                  {batchResult.totalUnique !== undefined && (
-                    <span>Únicos: <strong>{batchResult.totalUnique}</strong></span>
+                  {batchResult.succeeded_rows > 0 && (
+                    <span>Com dados: <strong className="text-emerald-700">{batchResult.succeeded_rows}</strong></span>
                   )}
-                  {batchResult.duplicatesRemoved !== undefined && batchResult.duplicatesRemoved > 0 && (
-                    <span>Duplicatas removidas: <strong>{batchResult.duplicatesRemoved}</strong></span>
-                  )}
-                  {batchResult.totalValidCnpjs !== undefined && (
-                    <span>Válidos: <strong className="text-emerald-700">{batchResult.totalValidCnpjs}</strong></span>
-                  )}
-                  {batchResult.invalidCnpjs !== undefined && batchResult.invalidCnpjs > 0 && (
-                    <span>Inválidos: <strong className="text-red-700">{batchResult.invalidCnpjs}</strong></span>
+                  {batchResult.invalid_rows > 0 && (
+                    <span>Inválidos: <strong className="text-red-700">{batchResult.invalid_rows}</strong></span>
                   )}
                 </div>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {batchResult && ['COMPLETED', 'PARTIAL'].includes(batchResult.status) && (
+            {batchResult && batchIsTerminal(batchResult) && ['COMPLETED', 'PARTIAL'].includes(batchResult.status) && (
               <button
                 onClick={() => onNavigate('search')}
                 className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer"
@@ -1576,10 +1557,19 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => { setQuery(run.query); setActiveTab('INDIVIDUAL'); }}
+                    onClick={() => {
+                      void api.enrichmentJob<CompanyEnrichmentResult | PersonEnrichmentResult>(run.id)
+                        .then((job) => {
+                          if (!job.result) return;
+                          if (run.entityType === 'PERSON') setPersonResult(job.result as PersonEnrichmentResult);
+                          else setResult(job.result as CompanyEnrichmentResult);
+                          setActiveTab('INDIVIDUAL');
+                        })
+                        .catch((cause) => setIndividualError(cause instanceof Error ? cause.message : 'Não foi possível abrir o resultado.'));
+                    }}
                     className="text-[11px] font-semibold text-blue-700 hover:text-blue-900"
                   >
-                    Reutilizar consulta
+                    Ver resultado
                   </button>
                 </li>
               );

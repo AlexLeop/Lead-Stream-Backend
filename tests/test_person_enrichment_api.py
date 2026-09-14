@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Any
+from unittest.mock import patch
+
 import httpx
 import pytest
 from django.test import override_settings
@@ -156,42 +159,38 @@ def test_enrich_person_live_with_mock_bureau_and_probe() -> None:
 
 
 @pytest.mark.django_db
-def test_api_enrichment_person_endpoint(api_client: APIClient) -> None:
-    """Testa a view POST /api/v1/enrichment/person."""
+def test_api_enrichment_person_endpoint(
+    api_client: APIClient,
+    django_capture_on_commit_callbacks: Any,
+) -> None:
+    """A consulta individual valida a entrada e cria um job durável."""
     # 1. CPF Inválido
     res = api_client.post(
         "/api/v1/enrichment/person",
         data={"query": "123"},
         content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="person-invalid-001",
     )
-    assert res.status_code == 200
-    data = res.json()
-    assert data["entityType"] == "PERSON"
-    assert data["person"] is None
-    assert data["sections"][0]["id"] == "validation_error"
+    assert res.status_code == 400
+    assert "query" in res.json()
 
-    # 2. CPF Válido (mesmo sem bureau configurado, retorna seções estruturadas sem simulação)
-    with override_settings(
-        BIGDATACORP_ACCESS_TOKEN=None,
-        BIGDATACORP_TOKEN_ID=None,
-        WHATSAPP_PROBE_URL=None,
-        WHATSAPP_PROBE_API_KEY=None,
+    # 2. CPF válido é enfileirado sem manter a requisição HTTP aberta.
+    with (
+        patch("leadstream.providers.tasks.process_enrichment_job_task.delay") as delay,
+        django_capture_on_commit_callbacks(execute=True),
     ):
         res2 = api_client.post(
             "/api/v1/enrichment/person",
             data={"query": "52998224725"},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="person-valid-001",
         )
-        assert res2.status_code == 200
-        data2 = res2.json()
-        assert data2["entityType"] == "PERSON"
-        assert data2["person"]["cpf"] == "529.982.247-25"
-        assert data2["whatsappGarantido"] is None
-        # Confirma que há seções indicando que o bureau e o probe não estão configurados
-        sec_ids = [s["id"] for s in data2["sections"]]
-        assert "document_validation" in sec_ids
-        assert "cadastral_data" in sec_ids
-        assert "whatsapp_verified" in sec_ids
+    assert res2.status_code == 202
+    data2 = res2.json()
+    assert data2["entityType"] == "PERSON"
+    assert data2["query"] == "***.982.247-**"
+    assert data2["status"] == "QUEUED"
+    delay.assert_called_once()
 
 
 @pytest.mark.django_db
