@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 from django.conf import settings
 
+from leadstream.common.redaction import correlation_tag, mask_cpf
 from leadstream.entities.normalization import only_digits
 from leadstream.providers.exceptions import (
     ProviderNotConfigured,
@@ -14,6 +15,23 @@ from leadstream.providers.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _optional_bool(*values: Any) -> bool | None:
+    """Mantém False explícito e não converte ausência em um fato positivo."""
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        normalized = str(value).strip().casefold()
+        if normalized in {"true", "1", "sim", "yes", "ativo", "active"}:
+            return True
+        if normalized in {"false", "0", "não", "nao", "no", "inativo", "inactive"}:
+            return False
+    return None
 
 
 def format_cpf_br(digits: str) -> str:
@@ -79,16 +97,20 @@ class BigDataCorpPersonAdapter:
             body: Any = response.json()
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             logger.warning(
-                "Falha temporária ao consultar BigDataCorp Pessoas para CPF %s: %s", clean_cpf, exc
+                "Falha temporária ao consultar BigDataCorp Pessoas para CPF %s [%s]: %s",
+                mask_cpf(clean_cpf),
+                correlation_tag(clean_cpf),
+                exc.__class__.__name__,
             )
             raise ProviderTemporaryError(
                 "Falha temporária na comunicação com a BigDataCorp."
             ) from exc
         except httpx.HTTPStatusError as exc:
             logger.error(
-                "Erro HTTP %s na BigDataCorp Pessoas para CPF %s",
+                "Erro HTTP %s na BigDataCorp Pessoas para CPF %s [%s]",
                 exc.response.status_code,
-                clean_cpf,
+                mask_cpf(clean_cpf),
+                correlation_tag(clean_cpf),
             )
             if exc.response.status_code >= 500 or exc.response.status_code == 429:
                 raise ProviderTemporaryError(
@@ -116,7 +138,6 @@ class BigDataCorpPersonAdapter:
                 "encontrado": False,
                 "dados_cadastrais": None,
                 "telefones": [],
-                "raw_response": body,
             }
 
         basic_data = (
@@ -137,16 +158,15 @@ class BigDataCorpPersonAdapter:
             basic_data.get("TaxIdStatus")
             or basic_data.get("TaxIdFiscalStatus")
             or basic_data.get("SituacaoCadastral")
-            or "REGULAR"
+            or "DESCONHECIDA"
         )
 
         # Filtro de Perda: Óbito
-        is_deceased = bool(
-            basic_data.get("IsDeceased")
-            or basic_data.get("is_deceased")
-            or root.get("IsDeceased")
-            or root.get("is_deceased")
-            or False
+        is_deceased = _optional_bool(
+            basic_data.get("IsDeceased"),
+            basic_data.get("is_deceased"),
+            root.get("IsDeceased"),
+            root.get("is_deceased"),
         )
         death_date = (
             basic_data.get("DeathDate")
@@ -239,7 +259,9 @@ class BigDataCorpPersonAdapter:
                     or b.get("DescricaoEspecie")
                     or ""
                 )
-                status_ben = str(b.get("Status") or b.get("BenefitStatus") or "ATIVO").upper()
+                status_ben = str(
+                    b.get("Status") or b.get("BenefitStatus") or "DESCONHECIDO"
+                ).upper()
 
                 try:
                     val_ben = float(
@@ -251,7 +273,10 @@ class BigDataCorpPersonAdapter:
                 start_date = str(
                     b.get("StartDate") or b.get("ConcessionDate") or b.get("DataInicio") or ""
                 )
-                bloq = bool(b.get("IsBlockedForLoans") or b.get("BloqueadoEmprestimo") or False)
+                loan_blocked = _optional_bool(
+                    b.get("IsBlockedForLoans"),
+                    b.get("BloqueadoEmprestimo"),
+                )
 
                 species_info = get_inss_species_info(cod_esp)
                 beneficios_inss.append(
@@ -261,12 +286,12 @@ class BigDataCorpPersonAdapter:
                         "especie_descricao": desc_esp or species_info["descricao"],
                         "categoria": species_info["categoria"],
                         "elegivel_consignado": species_info["elegivel"]
-                        and not bloq
+                        and loan_blocked is False
                         and status_ben == "ATIVO",
                         "valor_beneficio": val_ben,
                         "status": status_ben,
                         "data_concessao": start_date[:10] if start_date else None,
-                        "bloqueado_para_emprestimo": bloq,
+                        "bloqueado_para_emprestimo": loan_blocked,
                         "alerta": species_info["alerta"],
                     }
                 )
@@ -295,7 +320,11 @@ class BigDataCorpPersonAdapter:
                 matr = str(v.get("RegistrationNumber") or v.get("Matricula") or "")
                 cargo = str(v.get("JobTitle") or v.get("Cargo") or "")
                 uf = str(v.get("State") or v.get("UF") or "")
-                is_active = bool(v.get("IsActive") or v.get("Active") or v.get("Ativo") or True)
+                is_active = _optional_bool(
+                    v.get("IsActive"),
+                    v.get("Active"),
+                    v.get("Ativo"),
+                )
 
                 try:
                     sal = float(v.get("Salary") or v.get("Salario") or 0.0)
@@ -355,6 +384,10 @@ class BigDataCorpPersonAdapter:
             or root.get("NaoMePerturbe")
             or []
         )
+        nmp_consultado = any(
+            key in root
+            for key in ("DoNotCall", "do_not_call", "ProconBlocks", "NaoMePerturbe")
+        )
         bloqueios_nao_perturbe: list[dict[str, Any]] = []
         if isinstance(dnc_raw, list):
             for d in dnc_raw:
@@ -363,7 +396,7 @@ class BigDataCorpPersonAdapter:
                 num_bloq = only_digits(
                     str(d.get("Phone") or d.get("Number") or d.get("phone") or "")
                 )
-                bloq_active = bool(d.get("Blocked") or d.get("IsBlocked") or True)
+                bloq_active = _optional_bool(d.get("Blocked"), d.get("IsBlocked"))
                 entity = str(d.get("Entity") or d.get("entidade") or "ANATEL_FEBRABAN")
                 dt_bloq = str(d.get("Date") or d.get("BlockDate") or "")
                 if num_bloq:
@@ -398,5 +431,5 @@ class BigDataCorpPersonAdapter:
                 "faixa_renda": faixa_renda,
             },
             "bloqueios_nao_perturbe": bloqueios_nao_perturbe,
-            "raw_response": root,
+            "nao_me_perturbe_consultado": nmp_consultado,
         }

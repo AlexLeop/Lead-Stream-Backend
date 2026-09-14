@@ -117,10 +117,10 @@ def test_enrich_person_live_with_mock_bureau_and_probe() -> None:
     ):
         res = enrich_person_live(query="52998224725", tenant=tenant, http_client=mock_client)
 
-        # 1. Verifica exibição clara e completa do CPF (conforme solicitado pelo usuário!)
+        # 1. O CPF formatado pode ser devolvido ao chamador, sem duplicar a versão crua.
         assert res["entityType"] == "PERSON"
         assert res["person"]["cpf"] == "529.982.247-25"
-        assert res["person"]["cpfDigits"] == "52998224725"
+        assert "cpfDigits" not in res["person"]
         assert res["person"]["name"] == "CARLOS EDUARDO SILVA"
         assert res["person"]["birthDate"] == "1985-04-12"
         assert res["person"]["age"] == 41
@@ -299,7 +299,8 @@ def test_enrich_person_consignado_complete_flow() -> None:
         # 2. Core Consignado (Margem 35% + 5% RMC + 5% RCC = 45%)
         cons = res["consignado"]
         assert cons is not None
-        assert cons["elegivel"] is True
+        # O provedor não informou o bloqueio para empréstimo: cálculo não vira elegibilidade.
+        assert cons["elegivel"] is False
         assert cons["salarioBase"] == 3000.00
         assert cons["margemEmprestimo35"] == 1050.00
         assert cons["margemRmcCartao5"] == 150.00
@@ -403,7 +404,7 @@ def test_enrich_person_cpf_14715435799_rfb_fiscal_region() -> None:
         # 1. Identificação e documento
         assert res["entityType"] == "PERSON"
         assert res["person"]["cpf"] == "147.154.357-99"
-        assert res["person"]["cpfDigits"] == "14715435799"
+        assert "cpfDigits" not in res["person"]
         assert res["costCredits"] == 0
 
         # 2. Inteligência Regional da RFB (7ª Região - RJ/ES)
@@ -421,8 +422,8 @@ def test_enrich_person_cpf_14715435799_rfb_fiscal_region() -> None:
         fields_map = {f["label"]: f["value"] for f in doc_sec["fields"]}
         assert fields_map["CPF Formatado"] == "147.154.357-99"
         assert "99" in fields_map["Módulo 11"]
-        assert "7ª Região Fiscal" in fields_map["Região Fiscal RFB"]
-        assert "Rio de Janeiro" in fields_map["Sede Regional"]
+        assert "7ª Região Fiscal" in fields_map["Região de inscrição indicada pelo 9º dígito"]
+        assert "Rio de Janeiro" in fields_map["Referência regional"]
         assert "1º DV: Soma" in fields_map["Demonstrativo Módulo 11"]
 
         # 4. Canonical payload
@@ -538,7 +539,7 @@ def test_enrich_person_cpf_14715435799_with_bureau_and_probe() -> None:
         canonical = res.get("canonical")
         assert canonical is not None
         payload_obj = CanonicalPersonPayload.model_validate(canonical)
-        assert payload_obj.identification.status == "QUALIFIED"
-        assert payload_obj.identification.lead_score == 90
+        assert payload_obj.identification.status == "OBSERVED"
+        assert payload_obj.identification.lead_score == 0
         assert payload_obj.loss_prevention_filter.is_deceased is False
         assert payload_obj.loss_prevention_filter.elegivel_consignado is True

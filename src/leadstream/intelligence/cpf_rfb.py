@@ -3,10 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 # =============================================================================
-# REGIOES FISCAIS OFICIAIS DA RECEITA FEDERAL DO BRASIL (RFB)
+# REGIÕES HISTORICAMENTE ASSOCIADAS AO 9º DÍGITO DO CPF
 # =============================================================================
-# O 9º dígito de qualquer CPF brasileiro identifica estritamente a Região Fiscal
-# onde o cadastro original foi emitido perante o Ministério da Fazenda.
+# Esse metadado não representa endereço, residência ou domicílio fiscal atual.
 # =============================================================================
 
 REGIOES_FISCAIS_RFB: dict[str, dict[str, Any]] = {
@@ -97,7 +96,7 @@ def format_cpf_display(digits: str) -> str:
 
 
 def calculate_cpf_check_digits(base_9: str) -> tuple[str, str]:
-    """Calcula os dois dígitos verificadores do CPF utilizando o algoritmo oficial Módulo 11."""
+    """Calcula os dois dígitos verificadores compatíveis com o CPF (Módulo 11)."""
     dv1, dv2, _ = calculate_cpf_check_digits_with_steps(base_9)
     return dv1, dv2
 
@@ -105,7 +104,7 @@ def calculate_cpf_check_digits(base_9: str) -> tuple[str, str]:
 def calculate_cpf_check_digits_with_steps(
     base_9: str,
 ) -> tuple[str, str, dict[str, Any]]:
-    """Calcula os dígitos verificadores do CPF com passos detalhados de auditoria Módulo 11."""
+    """Calcula os dígitos verificadores com passos auditáveis de Módulo 11."""
     if len(base_9) != 9 or not base_9.isdigit():
         return "", "", {}
 
@@ -142,7 +141,7 @@ def calculate_cpf_check_digits_with_steps(
 
 
 def validate_cpf_with_details(cpf_input: str) -> dict[str, Any]:
-    """Valida o CPF perante a fórmula da Receita Federal e extrai metadados estruturais."""
+    """Valida apenas formato e checksum; não consulta existência ou situação na RFB."""
     digits = clean_cpf_digits(cpf_input)
     if len(digits) != 11:
         return {
@@ -178,7 +177,7 @@ def validate_cpf_with_details(cpf_input: str) -> dict[str, Any]:
     return {
         "valido": is_valid,
         "motivo": (
-            "CPF válido perante o algoritmo oficial Módulo 11 da RFB."
+            "CPF estruturalmente compatível com o cálculo Módulo 11."
             if is_valid
             else (
                 f"Dígitos verificadores incorretos "
@@ -198,6 +197,6 @@ def validate_cpf_with_details(cpf_input: str) -> dict[str, Any]:
 
 
 def lookup_cpf_fiscal_region(cpf_input: str) -> dict[str, Any] | None:
-    """Retorna a Região Fiscal oficial da Receita Federal para um CPF."""
+    """Retorna a região historicamente indicada pelo 9º dígito do CPF."""
     details = validate_cpf_with_details(cpf_input)
     return details.get("regiao_fiscal")

@@ -37,7 +37,8 @@ def test_get_canonical_lead_endpoint(api_client: APIClient) -> None:
     assert response.status_code == 200
     assert response.data["_meta"]["schema_version"] == "2.4.0"
     assert response.data["company"]["cnpj"] == "48.944.179/0001-61"
-    assert response.data["identification"]["status"] == "QUALIFIED"
+    assert response.data["identification"]["status"] == "OBSERVED"
+    assert response.data["identification"]["lead_score"] == 0
 
 
 def test_get_canonical_lead_direct_endpoint(api_client: APIClient) -> None:

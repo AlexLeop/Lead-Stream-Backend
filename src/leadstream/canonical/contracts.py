@@ -15,17 +15,17 @@ class MetaPayload(BasePayloadModel):
     generated_at: str
     tenant_id: str
     pipeline_run_id: str | None = None
-    confidence_score_global: float = 0.95
+    confidence_score_global: float = 0.0
     entity_type: str | None = None
     provenance_method: str | None = None
 
 
 class IdentificationPayload(BasePayloadModel):
     lead_id: str
-    status: str = "QUALIFIED"
+    status: str = "UNASSESSED"
     lead_score: int = 0
-    lead_temperature: str = "WARM"
-    ideal_customer_profile_fit: float = 50.0
+    lead_temperature: str = "UNKNOWN"
+    ideal_customer_profile_fit: float = 0.0
     tags: list[str] = Field(default_factory=list)
 
 
@@ -35,10 +35,10 @@ class CompanyPayload(BasePayloadModel):
     cnpj_raiz: str = ""
     cnpj_ordem: str = ""
     cnpj_dv: str = ""
-    tipo: str = "MATRIZ"
+    tipo: str = "NAO_INFORMADO"
     razao_social: str
     nome_fantasia: str | None = None
-    situacao_cadastral: str = "ATIVA"
+    situacao_cadastral: str = "DESCONHECIDA"
     data_situacao_cadastral: str | None = None
     motivo_situacao_cadastral: str | None = None
     situacao_especial: str | None = None
@@ -46,76 +46,76 @@ class CompanyPayload(BasePayloadModel):
     data_abertura: str | None = None
     idade_empresa_anos: float | None = None
     natureza_juridica: dict[str, Any] = Field(default_factory=dict)
-    porte: str = "DEMAIS"
-    porte_sebrae: str = "MICRO_EMPRESA"
-    regime_tributario: str = "SIMPLES_NACIONAL"
-    optante_simples: bool = False
+    porte: str = "NAO_INFORMADO"
+    porte_sebrae: str = "NAO_INFORMADO"
+    regime_tributario: str = "NAO_INFORMADO"
+    optante_simples: bool | None = None
     data_opcao_simples: str | None = None
     data_exclusao_simples: str | None = None
-    optante_simei: bool = False
+    optante_simei: bool | None = None
     data_opcao_simei: str | None = None
     capital_social: float = 0.0
     capital_social_formatado: str = "R$ 0,00"
     faturamento_estimado_anual: float = 0.0
-    faixa_faturamento: str = "Até R$ 81.000"
-    faixa_funcionarios: str = "Até 1 colaborador"
-    quantidade_funcionarios_estimada: int = 1
+    faixa_faturamento: str = "Não informado"
+    faixa_funcionarios: str = "Não informado"
+    quantidade_funcionarios_estimada: int | None = None
     website: str | None = None
     dominio: str | None = None
 
 
 class BankingInstitutionPayload(BasePayloadModel):
-    codigo_compensacao: str = "260"
-    nome_banco: str = "Nu Pagamentos S.A. (Nubank)"
-    tipo_relacionamento: str = "CONTA_CORRENTE_PRINCIPAL"
-    chave_pix_ativa: bool = True
-    tipo_chave_pix: str = "CNPJ"
+    codigo_compensacao: str = ""
+    nome_banco: str = ""
+    tipo_relacionamento: str = "NAO_INFORMADO"
+    chave_pix_ativa: bool | None = None
+    tipo_chave_pix: str = "NAO_INFORMADO"
     chave_pix: str | None = None
-    operacoes_cambio_ativas: bool = False
-    tempo_relacionamento_anos: float | None = 2.0
+    operacoes_cambio_ativas: bool | None = None
+    tempo_relacionamento_anos: float | None = None
 
 
 class FinancialAndBankingPayload(BasePayloadModel):
     instituicoes_bancarias_principais: list[BankingInstitutionPayload] = Field(default_factory=list)
     bancos_relacionamento_detectados: list[BankingInstitutionPayload] = Field(default_factory=list)
     linhas_credito_ativas: list[str] = Field(default_factory=list)
-    risco_credito_score: int | None = 750
-    risco_credito_classificacao: str | None = "BAIXO_RISCO_A"
-    limite_credito_estimado: float | None = 0.0
-    capacidade_pagamento: str | None = "MEDIA"
-    protestos_ativos_cartorio: int = 0
-    valor_total_protestos: float = 0.0
-    cheques_sem_fundo_ccf: int = 0
-    pendencias_financeiras_ativas: bool = False
+    risco_credito_score: int | None = None
+    risco_credito_classificacao: str | None = None
+    limite_credito_estimado: float | None = None
+    capacidade_pagamento: str | None = None
+    protestos_ativos_cartorio: int | None = None
+    valor_total_protestos: float | None = None
+    cheques_sem_fundo_ccf: int | None = None
+    pendencias_financeiras_ativas: bool | None = None
 
 
 class FiscalAndTaxIntelligencePayload(BasePayloadModel):
-    situacao_fiscal_federal: str = "REGULAR"
-    situacao_pgfn_divida_ativa: str = "NADA_CONSTA"
-    valor_divida_ativa_uniao: float = 0.0
+    situacao_fiscal_federal: str = "NAO_CONSULTADA"
+    situacao_pgfn_divida_ativa: str = "NAO_CONSULTADA"
+    valor_divida_ativa_uniao: float | None = None
     certidao_negativa_debito_cnd: dict[str, Any] = Field(
         default_factory=lambda: {
-            "status": "EMITIDA_VALIDA",
+            "status": "NAO_CONSULTADA",
             "numero_certidao": None,
             "validade": None,
         }
     )
     certidao_fgts_crf: dict[str, Any] = Field(
-        default_factory=lambda: {"status": "REGULAR", "numero_crf": None, "validade": None}
+        default_factory=lambda: {"status": "NAO_CONSULTADA", "numero_crf": None, "validade": None}
     )
     inscricao_estadual: dict[str, Any] = Field(
-        default_factory=lambda: {"numero": None, "uf": None, "status_sintegra": "HABILITADO_ATIVO"}
+        default_factory=lambda: {"numero": None, "uf": None, "status_sintegra": "NAO_CONSULTADO"}
     )
     inscricao_municipal: dict[str, Any] = Field(
-        default_factory=lambda: {"numero": None, "municipio": None, "status": "REGULAR"}
+        default_factory=lambda: {"numero": None, "municipio": None, "status": "NAO_CONSULTADO"}
     )
 
 
 class CnaePrincipal(BasePayloadModel):
     codigo: str
     descricao: str
-    setor: str = "Outros Serviços"
-    grau_risco_trabalho: int = 1
+    setor: str = "Não informado"
+    grau_risco_trabalho: int = 0
 
 
 class CnaeItem(BasePayloadModel):
@@ -140,22 +140,22 @@ class AddressPayload(BasePayloadModel):
     codigo_ibge_municipio: str | None = None
     latitude: float | None = None
     longitude: float | None = None
-    geocoding_precision: str | None = "APPROXIMATE"
-    tipo_imovel: str | None = "COMERCIAL"
+    geocoding_precision: str | None = None
+    tipo_imovel: str | None = None
     valor_m2_regiao: float | None = None
 
 
 class PhonePayload(BasePayloadModel):
-    tipo: str = "FIXO_RECEITA"
+    tipo: str = "DESCONHECIDO"
     ddd: str | None = None
     numero: str
     ramal: str | None = None
     operadora: str = "DESCONHECIDA"
-    status_linha: str = "ATIVA"
+    status_linha: str = "DESCONHECIDA"
     principal: bool = False
-    validado: bool = True
+    validado: bool = False
     whatsapp_status: dict[str, Any] = Field(default_factory=dict)
-    confianca: float = 0.95
+    confianca: float = 0.0
 
     @model_validator(mode="before")
     @classmethod
@@ -190,14 +190,14 @@ class PhonePayload(BasePayloadModel):
 
 class EmailPayload(BasePayloadModel):
     endereco: str
-    tipo: str = "GENERICO_RECEITA"
-    status: str = "ENTREGAVEL"
-    mx_found: bool = True
-    smtp_check: bool = True
+    tipo: str = "NAO_CLASSIFICADO"
+    status: str = "NAO_VERIFICADO"
+    mx_found: bool = False
+    smtp_check: bool = False
     disposable: bool = False
     catch_all: bool = False
     titular: str | None = None
-    score_confiabilidade: float = 0.95
+    score_confiabilidade: float = 0.0
 
 
 class ContactsPayload(BasePayloadModel):
@@ -254,27 +254,27 @@ class DecisionMakerPayload(BasePayloadModel):
     id: str | None = None
     nome: str
     cpf_mascarado: str | None = None
-    qualificacao_socio: str = "49-Sócio-Administrador"
+    qualificacao_socio: str = "NAO_INFORMADA"
     data_entrada_sociedade: str | None = None
     percentual_capital_social: float | None = None
     faixa_etaria: str | None = None
-    pais_origem: str = "Brasil"
-    cargo_executivo_mercado: str = "Administrador"
-    nivel_hierarquico: str = "C_LEVEL"
-    poder_decisao: str = "FINAL_SIGNER"
+    pais_origem: str = "Não informado"
+    cargo_executivo_mercado: str = "Não informado"
+    nivel_hierarquico: str = "UNKNOWN"
+    poder_decisao: str = "UNKNOWN"
     contatos_diretos: DecisionMakerDirectContacts = Field(
         default_factory=DecisionMakerDirectContacts
     )
-    outras_empresas_como_socio: int = 0
-    pep_pessoa_politicamente_exposta: bool = False
+    outras_empresas_como_socio: int | None = None
+    pep_pessoa_politicamente_exposta: bool | None = None
 
 
 def _default_historico_importacao() -> dict[str, Any]:
     empty_paises: list[str] = []
     empty_ncm: list[str] = []
     return {
-        "importa_ultimos_12_meses": False,
-        "volume_anual_importado_usd": 0.0,
+        "importa_ultimos_12_meses": None,
+        "volume_anual_importado_usd": None,
         "principais_paises_origem": empty_paises,
         "categorias_ncm": empty_ncm,
     }
@@ -284,7 +284,7 @@ def _default_infraestrutura_web() -> dict[str, Any]:
     empty_dns: dict[str, Any] = {}
     return {
         "servidor_web": None,
-        "certificado_ssl_valido": True,
+        "certificado_ssl_valido": None,
         "emissor_ssl": None,
         "dns_seguranca": empty_dns,
     }
@@ -293,36 +293,36 @@ def _default_infraestrutura_web() -> dict[str, Any]:
 class ForeignTradeAndLogisticsPayload(BasePayloadModel):
     radar_siscomex: dict[str, Any] = Field(
         default_factory=lambda: {
-            "habilitado": False,
-            "modalidade": "INEXISTENTE",
-            "status": "INATIVO",
+            "habilitado": None,
+            "modalidade": "NAO_CONSULTADA",
+            "status": "NAO_CONSULTADO",
             "data_habilitacao": None,
         }
     )
     historico_importacao: dict[str, Any] = Field(default_factory=_default_historico_importacao)
     historico_exportacao: dict[str, Any] = Field(
-        default_factory=lambda: {"exporta_ultimos_12_meses": False}
+        default_factory=lambda: {"exporta_ultimos_12_meses": None}
     )
     frota_veiculos_cadastrada: dict[str, Any] = Field(
         default_factory=lambda: {
-            "total_veiculos": 0,
-            "automoveis": 0,
-            "utilitarios": 0,
-            "caminhoes": 0,
+            "total_veiculos": None,
+            "automoveis": None,
+            "utilitarios": None,
+            "caminhoes": None,
         }
     )
 
 
 class LegalAndJudicialPayload(BasePayloadModel):
-    total_processos_como_reu: int = 0
-    total_processos_como_autor: int = 0
-    processos_trabalhistas_ativos: int = 0
-    processos_civeis_ativos: int = 0
-    processos_tributarios_execucoes_fiscais: int = 0
-    indice_judicializacao: str = "BAIXISSIMO"
-    historico_recuperacao_judicial: bool = False
-    historico_falencia: bool = False
-    auditoria_trabalho_escravo_ibama: str = "LIMPO"
+    total_processos_como_reu: int | None = None
+    total_processos_como_autor: int | None = None
+    processos_trabalhistas_ativos: int | None = None
+    processos_civeis_ativos: int | None = None
+    processos_tributarios_execucoes_fiscais: int | None = None
+    indice_judicializacao: str = "NAO_CONSULTADO"
+    historico_recuperacao_judicial: bool | None = None
+    historico_falencia: bool | None = None
+    auditoria_trabalho_escravo_ibama: str = "NAO_CONSULTADA"
 
 
 class DigitalPresenceAndTechStackPayload(BasePayloadModel):
@@ -333,13 +333,13 @@ class DigitalPresenceAndTechStackPayload(BasePayloadModel):
 
 class GovernanceLgpdAndCompliancePayload(BasePayloadModel):
     enquadramento_legal: str = "LEI_13709_LGPD"
-    base_legal_prospeccao: str = "LEGITIMO_INTERESSE_ART_7_IX"
-    finalidade_tratamento: str = "PROSPECCAO_COMERCIAL_B2B"
+    base_legal_prospeccao: str = "NAO_DOCUMENTADA"
+    finalidade_tratamento: str = "NAO_DOCUMENTADA"
     dpo_encarregado_dados: str | None = None
     opt_out_solicitado: bool = False
     data_opt_out: str | None = None
     hash_rastreabilidade_consentimento: str | None = None
-    politica_retencao_dias: int = 730
+    politica_retencao_dias: int | None = None
 
 
 class CrmOutboxIntegrationPayload(BasePayloadModel):
@@ -393,10 +393,10 @@ class CanonicalLeadPayload(BasePayloadModel):
 class PersonIdentificationPayload(BasePayloadModel):
     person_id: str
     entity_type: str = "PERSON"
-    status: str = "QUALIFIED"
+    status: str = "UNASSESSED"
     lead_score: int = 0
-    confidence_score: float = 0.95
-    cost_credits: int = 1
+    confidence_score: float = 0.0
+    cost_credits: int = 0
     tags: list[str] = Field(default_factory=list)
 
 
@@ -404,13 +404,13 @@ class DocumentValidationPayload(BasePayloadModel):
     cpf_formatado: str
     cpf_numerico: str
     digitos_verificadores: str
-    modulo_11_valido: bool = True
-    origem_validacao: str = "ALGORITMO_OFICIAL_RECEITA_FEDERAL"
+    modulo_11_valido: bool = False
+    origem_validacao: str = "CALCULO_ESTRUTURAL_LOCAL_MODULO_11"
     regiao_fiscal: dict[str, Any] | None = None
 
 
 class PersonCadastralDataPayload(BasePayloadModel):
-    nome: str
+    nome: str | None = None
     cpf: str
     cpf_numerico: str
     data_nascimento: str | None = None
@@ -418,19 +418,19 @@ class PersonCadastralDataPayload(BasePayloadModel):
     genero: str | None = None
     nome_mae: str | None = None
     nome_pai: str | None = None
-    situacao_cadastral_rfb: str = "REGULAR"
+    situacao_cadastral_rfb: str = "DESCONHECIDA"
     data_situacao_cadastral: str | None = None
     codigo_controle_rfb: str | None = None
 
 
 class LossPreventionFilterPayload(BasePayloadModel):
-    status: str = "REGULAR"
-    is_deceased: bool = False
+    status: str = "INCONCLUSIVO"
+    is_deceased: bool | None = None
     death_date: str | None = None
-    tax_status: str = "REGULAR"
-    elegivel_consignado: bool = True
+    tax_status: str = "DESCONHECIDA"
+    elegivel_consignado: bool = False
     motivo_expurgo: str | None = None
-    deve_cobrar_credito: bool = True
+    deve_cobrar_credito: bool | None = None
     fontes_consultadas: list[str] = Field(default_factory=list)
 
 
@@ -438,14 +438,14 @@ class BeneficioInssPayload(BasePayloadModel):
     numero_beneficio: str
     especie_codigo: str
     especie_descricao: str
-    categoria_aptidao: str = "APTO_CONSIGNAVEL"
-    status_beneficio: str = "ATIVO"
+    categoria_aptidao: str = "DESCONHECIDO"
+    status_beneficio: str = "DESCONHECIDO"
     data_concessao: str | None = None
     data_cessacao: str | None = None
     valor_beneficio_bruto: float = 0.0
-    valor_beneficio_liquido: float = 0.0
-    descontos_obrigatorios: float = 0.0
-    bloqueado_para_emprestimo: bool = False
+    valor_beneficio_liquido: float | None = None
+    descontos_obrigatorios: float | None = None
+    bloqueado_para_emprestimo: bool | None = None
     alerta_elegibilidade: str | None = None
     banco_pagador: dict[str, Any] = Field(default_factory=dict)
 
@@ -479,8 +479,8 @@ class MargemParcelaPayload(BasePayloadModel):
 
 
 class MargemConsignavelPayload(BasePayloadModel):
-    base_legal: str = "LEI_FEDERAL_14431_2022"
-    elegivel: bool = False
+    base_legal: str = "POLITICA_NAO_INFORMADA"
+    elegivel: bool | None = None
     vinculo_base: str | None = None
     numero_beneficio_base: str | None = None
     salario_base_calculo: float = 0.0
@@ -491,7 +491,7 @@ class MargemConsignavelPayload(BasePayloadModel):
 
 
 class TelefoneHigienizadoPayload(BasePayloadModel):
-    ddd: str
+    ddd: str | None = None
     numero: str
     numero_formatado: str
     numero_e164: str
@@ -527,17 +527,19 @@ class WhatsAppProbeTecnicoPayload(BasePayloadModel):
 class TelefoneNaoMePerturbePayload(BasePayloadModel):
     numero: str | None = None
     numero_formatado: str | None = None
-    inscrito_bloqueio: bool = False
+    status_consulta: str = "NAO_CONSULTADO"
+    inscrito_bloqueio: bool | None = None
     entidade: str | None = None
     data_bloqueio: str | None = None
     motivo: str | None = None
-    seguro_discagem_fria: bool = True
-    risco_multa: str = "BAIXO"
+    seguro_discagem_fria: bool = False
+    risco_multa: str = "DESCONHECIDO"
     badge_texto: str = ""
 
 
 class NaoMePerturbePayload(BasePayloadModel):
-    fonte_reguladora: str = "ANATEL_FEBRABAN"
+    fonte_reguladora: str | None = None
+    consulta_executada: bool = False
     telefones_consultados: list[TelefoneNaoMePerturbePayload] = Field(default_factory=list)
 
 
@@ -546,27 +548,27 @@ class MailingQualificadoItemPayload(BasePayloadModel):
     numero_formatado: str
     numero_raw: str
     numero_e164: str
-    ddd: str
+    ddd: str | None = None
     operadora: str = ""
     whatsapp_disponivel: bool = False
     whatsapp_tipo_conta: str = "NENHUMA"
     link_whatsapp: str | None = None
-    nao_me_perturbe_inscrito: bool = False
-    seguro_para_discagem_fria: bool = True
-    risco_multa: str = "BAIXO"
-    score_assertividade: int = 50
-    recomendacao_canal: str = "DISCAGEM_E_WHATSAPP"
+    nao_me_perturbe_inscrito: bool | None = None
+    seguro_para_discagem_fria: bool = False
+    risco_multa: str = "DESCONHECIDO"
+    score_assertividade: int = 0
+    recomendacao_canal: str = "AGUARDAR_VALIDACAO_COMPLIANCE"
     rotulo_canal: str = ""
 
 
 class AddressCadastralPayload(BasePayloadModel):
-    logradouro: str
-    numero: str = "S/N"
+    logradouro: str | None = None
+    numero: str | None = None
     complemento: str | None = None
-    bairro: str
-    municipio: str
-    uf: str
-    cep: str
+    bairro: str | None = None
+    municipio: str | None = None
+    uf: str | None = None
+    cep: str | None = None
     codigo_ibge: str | None = None
 
 
@@ -578,8 +580,8 @@ class FinancialIndicatorsPayload(BasePayloadModel):
 
 class GovernanceLgpdPayload(BasePayloadModel):
     enquadramento_legal: str = "LEI_FEDERAL_13709_LGPD"
-    base_legal: str = "PROTECAO_DO_CREDITO_ART_7_X"
-    finalidade: str = "HIGIENIZACAO_E_ENRIQUECIMENTO_PARA_ANALISE_DE_CREDITO"
+    base_legal: str = "NAO_DOCUMENTADA"
+    finalidade: str = "NAO_DOCUMENTADA"
     trilha_auditoria_hash: str | None = None
     data_consulta: str | None = None
 

@@ -8,14 +8,9 @@ def clean_phone_digits(value: str) -> str:
 
 
 def get_phone_operator_hint(ddd: str, prefix: str) -> str:
-    first_char = prefix[0] if prefix else ""
-    if first_char in ("6", "7"):
-        return "CLARO"
-    if first_char in ("8", "9"):
-        return "VIVO"
-    if first_char in ("4", "5"):
-        return "TIM"
-    return "OI" if first_char in ("2", "3") else "DESCONHECIDA"
+    """Não deduz operadora pelo prefixo: portabilidade torna essa inferência insegura."""
+    _ = (ddd, prefix)
+    return "DESCONHECIDA"
 
 
 def format_e164_br(phone: str, ddd: str = "") -> str:
@@ -34,7 +29,7 @@ def format_e164_br(phone: str, ddd: str = "") -> str:
         detected_ddd = digits[:2]
         number_part = digits[2:]
     elif len(digits) in (8, 9):
-        detected_ddd = clean_ddd if clean_ddd else "11"
+        detected_ddd = clean_ddd
         number_part = digits
     else:
         detected_ddd = clean_ddd if clean_ddd else ""
@@ -76,7 +71,7 @@ def validate_phone_technical(
         detected_ddd = digits[:2]
         number_part = digits[2:]
     elif len(digits) in (8, 9):
-        detected_ddd = clean_ddd or "11"
+        detected_ddd = clean_ddd
         number_part = digits
     else:
         detected_ddd = clean_ddd or ""
@@ -88,20 +83,20 @@ def validate_phone_technical(
     operadora = get_phone_operator_hint(detected_ddd, number_part)
 
     if is_mobile:
-        tipo = "MOVEL_WHATSAPP_EMPRESA"
-        tem_whatsapp = True
-        tipo_conta = "WHATSAPP_BUSINESS"
-        confianca = 0.95
+        tipo = "MOVEL"
+        tem_whatsapp: bool | None = None
+        tipo_conta = "DESCONHECIDA"
+        confianca = 0.7 if detected_ddd else 0.4
     elif is_fixed:
         tipo = "FIXO_RECEITA"
-        tem_whatsapp = False
-        tipo_conta = "NENHUMA"
-        confianca = 0.90
+        tem_whatsapp = None
+        tipo_conta = "DESCONHECIDA"
+        confianca = 0.7 if detected_ddd else 0.4
     else:
-        tipo = "FIXO_COMERCIAL"
-        tem_whatsapp = False
-        tipo_conta = "NENHUMA"
-        confianca = 0.70
+        tipo = "DESCONHECIDO"
+        tem_whatsapp = None
+        tipo_conta = "DESCONHECIDA"
+        confianca = 0.2
 
     wa_status: dict[str, Any] = {
         "tem_whatsapp": tem_whatsapp,
@@ -123,6 +118,7 @@ def validate_phone_technical(
             wa_status["recado"] = probe_res.get("recado")
             wa_status["verificado_em"] = probe_res.get("verificado_em")
             wa_status["probe_executado"] = True
+            wa_status["validado"] = bool(probe_res.get("sucesso"))
             wa_status["jid"] = probe_res.get("jid")
             if probe_res.get("tem_whatsapp"):
                 confianca = 1.0
@@ -135,9 +131,10 @@ def validate_phone_technical(
         "numero": number_part,
         "ramal": None,
         "operadora": operadora,
-        "status_linha": "ATIVA",
+        "status_linha": "DESCONHECIDA",
         "principal": is_primary,
-        "validado": True,
+        "formato_valido": bool(detected_ddd and (is_mobile or is_fixed)),
+        "validado": bool(wa_status.get("validado", False)),
         "whatsapp_status": wa_status,
         "confianca": confianca,
     }

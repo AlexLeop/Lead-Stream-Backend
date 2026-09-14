@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from leadstream.canonical.person_builder import CanonicalPersonBuilder
+from leadstream.common.redaction import correlation_tag, mask_cpf
 from leadstream.entities.models import ContactPoint
 from leadstream.entities.normalization import only_digits
 from leadstream.entities.services import create_contact_point, create_person
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 def validate_cpf_format_and_dv(digits: str) -> tuple[bool, str, str, str]:
-    """Valida o formato e os dígitos verificadores do CPF via algoritmo oficial Módulo 11.
+    """Valida formato e dígitos verificadores do CPF pelo cálculo Módulo 11.
 
     Retorna: (is_valid, expected_dv, received_dv, suggested_cpf)
     """
@@ -123,7 +124,7 @@ def enrich_person_live(
             "costCredits": 0,
         }
 
-    # 2. Validação de Módulo 11 (DVs) e Inteligência Fiscal RFB
+    # 2. Validação estrutural de Módulo 11 (não consulta situação cadastral)
     details_val = validate_cpf_with_details(cleaned_digits)
     is_valid_dv = bool(details_val.get("valido"))
     expected_dv = str(details_val.get("digitos_verificadores_calculados") or "")
@@ -159,7 +160,7 @@ def enrich_person_live(
                 {
                     "id": "validation_error",
                     "title": "Validação de Dígitos Verificadores",
-                    "description": "Algoritmo oficial Módulo 11 da Receita Federal do Brasil",
+                    "description": "Validação estrutural local pelo cálculo Módulo 11",
                     "status": "unavailable",
                     "summary": "Dígitos verificadores incorretos.",
                     "errorMessage": err_msg,
@@ -181,22 +182,22 @@ def enrich_person_live(
     formatted_cpf_str = format_cpf_br(cleaned_digits)
     sections: list[dict[str, Any]] = []
 
-    # Seção Documento Validado com Região Fiscal da RFB
+    # Seção de formato estrutural. Isso não confirma existência ou regularidade cadastral.
     doc_fields = [
         {"label": "CPF Formatado", "value": formatted_cpf_str},
         {"label": "Dígitos Numéricos", "value": cleaned_digits},
-        {"label": "Módulo 11", "value": f"Dígitos Verificadores Autênticos ({expected_dv})"},
-        {"label": "Origem da Validação", "value": "Validação Criptográfica Módulo 11 (RFB)"},
+        {"label": "Módulo 11", "value": f"Dígitos verificadores compatíveis ({expected_dv})"},
+        {"label": "Origem da Validação", "value": "Cálculo estrutural local; sem consulta à RFB"},
     ]
     if regiao_info:
         doc_fields.extend(
             [
                 {
-                    "label": "Região Fiscal RFB",
+                    "label": "Região de inscrição indicada pelo 9º dígito",
                     "value": f"{regiao_info['regiao']} (Código {regiao_info['codigo']})",
                 },
-                {"label": "Jurisdição Fiscal", "value": regiao_info["jurisdicao"]},
-                {"label": "Sede Regional", "value": regiao_info["sede"]},
+                {"label": "UFs historicamente associadas", "value": regiao_info["jurisdicao"]},
+                {"label": "Referência regional", "value": regiao_info["sede"]},
             ]
         )
     if auditoria_mod11:
@@ -211,15 +212,18 @@ def enrich_person_live(
             }
         )
 
-    doc_summary = f"CPF {formatted_cpf_str} válido perante os algoritmos da RFB."
+    doc_summary = f"CPF {formatted_cpf_str} possui formato e dígitos verificadores compatíveis."
     if regiao_info:
-        doc_summary += f" Origem fiscal: {regiao_info['regiao']} ({', '.join(regiao_info['ufs'])})."
+        doc_summary += (
+            f" O 9º dígito indica a região de inscrição {regiao_info['regiao']} "
+            f"({', '.join(regiao_info['ufs'])}); isso não indica domicílio atual."
+        )
 
     sections.append(
         {
             "id": "document_validation",
-            "title": "Validação Cadastral do Documento",
-            "description": "Conformidade estrutural com os algoritmos oficiais da Receita Federal",
+            "title": "Validação Estrutural do Documento",
+            "description": "Cálculo local de formato e dígitos; não confirma situação cadastral",
             "status": "available",
             "summary": doc_summary,
             "fields": doc_fields,
@@ -235,7 +239,7 @@ def enrich_person_live(
     beneficios_inss: list[dict[str, Any]] = []
     vinculos_empregaticios: list[dict[str, Any]] = []
     renda_data: dict[str, Any] = {}
-    bloqueios_nmp: list[dict[str, Any]] = []
+    bloqueios_nmp: list[dict[str, Any]] | None = None
     bureau_result: dict[str, Any] | None = None
 
     nome_pessoa = ""
@@ -243,8 +247,8 @@ def enrich_person_live(
     idade = None
     nome_mae = ""
     genero = ""
-    situacao_cpf = "REGULAR"
-    is_deceased = False
+    situacao_cpf = "DESCONHECIDA"
+    is_deceased: bool | None = None
     death_date = None
 
     if bureau_configured:
@@ -257,20 +261,21 @@ def enrich_person_live(
                 idade = cad.get("idade")
                 nome_mae = cad.get("nome_mae") or ""
                 genero = cad.get("genero") or ""
-                situacao_cpf = cad.get("situacao_cpf") or "REGULAR"
-                is_deceased = bool(cad.get("is_deceased"))
+                situacao_cpf = cad.get("situacao_cpf") or "DESCONHECIDA"
+                is_deceased = cad.get("is_deceased")
                 death_date = cad.get("death_date")
 
                 candidate_phones = bureau_result.get("telefones", [])
                 beneficios_inss = bureau_result.get("beneficios_inss", [])
                 vinculos_empregaticios = bureau_result.get("vinculos_empregaticios", [])
                 renda_data = bureau_result.get("renda", {})
-                bloqueios_nmp = bureau_result.get("bloqueios_nao_perturbe", [])
+                if bureau_result.get("nao_me_perturbe_consultado"):
+                    bloqueios_nmp = bureau_result.get("bloqueios_nao_perturbe", [])
 
                 sections.append(
                     {
                         "id": "cadastral_data",
-                        "title": "Dados Cadastrais Oficiais",
+                        "title": "Dados Cadastrais do Provedor",
                         "description": "Identificação e dados civis consolidados na base cadastral",
                         "status": "available",
                         "summary": f"Registro cadastral localizado: {nome_pessoa}.",
@@ -307,7 +312,12 @@ def enrich_person_live(
                     }
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.error("Erro ao enriquecer CPF %s na BigDataCorp: %s", cleaned_digits, exc)
+            logger.error(
+                "Erro ao enriquecer CPF %s [%s] na BigDataCorp: %s",
+                mask_cpf(cleaned_digits),
+                correlation_tag(cleaned_digits),
+                exc.__class__.__name__,
+            )
             sections.append(
                 {
                     "id": "cadastral_data",
@@ -315,7 +325,7 @@ def enrich_person_live(
                     "description": "Consulta à base BigDataCorp",
                     "status": "unavailable",
                     "summary": "Falha na comunicação com o bureau.",
-                    "errorMessage": f"Erro ao consultar bureau cadastral: {exc}",
+                    "errorMessage": "O provedor cadastral não respondeu conforme o esperado.",
                     "fields": [{"label": "Status", "value": "Indisponível temporariamente"}],
                     "items": [],
                 }
@@ -352,33 +362,47 @@ def enrich_person_live(
             "id": "filtro_perda",
             "title": "Camada 1: Filtro de Perda Cadastral (Óbito & RFB)",
             "description": "Expurgo preventivo de titulares falecidos ou com irregularidade na RFB",
-            "status": "available",
+            "status": "available" if filtro_perda["status"] != "INCONCLUSIVO" else "unavailable",
             "summary": (
                 filtro_perda["motivo_expurgo"]
                 if not filtro_perda["elegivel_consignado"]
-                else "Titular ativo e regular no cadastro central de pessoas físicas."
+                else "Situação regular explicitamente informada pelo provedor cadastral."
             ),
             "fields": [
                 {"label": "Status Cadastral", "value": filtro_perda["badge_texto"]},
                 {
                     "label": "Indicador de Óbito",
-                    "value": "Confirmado (Falecido)"
-                    if filtro_perda["is_deceased"]
-                    else "Não consta óbito",
+                    "value": (
+                        "Confirmado (falecido)"
+                        if filtro_perda["is_deceased"] is True
+                        else (
+                            "Ausência de óbito informada pelo provedor"
+                            if filtro_perda["is_deceased"] is False
+                            else "Não verificado"
+                        )
+                    ),
                 },
                 {"label": "Data do Óbito", "value": filtro_perda["death_date"] or "N/A"},
                 {"label": "Situação Receita Federal", "value": situacao_cpf},
                 {
                     "label": "Elegibilidade Consignado",
-                    "value": "Apto para Operação"
-                    if filtro_perda["elegivel_consignado"]
-                    else "Inapto / Expurgado",
+                    "value": (
+                        "Pré-requisito cadastral atendido"
+                        if filtro_perda["elegivel_consignado"]
+                        else (
+                            "Não verificado"
+                            if filtro_perda["status"] == "INCONCLUSIVO"
+                            else "Inapto / Expurgado"
+                        )
+                    ),
                 },
                 {
                     "label": "Tarifa de Consulta",
-                    "value": "Cobrança Padrão (1 Crédito)"
-                    if filtro_perda["deve_cobrar_credito"]
-                    else "Isento / Zero Créditos (Expurgo Automático)",
+                    "value": (
+                        "Cobrança condicionada a dado útil entregue"
+                        if filtro_perda["deve_cobrar_credito"] is not False
+                        else "Isento / zero créditos para expurgo confirmado"
+                    ),
                 },
             ],
             "items": [],
@@ -400,7 +424,7 @@ def enrich_person_live(
 
         consignado_data = {
             "elegivel": filtro_perda["elegivel_consignado"]
-            and selected_ben.get("elegivel_consignado", True),
+            and bool(selected_ben.get("elegivel_consignado", False)),
             "vinculoPrincipal": "INSS - Previdência Social",
             "numeroBeneficio": selected_ben.get("numero_beneficio") or "Não informado",
             "especieCodigo": selected_ben.get("especie_codigo"),
@@ -429,7 +453,7 @@ def enrich_person_live(
         )
         consignado_data = {
             "elegivel": filtro_perda["elegivel_consignado"]
-            and bool(selected_vinc.get("ativo", True)),
+            and selected_vinc.get("ativo") is True,
             "vinculoPrincipal": vinc_label,
             "numeroBeneficio": selected_vinc.get("matricula") or "N/A",
             "especieCodigo": "SIAPE" if selected_vinc.get("eh_servidor_publico") else "CLT",
@@ -456,13 +480,15 @@ def enrich_person_live(
         base_salary_val = float(renda_data.get("renda_estimada", 0))
         margens = calculate_margem_consignavel(base_salary_val)
         consignado_data = {
-            "elegivel": filtro_perda["elegivel_consignado"],
+            "elegivel": False,
             "vinculoPrincipal": "Renda Estimada pelo Bureau",
             "numeroBeneficio": "N/A",
             "especieCodigo": "RENDA_ESTIMADA",
             "especieDescricao": f"Faixa de Renda: {renda_data.get('faixa_renda') or 'Padrão'}",
-            "categoriaElegibilidade": "ANALISE_MANUAL",
-            "alerta": "Sem benefício INSS averbado. Margem estimada sobre poder aquisitivo.",
+            "categoriaElegibilidade": "ESTIMATIVA_NAO_ELEGIVEL",
+            "alerta": (
+                "Renda estimada não comprova benefício, vínculo, margem disponível ou averbação."
+            ),
             "salarioBase": margens["salario_base"],
             "margemEmprestimo35": margens["margem_emprestimo_35"],
             "margemRmcCartao5": margens["margem_rmc_cartao_5"],
@@ -560,17 +586,22 @@ def enrich_person_live(
         )
 
     # 6. Camada 3: Filtro de Não Me Perturbe (Anatel/Febraban)
-    total_bloqueados_nmp = len(bloqueios_nmp) if bloqueios_nmp else 0
+    total_bloqueados_nmp = len(bloqueios_nmp) if bloqueios_nmp is not None else 0
+    nmp_consultado = bloqueios_nmp is not None
     sections.append(
         {
             "id": "nao_me_perturbe",
             "title": "Camada 3: Higienização de Não Me Perturbe (Anatel / Febraban)",
             "description": "Proteção jurídica contra multas de telemarketing ativo em consignado",
-            "status": "available",
+            "status": "available" if nmp_consultado else "unavailable",
             "summary": (
                 f"{total_bloqueados_nmp} registro(s) de bloqueio no Não Me Perturbe."
                 if total_bloqueados_nmp > 0
-                else "Nenhum bloqueio no Não Me Perturbe cadastrado para os números do titular."
+                else (
+                    "Nenhum bloqueio foi localizado na fonte consultada."
+                    if nmp_consultado
+                    else "A fonte de bloqueio não foi consultada; o resultado é inconclusivo."
+                )
             ),
             "fields": [
                 {
@@ -580,15 +611,23 @@ def enrich_person_live(
                 {"label": "Telefones Bloqueados", "value": str(total_bloqueados_nmp)},
                 {
                     "label": "Risco de Multa (Procon)",
-                    "value": "Alto para ligações frias"
-                    if total_bloqueados_nmp > 0
-                    else "Baixo / Conforme",
+                    "value": (
+                        "Alto para ligações de oferta"
+                        if total_bloqueados_nmp > 0
+                        else ("Não identificado" if nmp_consultado else "Desconhecido")
+                    ),
                 },
                 {
                     "label": "Diretriz Operacional",
-                    "value": "Priorizar canais autorizados ou WhatsApp conforme ranking"
-                    if total_bloqueados_nmp > 0
-                    else "Discagem telefônica livre",
+                    "value": (
+                        "Não realizar oferta por telefone sem base legal e consentimento aplicáveis"
+                        if total_bloqueados_nmp > 0
+                        else (
+                            "Aplicar demais regras de consentimento antes do contato"
+                            if nmp_consultado
+                            else "Bloquear discagem automática até concluir a consulta"
+                        )
+                    ),
                 },
             ],
             "items": [],
@@ -652,7 +691,7 @@ def enrich_person_live(
                         "ddd": ddd,
                         "tipo": "Celular" if p.get("is_celular") else "Fixo",
                         "operadora": operadora,
-                        "whatsappDisponivel": False,
+                        "whatsappDisponivel": None,
                         "tipoConta": "NAO_VERIFICADO",
                         "jid": None,
                         "fotoPerfil": None,
@@ -673,11 +712,11 @@ def enrich_person_live(
         m_fields = []
         for item in mailing_top3:
             wa_desc = "WhatsApp Confirmado" if item["whatsappDisponivel"] else "Sem WhatsApp"
-            nmp_desc = (
-                "⛔ Não Me Perturbe"
-                if item["naoMePerturbe"]["inscrito_nao_me_perturbe"]
-                else "✅ Liberado Telemarketing"
-            )
+            nmp_status = item["naoMePerturbe"]["status_consulta"]
+            nmp_desc = {
+                "BLOQUEADO": "Bloqueio localizado",
+                "NAO_LOCALIZADO_NA_FONTE": "Bloqueio não localizado",
+            }.get(nmp_status, "Conformidade não verificada")
             score_info = f"(Score {item['scoreAssertividade']}/100)"
             m_fields.append(
                 {
@@ -700,15 +739,15 @@ def enrich_person_live(
             }
         )
 
-    # Seção WhatsApp Garantido
+    # Seção de verificação técnica de WhatsApp
     if whatsapp_garantido:
         sections.append(
             {
                 "id": "whatsapp_verified",
-                "title": "WhatsApp Verificado com Garantia",
+                "title": "Conta WhatsApp tecnicamente confirmada",
                 "description": "Verificação técnica ativa realizada na rede do WhatsApp",
                 "status": "available",
-                "summary": f"WhatsApp ativo e garantido: {whatsapp_garantido['numero']}.",
+                "summary": f"Conta localizada no probe: {whatsapp_garantido['numero']}.",
                 "fields": [
                     {"label": "Número WhatsApp", "value": whatsapp_garantido["numero"]},
                     {"label": "Conta WhatsApp", "value": whatsapp_garantido["tipoConta"]},
@@ -748,7 +787,7 @@ def enrich_person_live(
         sections.append(
             {
                 "id": "whatsapp_verified",
-                "title": "WhatsApp Verificado com Garantia",
+                "title": "Verificação técnica de WhatsApp",
                 "description": "Verificação técnica ativa na rede do WhatsApp",
                 "status": "empty",
                 "summary": "Nenhum dos telefones candidatos possui conta ativa no WhatsApp.",
@@ -764,7 +803,15 @@ def enrich_person_live(
     if telefones_analisados:
         tel_fields = []
         for idx, t in enumerate(telefones_analisados, 1):
-            status_desc = "WhatsApp Ativo" if t["whatsappDisponivel"] else "Sem WhatsApp"
+            status_desc = (
+                "WhatsApp confirmado"
+                if t["whatsappDisponivel"] is True
+                else (
+                    "Sem conta WhatsApp no probe"
+                    if t["whatsappDisponivel"] is False
+                    else "WhatsApp não verificado"
+                )
+            )
             tel_fields.append(
                 {
                     "label": f"Telefone {idx} ({t.get('operadora', 'N/A')})",
@@ -786,33 +833,37 @@ def enrich_person_live(
 
     # 8. Persistência Canônica no Banco de Dados do Tenant
     person_record = None
-    try:
-        with transaction.atomic():
-            person_record = create_person(
-                tenant=tenant,
-                full_name=nome_pessoa or f"Titular CPF {formatted_cpf_str}",
-                cpf=cleaned_digits,
-                hash_key=getattr(settings, "DATA_HASH_KEY", "dev-only-data-hash-key"),
-            )
-            if whatsapp_garantido and whatsapp_garantido.get("numeroE164"):
-                create_contact_point(
+    if nome_pessoa:
+        try:
+            with transaction.atomic():
+                person_record = create_person(
                     tenant=tenant,
-                    owner=person_record.entity,
-                    kind=ContactPoint.Kind.WHATSAPP,
-                    value=whatsapp_garantido["numeroE164"],
-                    status=ContactPoint.Status.CONFIRMED,
-                    capabilities={
-                        "whatsapp": True,
-                        "business": whatsapp_garantido["tipoConta"] == "WHATSAPP_BUSINESS",
-                        "jid": whatsapp_garantido.get("jid"),
-                        "foto_perfil": whatsapp_garantido.get("fotoPerfil"),
-                        "verified_at": whatsapp_garantido.get("verificadoEm"),
-                    },
+                    full_name=nome_pessoa,
+                    cpf=cleaned_digits,
+                    hash_key=settings.DATA_HASH_KEY,
                 )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "Falha ao persistir registro canônico de Person para CPF %s: %s", cleaned_digits, exc
-        )
+                if whatsapp_garantido and whatsapp_garantido.get("numeroE164"):
+                    create_contact_point(
+                        tenant=tenant,
+                        owner=person_record.entity,
+                        kind=ContactPoint.Kind.WHATSAPP,
+                        value=whatsapp_garantido["numeroE164"],
+                        status=ContactPoint.Status.CONFIRMED,
+                        capabilities={
+                            "whatsapp": True,
+                            "business": whatsapp_garantido["tipoConta"] == "WHATSAPP_BUSINESS",
+                            "jid": whatsapp_garantido.get("jid"),
+                            "foto_perfil": whatsapp_garantido.get("fotoPerfil"),
+                            "verified_at": whatsapp_garantido.get("verificadoEm"),
+                        },
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Falha ao persistir Person para CPF %s [%s]: %s",
+                mask_cpf(cleaned_digits),
+                correlation_tag(cleaned_digits),
+                exc.__class__.__name__,
+            )
 
     # 9. Cobertura e Resposta
     total_fields = sum(len(sec["fields"]) for sec in sections)
@@ -823,7 +874,7 @@ def enrich_person_live(
         "recordCount": len(telefones_analisados),
     }
 
-    # Resumo consolidado da Pessoa (exibindo CPF em texto claro!)
+    # Resumo consolidado. O CPF formatado é devolvido ao chamador, mas nunca vai para logs.
     primary_phone = (
         whatsapp_garantido["numero"]
         if whatsapp_garantido
@@ -835,10 +886,9 @@ def enrich_person_live(
     )
 
     person_summary = {
-        "id": str(person_record.entity.id) if person_record else str(uuid.uuid4()),
-        "name": nome_pessoa or f"Titular CPF {formatted_cpf_str}",
+        "id": str(person_record.entity.id) if person_record else "",
+        "name": nome_pessoa or "Pessoa não identificada pelo provedor",
         "cpf": formatted_cpf_str,
-        "cpfDigits": cleaned_digits,
         "birthDate": str(data_nascimento)[:10] if data_nascimento else None,
         "age": idade,
         "motherName": nome_mae or None,
@@ -874,7 +924,12 @@ def enrich_person_live(
             http_client=http_client,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Falha ao construir payload canônico para CPF %s: %s", cleaned_digits, exc)
+        logger.warning(
+            "Falha ao construir payload canônico para CPF %s [%s]: %s",
+            mask_cpf(cleaned_digits),
+            correlation_tag(cleaned_digits),
+            exc.__class__.__name__,
+        )
 
     return {
         "runId": run_id,

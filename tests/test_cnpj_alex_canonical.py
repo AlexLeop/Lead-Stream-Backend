@@ -186,11 +186,9 @@ def test_cnpj_alex_canonical_end_to_end(api_client: APIClient) -> None:
     assert len(qsa) == 1
     assert qsa[0]["nome"] == "ALEX LEOPOLDO DA SILVA"
     direct = qsa[0]["contatos_diretos"]
-    assert direct["ddd_celular"] == "21"
-    assert direct["celular_whatsapp"] == "96260135"
-    assert "-" not in direct["celular_whatsapp"]
-    assert "+" not in direct["celular_whatsapp"]
-    assert " " not in direct["celular_whatsapp"]
+    # Telefone cadastral da empresa não pode ser atribuído ao sócio sem evidência pessoal.
+    assert direct["ddd_celular"] is None
+    assert direct["celular_whatsapp"] is None
     assert qsa[0]["qualificacao_socio"] == "PROPRIETARIO"
     # LinkedIn is not fabricated when absent
     assert qsa[0]["contatos_diretos"]["linkedin_url"] is None

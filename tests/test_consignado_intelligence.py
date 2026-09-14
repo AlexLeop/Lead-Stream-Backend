@@ -47,12 +47,13 @@ def test_get_inss_species_info() -> None:
 
     sp_unk = get_inss_species_info("9999")
     assert sp_unk["categoria"] == "DESCONHECIDO"
+    assert sp_unk["elegivel"] is False
 
 
 def test_calculate_margem_consignavel() -> None:
     # Salário base de R$ 2.000,00
     res = calculate_margem_consignavel(2000.0)
-    assert res["elegivel"] is True
+    assert res["elegivel"] is None
     assert res["salario_base"] == 2000.0
     assert res["margem_emprestimo_35"] == 700.0  # 35% de 2000
     assert res["margem_rmc_cartao_5"] == 100.0  # 5% de 2000
@@ -124,7 +125,13 @@ def test_evaluate_nao_me_perturbe() -> None:
     res_free = evaluate_nao_me_perturbe("11999998888", block_records=blocks)
     assert res_free["inscrito_nao_me_perturbe"] is False
     assert res_free["seguro_para_discagem_fria"] is True
-    assert res_free["risco_multa"] == "BAIXO"
+    assert res_free["risco_multa"] == "NAO_IDENTIFICADO"
+    assert res_free["status_consulta"] == "NAO_LOCALIZADO_NA_FONTE"
+
+    res_unknown = evaluate_nao_me_perturbe("11999998888", block_records=None)
+    assert res_unknown["inscrito_nao_me_perturbe"] is None
+    assert res_unknown["seguro_para_discagem_fria"] is False
+    assert res_unknown["risco_multa"] == "DESCONHECIDO"
 
 
 def test_rank_mailing_telefones() -> None:
@@ -170,10 +177,10 @@ def test_rank_mailing_telefones() -> None:
     assert top1["whatsappDisponivel"] is True
     assert top1["naoMePerturbe"]["inscrito_nao_me_perturbe"] is False
     assert top1["ordemRecomendada"] == 1
-    assert top1["operadora"] in ("VIVO", "CLARO", "TIM")
+    assert top1["operadora"] == "DESCONHECIDA"
 
     # Verificar que o número bloqueado foi penalizado ou rotulado
     blocked_item = next((item for item in mailing if item["numeroRaw"] == "11977771111"), None)
     if blocked_item:
         assert blocked_item["naoMePerturbe"]["inscrito_nao_me_perturbe"] is True
-        assert blocked_item["recomendacao"] == "APENAS_WHATSAPP_COMPLIANCE"
+        assert blocked_item["recomendacao"] == "DESACONSELHADO"

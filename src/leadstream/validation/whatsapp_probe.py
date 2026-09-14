@@ -7,6 +7,8 @@ import httpx
 from django.conf import settings
 from django.utils import timezone
 
+from leadstream.common.redaction import mask_phone
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +38,7 @@ def format_e164_whatsapp_br(phone: str, ddd: str = "") -> str:
         detected_ddd = digits[:2]
         number_part = digits[2:]
     elif len(digits) in (8, 9):
-        detected_ddd = clean_ddd or "11"
+        detected_ddd = clean_ddd
         number_part = digits
     else:
         detected_ddd = clean_ddd
@@ -132,7 +134,11 @@ def check_evolution_api(
                 if client is None:
                     pic_client.close()
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Não foi possível obter foto de perfil para %s: %s", phone_e164, exc)
+            logger.debug(
+                "Não foi possível obter foto de perfil para %s: %s",
+                mask_phone(phone_e164),
+                exc.__class__.__name__,
+            )
 
     return {
         "exists": exists,
@@ -291,7 +297,7 @@ def verify_whatsapp_active(
         }
 
     except httpx.TimeoutException:
-        logger.warning("Timeout ao consultar probe de WhatsApp para o número %s", e164)
+        logger.warning("Timeout ao consultar probe de WhatsApp para o número %s", mask_phone(e164))
         return {
             "configurado": True,
             "disponivel": False,
@@ -327,7 +333,11 @@ def verify_whatsapp_active(
             "detalhes": f"Falha na comunicação com o gateway (HTTP {exc.response.status_code}).",
         }
     except Exception as exc:
-        logger.exception("Falha inesperada no probe de WhatsApp para %s: %s", e164, exc)
+        logger.exception(
+            "Falha inesperada no probe de WhatsApp para %s: %s",
+            mask_phone(e164),
+            exc.__class__.__name__,
+        )
         return {
             "configurado": True,
             "disponivel": False,

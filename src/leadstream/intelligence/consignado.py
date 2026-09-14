@@ -15,6 +15,14 @@ CATEGORY_RESTRITO_BPC = "RESTRITO_BPC"
 CATEGORY_BLOQUEADO_TEMPORARIO = "BLOQUEADO_TEMPORARIO"
 CATEGORY_INAPTO = "INAPTO"
 
+
+def _national_phone(value: str) -> str:
+    clean = only_digits(value)
+    if clean.startswith("55") and len(clean) in (12, 13):
+        return clean[2:]
+    return clean
+
+
 # Tabela Oficial de Espécies de Benefício do INSS
 INSS_ESPECIES: dict[str, dict[str, Any]] = {
     # Aposentadorias - Alto Potencial de Consignado (Apto)
@@ -222,7 +230,7 @@ def get_inss_species_info(code: str | int | None) -> dict[str, Any]:
         "codigo": clean_code,
         "descricao": f"Benefício INSS Espécie {clean_code}",
         "categoria": "DESCONHECIDO",
-        "elegivel": True,  # Permite análise manual
+        "elegivel": False,
         "alerta": f"Espécie {clean_code} não listada. Validar averbação no Dataprev/Meu INSS.",
         "observacao": "Consultar tabela de averbação da instituição financeira.",
     }
@@ -267,7 +275,7 @@ def calculate_margem_consignavel(base_salary: float | Decimal | int | None) -> d
 
     return {
         "salario_base": round(salary_val, 2),
-        "elegivel": True,
+        "elegivel": None,
         "margem_emprestimo_35": margem_35,
         "margem_rmc_cartao_5": margem_5_rmc,
         "margem_rcc_beneficio_5": margem_5_rcc,
@@ -276,7 +284,10 @@ def calculate_margem_consignavel(base_salary: float | Decimal | int | None) -> d
         "percentual_rmc": 5.0,
         "percentual_rcc": 5.0,
         "percentual_total": 45.0,
-        "mensagem": "Margem calculada pela Lei 14.431/2022 (35% + 5% RMC + 5% RCC).",
+        "mensagem": (
+            "Cenário matemático parametrizado; não confirma margem disponível, elegibilidade "
+            "ou averbação. Consulte a fonte oficial aplicável antes de ofertar crédito."
+        ),
     }
 
 
@@ -291,7 +302,7 @@ def evaluate_filtro_perda(
     cadastral na Receita Federal (Cancelada, Nula ou Suspensa).
     Leads expurgados por óbito NÃO geram cobrança de créditos.
     """
-    clean_tax_status = (tax_status or "REGULAR").upper().strip()
+    clean_tax_status = (tax_status or "DESCONHECIDA").upper().strip()
 
     # 1. Falecimento confirmado
     if is_deceased or bool(death_date):
@@ -307,10 +318,7 @@ def evaluate_filtro_perda(
             "deve_cobrar_credito": False,
             "badge_texto": "💀 Óbito Detectado (Expurgado)",
             "badge_variante": "danger",
-            "fontes_consultadas": [
-                "BASE_CADASTRO_CENTRAL_RFB",
-                "SISTEMA_NACIONAL_OBITOS_RCPN",
-            ],
+            "fontes_consultadas": ["PROVEDOR_CADASTRAL"],
         }
 
     # 2. Receita Federal Irregular
@@ -325,13 +333,25 @@ def evaluate_filtro_perda(
             "deve_cobrar_credito": False,
             "badge_texto": f"⚠️ CPF {clean_tax_status}",
             "badge_variante": "warning",
-            "fontes_consultadas": [
-                "BASE_CADASTRO_CENTRAL_RFB",
-                "SISTEMA_NACIONAL_OBITOS_RCPN",
-            ],
+            "fontes_consultadas": ["PROVEDOR_CADASTRAL"],
         }
 
-    # 3. Regular
+    # Ausência de sinal ou situação diferente de REGULAR não comprova elegibilidade.
+    if clean_tax_status != "REGULAR" or is_deceased is None:
+        return {
+            "status": "INCONCLUSIVO",
+            "is_deceased": None,
+            "death_date": None,
+            "tax_status": clean_tax_status or "DESCONHECIDA",
+            "elegivel_consignado": False,
+            "motivo_expurgo": "Dados insuficientes para confirmar situação cadastral e óbito.",
+            "deve_cobrar_credito": None,
+            "badge_texto": "Situação não confirmada",
+            "badge_variante": "secondary",
+            "fontes_consultadas": [],
+        }
+
+    # 3. Regularidade explicitamente informada pelo provedor
     return {
         "status": "REGULAR",
         "is_deceased": False,
@@ -342,10 +362,7 @@ def evaluate_filtro_perda(
         "deve_cobrar_credito": True,
         "badge_texto": "✅ Lead Apto & Regular",
         "badge_variante": "success",
-        "fontes_consultadas": [
-            "BASE_CADASTRO_CENTRAL_RFB",
-            "SISTEMA_NACIONAL_OBITOS_RCPN",
-        ],
+        "fontes_consultadas": ["PROVEDOR_CADASTRAL"],
     }
 
 
@@ -360,38 +377,49 @@ def evaluate_nao_me_perturbe(
     phone_digits = only_digits(phone)
     if not phone_digits:
         return {
-            "inscrito_nao_me_perturbe": False,
-            "entidade": "NENHUMA",
+            "status_consulta": "INCONCLUSIVO",
+            "inscrito_nao_me_perturbe": None,
+            "entidade": None,
             "data_bloqueio": None,
             "motivo": "Número inválido ou ausente.",
             "seguro_para_discagem_fria": False,
-            "risco_multa": "BAIXO",
+            "risco_multa": "DESCONHECIDO",
             "badge_texto": "Número Inválido",
             "badge_variante": "secondary",
         }
 
-    if block_records:
+    if block_records is not None:
         for rec in block_records:
             if not isinstance(rec, dict):
                 continue
             rec_phone = only_digits(
                 str(rec.get("phone") or rec.get("number") or rec.get("telefone") or "")
             )
-            is_blocked = bool(
-                rec.get("blocked")
-                or rec.get("is_blocked")
-                or rec.get("bloqueado")
-                or rec.get("do_not_call")
-                or rec.get("DoNotCall")
+            raw_blocked = next(
+                (
+                    rec.get(key)
+                    for key in (
+                        "blocked",
+                        "is_blocked",
+                        "bloqueado",
+                        "do_not_call",
+                        "DoNotCall",
+                    )
+                    if rec.get(key) is not None
+                ),
+                None,
             )
+            is_blocked = raw_blocked is True or str(raw_blocked).strip().casefold() in {
+                "true",
+                "1",
+                "sim",
+                "yes",
+            }
 
-            # Match por terminação do número ou igualdade
-            if is_blocked and (
-                rec_phone == phone_digits
-                or (len(phone_digits) >= 8 and rec_phone.endswith(phone_digits[-8:]))
-            ):
+            if is_blocked and _national_phone(rec_phone) == _national_phone(phone_digits):
                 data_bloq = rec.get("block_date") or rec.get("data_bloqueio") or rec.get("Date")
                 return {
+                    "status_consulta": "BLOQUEADO",
                     "inscrito_nao_me_perturbe": True,
                     "entidade": str(rec.get("entity") or rec.get("entidade") or "ANATEL_FEBRABAN"),
                     "data_bloqueio": str(data_bloq)[:10] if data_bloq else None,
@@ -404,15 +432,28 @@ def evaluate_nao_me_perturbe(
                     "badge_variante": "danger",
                 }
 
+        return {
+            "status_consulta": "NAO_LOCALIZADO_NA_FONTE",
+            "inscrito_nao_me_perturbe": False,
+            "entidade": "FONTE_CONSULTADA",
+            "data_bloqueio": None,
+            "motivo": "Nenhum bloqueio localizado na fonte consultada neste instante.",
+            "seguro_para_discagem_fria": True,
+            "risco_multa": "NAO_IDENTIFICADO",
+            "badge_texto": "Bloqueio não localizado",
+            "badge_variante": "success",
+        }
+
     return {
-        "inscrito_nao_me_perturbe": False,
-        "entidade": "NENHUMA",
+        "status_consulta": "NAO_CONSULTADO",
+        "inscrito_nao_me_perturbe": None,
+        "entidade": None,
         "data_bloqueio": None,
-        "motivo": "Número liberado para prospecção e discagem telefônica.",
-        "seguro_para_discagem_fria": True,
-        "risco_multa": "BAIXO",
-        "badge_texto": "✅ Liberado para Telemarketing",
-        "badge_variante": "success",
+        "motivo": "Fonte de bloqueio não consultada; não autorizar discagem automática.",
+        "seguro_para_discagem_fria": False,
+        "risco_multa": "DESCONHECIDO",
+        "badge_texto": "Conformidade não verificada",
+        "badge_variante": "secondary",
     }
 
 
@@ -448,7 +489,7 @@ def rank_mailing_telefones(
             detected_ddd = clean_digits[:2]
             number_part = clean_digits[2:]
         elif len(clean_digits) in (8, 9):
-            detected_ddd = clean_ddd if clean_ddd else "11"
+            detected_ddd = clean_ddd
             number_part = clean_digits
         else:
             detected_ddd = clean_ddd
@@ -465,9 +506,15 @@ def rank_mailing_telefones(
             or get_phone_operator_hint(detected_ddd, number_part)
         )
 
-        has_wa = bool(
-            item.get("whatsappDisponivel") or item.get("has_whatsapp") or item.get("tem_whatsapp")
+        raw_has_wa = next(
+            (
+                item.get(key)
+                for key in ("whatsappDisponivel", "has_whatsapp", "tem_whatsapp")
+                if item.get(key) is not None
+            ),
+            None,
         )
+        has_wa = raw_has_wa is True
         tipo_conta_wa = str(item.get("tipoConta") or item.get("tipo_conta") or "NENHUMA")
 
         # Avaliar Não Me Perturbe
@@ -481,9 +528,9 @@ def rank_mailing_telefones(
         if has_wa:
             score += 35
         # Livre do Não Me Perturbe
-        if not nmp_status["inscrito_nao_me_perturbe"]:
+        if nmp_status["status_consulta"] == "NAO_LOCALIZADO_NA_FONTE":
             score += 30
-        else:
+        elif nmp_status["status_consulta"] == "BLOQUEADO":
             score -= 40  # Penalidade expressiva
         # Móvel
         if is_celular:
@@ -501,22 +548,21 @@ def rank_mailing_telefones(
         score = max(0, min(100, score))
 
         # Recomendação de canal
-        if nmp_status["inscrito_nao_me_perturbe"]:
-            if has_wa:
-                recomendacao = "APENAS_WHATSAPP_COMPLIANCE"
-                rotulo_canal = "⚠️ Apenas WhatsApp (Bloqueado para Voz)"
-            else:
-                recomendacao = "DESACONSELHADO"
-                rotulo_canal = "⛔ Desaconselhado (Bloqueado no Não Me Perturbe)"
+        if nmp_status["status_consulta"] == "BLOQUEADO":
+            recomendacao = "DESACONSELHADO"
+            rotulo_canal = "Bloqueado para oferta por telefone"
+        elif not nmp_status["seguro_para_discagem_fria"]:
+            recomendacao = "AGUARDAR_VALIDACAO_COMPLIANCE"
+            rotulo_canal = "Conformidade ainda não verificada"
         elif has_wa:
             recomendacao = "DISCAGEM_E_WHATSAPP"
-            rotulo_canal = "🌟 Prioridade Máxima (Voz & WhatsApp Liberados)"
+            rotulo_canal = "Voz liberada; WhatsApp tecnicamente confirmado"
         elif is_celular:
             recomendacao = "DISCAGEM_VOZ_APENAS"
-            rotulo_canal = "📞 Discagem Telefônica Liberada"
+            rotulo_canal = "Discagem liberada; WhatsApp não confirmado"
         else:
             recomendacao = "DISCAGEM_VOZ_FIXO"
-            rotulo_canal = "☎️ Fixo (Discagem Liberada)"
+            rotulo_canal = "Telefone fixo com bloqueio não localizado"
 
         # Formatação amigável do número
         if len(number_part) == 9:
@@ -534,7 +580,7 @@ def rank_mailing_telefones(
         else:
             num_fmt = f"({detected_ddd}) {number_part}" if detected_ddd else number_part
 
-        e164 = f"+55{full_digits}"
+        e164 = f"+55{full_digits}" if detected_ddd else ""
 
         scored_item = {
             "numeroFormatado": num_fmt,
@@ -545,7 +591,9 @@ def rank_mailing_telefones(
             "operadora": operadora,
             "whatsappDisponivel": has_wa,
             "tipoConta": tipo_conta_wa,
-            "linkWhatsApp": f"https://wa.me/{e164.lstrip('+')}" if has_wa else None,
+            "linkWhatsApp": (
+                f"https://wa.me/{e164.lstrip('+')}" if has_wa and e164 else None
+            ),
             "naoMePerturbe": nmp_status,
             "scoreAssertividade": score,
             "recomendacao": recomendacao,

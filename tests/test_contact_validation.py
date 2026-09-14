@@ -28,15 +28,16 @@ def test_is_disposable_domain():
 def test_classify_email_type():
     assert classify_email_type("contato@empresa.com.br") == "GENERICO_RECEITA"
     assert classify_email_type("financeiro@empresa.com.br") == "DEPARTAMENTAL"
-    assert classify_email_type("alexandre.leopoldo@empresa.com.br") == "DIRETO_DECISOR"
+    assert classify_email_type("alexandre.leopoldo@empresa.com.br") == "PESSOAL_NAO_ATRIBUIDO"
     assert classify_email_type("usuario@gmail.com") == "GRATUITO"
 
 
 def test_email_technical_validation():
     res = validate_email_technical("lx.leopoldo@outlook.com")
     assert res["endereco"] == "lx.leopoldo@outlook.com"
-    assert res["status"] in ("ENTREGAVEL", "ENTREGAVEL_VALIDADO")
+    assert res["status"] == "DOMINIO_COM_MX"
     assert res["mx_found"] is True
+    assert res["smtp_check"] is False
     assert res["disposable"] is False
 
 
@@ -56,8 +57,10 @@ def test_phone_validation_mobile():
     assert "-" not in res["numero"]
     assert "+" not in res["numero"]
     assert " " not in res["numero"]
-    assert res["whatsapp_status"]["tem_whatsapp"] is True
-    assert res["status_linha"] == "ATIVA"
+    assert res["whatsapp_status"]["tem_whatsapp"] is None
+    assert res["status_linha"] == "DESCONHECIDA"
+    assert res["validado"] is False
+    assert res["formato_valido"] is True
 
 
 def test_phone_validation_fixed():
@@ -68,7 +71,8 @@ def test_phone_validation_fixed():
     assert "-" not in res["numero"]
     assert "+" not in res["numero"]
     assert " " not in res["numero"]
-    assert res["whatsapp_status"]["tem_whatsapp"] is False
+    assert res["whatsapp_status"]["tem_whatsapp"] is None
+    assert res["status_linha"] == "DESCONHECIDA"
 
 
 def test_phone_validation_no_special_chars():

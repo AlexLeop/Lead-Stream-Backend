@@ -86,7 +86,8 @@ def classify_email_type(email: str) -> str:
         return "GENERICO_RECEITA"
     if local_part in DEPARTMENTAL_LOCALPARTS:
         return "DEPARTAMENTAL"
-    return "DIRETO_DECISOR"
+    # Um local-part nominal sugere pessoa, mas não prova identidade nem vínculo com decisor.
+    return "PESSOAL_NAO_ATRIBUIDO"
 
 
 def validate_email_technical(email: str, deep_smtp: bool = False) -> dict[str, Any]:
@@ -125,7 +126,7 @@ def validate_email_technical(email: str, deep_smtp: bool = False) -> dict[str, A
         smtp_res = verify_email_smtp_deep(clean)
         is_deliv = bool(smtp_res["is_deliverable"])
         if is_deliv:
-            status = "ENTREGAVEL_VALIDADO" if tipo == "DIRETO_DECISOR" else "ENTREGAVEL"
+            status = "CAIXA_POSTAL_CONFIRMADA"
         elif smtp_res["status"] == DeliverabilityStatus.UNDELIVERABLE_MAILBOX_NOT_FOUND:
             status = "INDELIVERAVEL"
         else:
@@ -145,18 +146,15 @@ def validate_email_technical(email: str, deep_smtp: bool = False) -> dict[str, A
     mx_info = check_domain_mx(domain)
     mx_found = mx_info["mx_found"]
 
-    status = "ENTREGAVEL" if mx_found else "INDELIVERAVEL"
-    if tipo == "DIRETO_DECISOR" and mx_found:
-        status = "ENTREGAVEL_VALIDADO"
-
-    score = 0.98 if (mx_found and tipo != "GRATUITO") else (0.85 if mx_found else 0.1)
+    status = "DOMINIO_COM_MX" if mx_found else "DOMINIO_SEM_MX"
+    score = 0.6 if mx_found else 0.1
 
     return {
         "endereco": clean,
         "tipo": tipo,
         "status": status,
         "mx_found": mx_found,
-        "smtp_check": mx_found,
+        "smtp_check": False,
         "disposable": False,
         "catch_all": False,
         "score_confiabilidade": score,
