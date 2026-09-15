@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
@@ -11,7 +13,7 @@ from leadstream.tenancy.models import Tenant
 @pytest.mark.django_db
 class TestAuthMeAndSwitchWorkspaceAPI:
     @pytest.fixture(autouse=True)
-    def setup_entities(self):
+    def setup_entities(self) -> None:
         self.tenant_a = Tenant.objects.create(slug="workspace-a", name="Workspace Alpha")
         self.tenant_b = Tenant.objects.create(slug="workspace-b", name="Workspace Beta")
 
@@ -38,11 +40,11 @@ class TestAuthMeAndSwitchWorkspaceAPI:
 
         self.client = APIClient()
 
-    def test_auth_me_unauthenticated_returns_401(self):
+    def test_auth_me_unauthenticated_returns_401(self) -> None:
         response = self.client.get("/api/v1/auth/me/")
         assert response.status_code == 401
 
-    def test_auth_me_with_jwt_returns_profile_and_active_workspace(self):
+    def test_auth_me_with_jwt_returns_profile_and_active_workspace(self) -> None:
         token = RefreshToken.for_user(self.user).access_token
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 
@@ -63,7 +65,7 @@ class TestAuthMeAndSwitchWorkspaceAPI:
         assert data["workspaces"][0]["slug"] == "workspace-a"
         assert "batches:view" in data["permissions"]
 
-    def test_auth_me_with_api_key_returns_machine_profile(self):
+    def test_auth_me_with_api_key_returns_machine_profile(self) -> None:
         _api_key, raw_key = generate_api_key(
             tenant=self.tenant_a,
             name="CI Integration Key",
@@ -80,7 +82,7 @@ class TestAuthMeAndSwitchWorkspaceAPI:
         assert data["active_workspace"]["role"] == "ADMIN"
         assert "security:manage_keys" in data["permissions"]
 
-    def test_switch_workspace_success_when_user_has_membership(self):
+    def test_switch_workspace_success_when_user_has_membership(self) -> None:
         # Concede acesso ao Workspace B como ADMIN
         WorkspaceMembership.objects.create(
             user=self.user,
@@ -111,7 +113,7 @@ class TestAuthMeAndSwitchWorkspaceAPI:
         assert me_response.status_code == 200
         assert me_response.json()["active_workspace"]["id"] == str(self.tenant_b.id)
 
-    def test_switch_workspace_denied_when_user_has_no_membership(self):
+    def test_switch_workspace_denied_when_user_has_no_membership(self) -> None:
         token = RefreshToken.for_user(self.user).access_token
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 
@@ -125,7 +127,7 @@ class TestAuthMeAndSwitchWorkspaceAPI:
         data = response.json()
         assert data["code"] == "WORKSPACE_ACCESS_DENIED"
 
-    def test_switch_workspace_allowed_for_superuser_anywhere(self):
+    def test_switch_workspace_allowed_for_superuser_anywhere(self) -> None:
         token = RefreshToken.for_user(self.superuser).access_token
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 
@@ -138,7 +140,7 @@ class TestAuthMeAndSwitchWorkspaceAPI:
         data = response.json()
         assert data["active_workspace"]["id"] == str(self.tenant_b.id)
 
-    def test_auth_me_with_superuser_returns_super_admin(self):
+    def test_auth_me_with_superuser_returns_super_admin(self) -> None:
         token = RefreshToken.for_user(self.superuser).access_token
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 

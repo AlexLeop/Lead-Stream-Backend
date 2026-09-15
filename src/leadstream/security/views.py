@@ -155,7 +155,7 @@ class TokenRefreshAuditView(TokenRefreshView):
     throttle_classes = (AuthRefreshRateThrottle,)
 
     def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
-        request_data = request.data if isinstance(request.data, dict) else {}
+        request_data: dict[str, Any] = request.data if isinstance(request.data, dict) else {}
         raw_refresh = request_data.get("refresh") or request.COOKIES.get(
             settings.AUTH_REFRESH_COOKIE_NAME
         )
