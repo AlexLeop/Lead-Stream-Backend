@@ -28,3 +28,21 @@ def test_auth_login_rate_limiting_throttle() -> None:
     assert blocked_response.status_code == 429
     data = blocked_response.json()
     assert "detail" in data
+
+
+@pytest.mark.django_db
+def test_throttle_graceful_degradation_when_cache_offline() -> None:
+    from unittest.mock import patch
+
+    client = APIClient()
+    with patch(
+        "django.core.cache.backends.locmem.LocMemCache.get",
+        side_effect=ConnectionError("Cache connection lost"),
+    ):
+        # Requisição deve degradar graciosamente para 401 sem falhar com 500
+        response = client.post(
+            "/api/v1/auth/token/",
+            {"username": "nonexistent_user", "password": "wrong_password"},
+            format="json",
+        )
+        assert response.status_code == 401

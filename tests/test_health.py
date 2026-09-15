@@ -61,6 +61,21 @@ def test_dependencias_opcionais_degradam_sem_bloquear_api(client: Client) -> Non
     }
 
 
+@pytest.mark.django_db
+def test_readiness_e_liveness_resilientes_a_falha_de_cache_sem_throttling(client: Client) -> None:
+    with patch(
+        "django.core.cache.backends.locmem.LocMemCache.get",
+        side_effect=ConnectionError("Cache offline"),
+    ):
+        resp_live = client.get("/health/live")
+        assert resp_live.status_code == 200
+        assert resp_live.json() == {"status": "ok"}
+
+        resp_ready = client.get("/health/ready")
+        assert resp_ready.status_code == 200
+        assert resp_ready.json() == {"status": "ok"}
+
+
 def test_documentation_endpoints_accessible_without_auth(client: Client) -> None:
     import json
 

@@ -5,7 +5,12 @@ from typing import Any
 from django.views.generic import TemplateView
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+    throttle_classes,
+)
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -21,6 +26,7 @@ from .health import HealthResult, check_database, check_dependencies
 @api_view(["GET"])
 @authentication_classes([])
 @permission_classes([])
+@throttle_classes([])
 def live(request: Request) -> Response:
     del request
     return Response({"status": "ok"})
@@ -35,6 +41,7 @@ def live(request: Request) -> Response:
 @api_view(["GET"])
 @authentication_classes([])
 @permission_classes([])
+@throttle_classes([])
 def ready(request: Request) -> Response:
     del request
     database = check_database()
@@ -54,6 +61,7 @@ def ready(request: Request) -> Response:
 @api_view(["GET"])
 @authentication_classes([])
 @permission_classes([])
+@throttle_classes([])
 def dependencies(request: Request) -> Response:
     del request
     results = check_dependencies()

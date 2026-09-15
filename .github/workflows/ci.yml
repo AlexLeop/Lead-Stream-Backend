@@ -26,6 +26,15 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 12
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
 
     steps:
       - name: Baixar código
@@ -46,6 +55,7 @@ jobs:
           DJANGO_SETTINGS_MODULE: config.settings.development
           DJANGO_ALLOWED_HOSTS: testserver
           DATABASE_URL: postgresql://leadstream_ci:ci-only-password@localhost:5432/leadstream_ci
+          REDIS_URL: redis://localhost:6379/0
         run: |
           .venv/bin/python manage.py migrate --noinput
           .venv/bin/python manage.py shell -c "from django.test import Client; c = Client(); assert c.get('/health/ready').status_code == 200; assert c.get('/api/v1/workspace/').status_code == 401"
