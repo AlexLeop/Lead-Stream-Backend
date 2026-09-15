@@ -147,6 +147,35 @@ export interface Lead {
   facebookUrl?: string;
 }
 
+export interface LeadSearchParams {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  leadType?: 'PJ' | 'PF';
+  datasetId?: string;
+  uf?: string;
+  city?: string;
+  cnae?: string;
+  companySize?: string;
+  registrationStatus?: string;
+  seniority?: string;
+  title?: string;
+  emailStatus?: 'all' | 'verified' | 'catchall' | 'invalid';
+  hasEmail?: boolean;
+  hasPhone?: boolean;
+}
+
+export interface LeadSearchResponse {
+  count: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  nextPage: number | null;
+  previousPage: number | null;
+  facets: { PJ: number; PF: number };
+  results: Lead[];
+}
+
 export interface PixLookupStatus {
   enabled: boolean;
   termsApproved: boolean;

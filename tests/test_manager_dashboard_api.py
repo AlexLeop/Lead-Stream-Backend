@@ -42,7 +42,8 @@ def test_manager_dashboard_endpoints() -> None:
     # 4. Leads & lookup
     res_leads = client.get("/api/v1/leads")
     assert res_leads.status_code == 200
-    assert isinstance(res_leads.data, list)
+    assert isinstance(res_leads.data["results"], list)
+    assert res_leads.data["page"] == 1
 
     res_lookup = client.get("/api/v1/leads/lookup?q=empresa")
     assert res_lookup.status_code == 404

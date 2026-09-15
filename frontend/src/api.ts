@@ -26,6 +26,8 @@ import type {
   ImportPayload,
   ImportResult,
   Lead,
+  LeadSearchParams,
+  LeadSearchResponse,
   ListLeadsResponse,
   LeadSet,
   WorkspaceSummary,
@@ -330,7 +332,28 @@ export const api = {
       lists: dashboard.summary.lists,
     };
   },
-  leads: () => request<Lead[]>('/leads'),
+  leads: (params: LeadSearchParams = {}) => {
+    const query = new URLSearchParams();
+    if (params.page) query.set('page', String(params.page));
+    if (params.pageSize) query.set('page_size', String(params.pageSize));
+    if (params.q) query.set('q', params.q);
+    if (params.leadType) query.set('lead_type', params.leadType);
+    if (params.datasetId) query.set('dataset_id', params.datasetId);
+    if (params.uf) query.set('uf', params.uf);
+    if (params.city) query.set('city', params.city);
+    if (params.cnae) query.set('cnae', params.cnae);
+    if (params.companySize) query.set('company_size', params.companySize);
+    if (params.registrationStatus) query.set('registration_status', params.registrationStatus);
+    if (params.seniority) query.set('seniority', params.seniority);
+    if (params.title) query.set('title', params.title);
+    if (params.emailStatus && params.emailStatus !== 'all') {
+      query.set('email_status', params.emailStatus);
+    }
+    if (params.hasEmail !== undefined) query.set('has_email', String(params.hasEmail));
+    if (params.hasPhone !== undefined) query.set('has_phone', String(params.hasPhone));
+    const suffix = query.toString();
+    return request<LeadSearchResponse>(`/leads${suffix ? `?${suffix}` : ''}`);
+  },
   lookupLead: (query: string) => request<Lead>(`/leads/lookup?q=${encodeURIComponent(query)}`),
   revealPhone: (id: string) => request<Lead>(`/leads/${encodeURIComponent(id)}/reveal-phone`, { method: 'PATCH' }),
   datasets: () => request<LeadSet[]>('/datasets'),

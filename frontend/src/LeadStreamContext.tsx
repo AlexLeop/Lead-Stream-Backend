@@ -124,7 +124,7 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
     try {
       await Promise.allSettled([
         refreshWallet(),
-        api.leads().then(setLeads),
+        api.leads({ pageSize: 100 }).then((page) => setLeads(page.results)),
         api.datasets().then(setDatasets),
         api.lists().then(setLists),
         api.activities().then(setActivities),

@@ -42,6 +42,7 @@ from leadstream.security.models import SecurityAuditLog
 from leadstream.security.permissions import TenantAccessPermission
 
 from .exporter import stream_activation_list_csv
+from .lead_search import search_leads
 from .models import ActivationList, ActivationListMember
 
 
@@ -174,20 +175,45 @@ def _email_status(contact: ContactPoint | None) -> str:
     return "Não verificado"
 
 
-def _preferred_contact(entity_id: uuid.UUID, kinds: tuple[str, ...]) -> ContactPoint | None:
+def _preferred_contact(entity: Entity, kinds: tuple[str, ...]) -> ContactPoint | None:
+    prefetched = getattr(entity, "_lead_contacts", None)
+    if prefetched is not None:
+        return next((contact for contact in prefetched if contact.kind in kinds), None)
     return (
-        ContactPoint.objects.filter(owner_id=entity_id, kind__in=kinds)
+        ContactPoint.objects.filter(owner=entity, kind__in=kinds)
         .exclude(status__in=(ContactPoint.Status.SUPPRESSED, ContactPoint.Status.EXPIRED))
         .order_by("-last_observed_at", "-created_at")
         .first()
     )
 
 
-def _preferred_social(entity_id: uuid.UUID, network: str) -> SocialProfile | None:
+def _preferred_social(entity: Entity, network: str) -> SocialProfile | None:
+    prefetched = getattr(entity, "_lead_socials", None)
+    if prefetched is not None:
+        return next((profile for profile in prefetched if profile.network == network), None)
     return (
-        SocialProfile.objects.filter(owner_id=entity_id, network=network)
+        SocialProfile.objects.filter(owner=entity, network=network)
         .exclude(status__in=(ContactPoint.Status.SUPPRESSED, ContactPoint.Status.EXPIRED))
         .order_by("-last_observed_at", "-created_at")
+        .first()
+    )
+
+
+def _preferred_establishment(company: Company) -> Establishment | None:
+    prefetched = getattr(company, "_lead_establishments", None)
+    if prefetched is not None:
+        return prefetched[0] if prefetched else None
+    return company.establishments.order_by("-is_headquarters", "created_at").first()
+
+
+def _active_relationship(person: Person) -> Relationship | None:
+    prefetched = getattr(person, "_lead_relationships", None)
+    if prefetched is not None:
+        return prefetched[0] if prefetched else None
+    return (
+        person.relationships.filter(ended_on__isnull=True)
+        .select_related("company__entity")
+        .order_by("-updated_at")
         .first()
     )
 
@@ -219,14 +245,15 @@ def _contact_confidence(*contacts: ContactPoint | None) -> int:
 def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
     person = relationship.person
     company = relationship.company
+    entity = person.entity
     entity_id = person.entity_id
-    email = _preferred_contact(entity_id, (ContactPoint.Kind.EMAIL,))
+    email = _preferred_contact(entity, (ContactPoint.Kind.EMAIL,))
     phone = _preferred_contact(
-        entity_id,
+        entity,
         (ContactPoint.Kind.WHATSAPP, ContactPoint.Kind.PHONE),
     )
-    linkedin = _preferred_social(entity_id, SocialProfile.Network.LINKEDIN)
-    establishment = company.establishments.order_by("-is_headquarters", "created_at").first()
+    linkedin = _preferred_social(entity, SocialProfile.Network.LINKEDIN)
+    establishment = _preferred_establishment(company)
     observed_at = max(
         [
             value
@@ -250,6 +277,181 @@ def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
         "title": relationship.observed_title,
         "seniority": seniority_label,
         "company": company.legal_name,
+        "domain": "",
+        "location": " / ".join(
+            value for value in (establishment.city, establishment.state) if value
+        )
+        if establishment
+        else "",
+        "city": establishment.city if establishment else "",
+        "state": establishment.state if establishment else "",
+        "country": "Brasil",
+        "email": email.normalized_value if email else "",
+        "phone": phone.normalized_value if phone else "",
+        "status": _email_status(email),
+        "companySize": company.company_size,
+        "employeeCount": 0,
+        "industry": company.primary_cnae_description,
+        "annualRevenue": "",
+        "fundingStage": "",
+        "technologies": [],
+        "intentScore": 0,
+        "fitScore": 0,
+        "opportunityScore": 0,
+        "dataConfidenceScore": _contact_confidence(email, phone),
+        "freshnessScore": max(_freshness_score(email), _freshness_score(phone)),
+        "intentTopic": "",
+        "initials": "".join(part[:1] for part in person.full_name.split()[:2]).upper(),
+        "linkedinUrl": linkedin.normalized_url if linkedin else "",
+        "enriched": bool(email or phone or linkedin),
+        "identityEvidenceStatus": "OBSERVED",
+        "emailEvidenceStatus": _evidence_status(email),
+        "phoneEvidenceStatus": _evidence_status(phone),
+        "whatsappEvidenceStatus": (
+            _evidence_status(phone)
+            if phone and phone.kind == ContactPoint.Kind.WHATSAPP
+            else "ABSENT"
+        ),
+        "cpf": person.cpf_masked,
+        "cnpj": establishment.cnpj if establishment else company.cnpj_root,
+        "razaoSocial": company.legal_name,
+        "nomeFantasia": company.trade_name,
+        "situacaoCadastral": company.registration_status,
+        "cnae": company.primary_cnae,
+        "capitalSocial": str(company.share_capital) if company.share_capital is not None else "",
+        "naturezaJuridica": company.legal_nature,
+        "papelCompra": relationship.buying_role,
+        "observedAt": observed_at.isoformat() if observed_at else None,
+        "createdAt": person.created_at.isoformat(),
+        "updatedAt": person.updated_at.isoformat(),
+    }
+
+
+def _company_lead(company: Company) -> dict[str, Any]:
+    entity = company.entity
+    entity_id = company.entity_id
+    email = _preferred_contact(entity, (ContactPoint.Kind.EMAIL,))
+    phone = _preferred_contact(
+        entity,
+        (ContactPoint.Kind.WHATSAPP, ContactPoint.Kind.PHONE),
+    )
+    linkedin = _preferred_social(entity, SocialProfile.Network.LINKEDIN)
+    instagram = _preferred_social(entity, SocialProfile.Network.INSTAGRAM)
+    facebook = _preferred_social(entity, SocialProfile.Network.FACEBOOK)
+    establishment = _preferred_establishment(company)
+    observed_at = max(
+        [
+            value
+            for value in (
+                company.registry_observed_at,
+                email.last_observed_at if email else None,
+                phone.last_observed_at if phone else None,
+                linkedin.last_observed_at if linkedin else None,
+            )
+            if value is not None
+        ],
+        default=None,
+    )
+    return {
+        "id": str(entity_id),
+        "leadType": "PJ",
+        "name": company.trade_name or company.legal_name,
+        "title": "",
+        "seniority": "Não informado",
+        "company": company.legal_name,
+        "domain": "",
+        "location": " / ".join(
+            value for value in (establishment.city, establishment.state) if value
+        )
+        if establishment
+        else "",
+        "city": establishment.city if establishment else "",
+        "state": establishment.state if establishment else "",
+        "country": "Brasil",
+        "email": email.normalized_value if email else "",
+        "phone": phone.normalized_value if phone else "",
+        "status": _email_status(email),
+        "companySize": company.company_size,
+        "employeeCount": 0,
+        "industry": company.primary_cnae_description,
+        "annualRevenue": "",
+        "fundingStage": "",
+        "technologies": [],
+        "intentScore": 0,
+        "fitScore": 0,
+        "opportunityScore": 0,
+        "dataConfidenceScore": _contact_confidence(email, phone),
+        "freshnessScore": max(_freshness_score(email), _freshness_score(phone)),
+        "intentTopic": "",
+        "initials": (company.trade_name or company.legal_name)[:2].upper(),
+        "linkedinUrl": linkedin.normalized_url if linkedin else "",
+        "enriched": bool(email or phone or linkedin),
+        "identityEvidenceStatus": "OBSERVED",
+        "emailEvidenceStatus": _evidence_status(email),
+        "phoneEvidenceStatus": _evidence_status(phone),
+        "whatsappEvidenceStatus": (
+            _evidence_status(phone)
+            if phone and phone.kind == ContactPoint.Kind.WHATSAPP
+            else "ABSENT"
+        ),
+        "cnpj": establishment.cnpj if establishment else company.cnpj_root,
+        "razaoSocial": company.legal_name,
+        "nomeFantasia": company.trade_name,
+        "situacaoCadastral": company.registration_status,
+        "cnae": company.primary_cnae,
+        "cnaesSecundarios": company.secondary_cnaes,
+        "capitalSocial": str(company.share_capital) if company.share_capital is not None else "",
+        "naturezaJuridica": company.legal_nature,
+        "opcaoSimples": (
+            "Sim"
+            if company.simple_national is True
+            else "Não"
+            if company.simple_national is False
+            else ""
+        ),
+        "opcaoMei": "Sim" if company.mei is True else "Não" if company.mei is False else "",
+        "logradouro": establishment.street if establishment else "",
+        "numero": establishment.number if establishment else "",
+        "complemento": establishment.complement if establishment else "",
+        "bairro": establishment.district if establishment else "",
+        "cep": establishment.postal_code if establishment else "",
+        "municipio": establishment.city if establishment else "",
+        "uf": establishment.state if establishment else "",
+        "dataAbertura": company.opened_on.isoformat() if company.opened_on else None,
+        "companyLinkedinUrl": linkedin.normalized_url if linkedin else "",
+        "companyInstagramUrl": instagram.normalized_url if instagram else "",
+        "companyFacebookUrl": facebook.normalized_url if facebook else "",
+        "source": company.registry_source,
+        "observedAt": observed_at.isoformat() if observed_at else None,
+        "createdAt": company.created_at.isoformat(),
+        "updatedAt": company.updated_at.isoformat(),
+    }
+
+
+def _person_lead(person: Person) -> dict[str, Any]:
+    entity = person.entity
+    email = _preferred_contact(entity, (ContactPoint.Kind.EMAIL,))
+    phone = _preferred_contact(entity, (ContactPoint.Kind.WHATSAPP, ContactPoint.Kind.PHONE))
+    linkedin = _preferred_social(entity, SocialProfile.Network.LINKEDIN)
+    observed_at = max(
+        [
+            value
+            for value in (
+                email.last_observed_at if email else None,
+                phone.last_observed_at if phone else None,
+                linkedin.last_observed_at if linkedin else None,
+            )
+            if value is not None
+        ],
+        default=None,
+    )
+    return {
+        "id": str(entity.id),
+        "leadType": "PF",
+        "name": person.full_name,
+        "title": "",
+        "seniority": "Não informado",
+        "company": "",
         "domain": "",
         "location": "",
         "city": "",
@@ -282,90 +484,25 @@ def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
             else "ABSENT"
         ),
         "cpf": person.cpf_masked,
-        "cnpj": establishment.cnpj if establishment else company.cnpj_root,
-        "razaoSocial": company.legal_name,
-        "nomeFantasia": company.trade_name,
-        "situacaoCadastral": company.registration_status,
-        "papelCompra": relationship.buying_role,
         "observedAt": observed_at.isoformat() if observed_at else None,
         "createdAt": person.created_at.isoformat(),
         "updatedAt": person.updated_at.isoformat(),
     }
 
 
-def _company_lead(company: Company) -> dict[str, Any]:
-    entity_id = company.entity_id
-    email = _preferred_contact(entity_id, (ContactPoint.Kind.EMAIL,))
-    phone = _preferred_contact(
-        entity_id,
-        (ContactPoint.Kind.WHATSAPP, ContactPoint.Kind.PHONE),
-    )
-    linkedin = _preferred_social(entity_id, SocialProfile.Network.LINKEDIN)
-    establishment = company.establishments.order_by("-is_headquarters", "created_at").first()
-    return {
-        "id": str(entity_id),
-        "leadType": "PJ",
-        "name": company.trade_name or company.legal_name,
-        "title": "",
-        "seniority": "Não informado",
-        "company": company.legal_name,
-        "domain": "",
-        "location": "",
-        "city": "",
-        "state": "",
-        "country": "Brasil",
-        "email": email.normalized_value if email else "",
-        "phone": phone.normalized_value if phone else "",
-        "status": _email_status(email),
-        "companySize": "",
-        "employeeCount": 0,
-        "industry": "",
-        "annualRevenue": "",
-        "fundingStage": "",
-        "technologies": [],
-        "intentScore": 0,
-        "fitScore": 0,
-        "opportunityScore": 0,
-        "dataConfidenceScore": _contact_confidence(email, phone),
-        "freshnessScore": max(_freshness_score(email), _freshness_score(phone)),
-        "intentTopic": "",
-        "initials": (company.trade_name or company.legal_name)[:2].upper(),
-        "linkedinUrl": linkedin.normalized_url if linkedin else "",
-        "enriched": bool(email or phone or linkedin),
-        "identityEvidenceStatus": "OBSERVED",
-        "emailEvidenceStatus": _evidence_status(email),
-        "phoneEvidenceStatus": _evidence_status(phone),
-        "whatsappEvidenceStatus": (
-            _evidence_status(phone)
-            if phone and phone.kind == ContactPoint.Kind.WHATSAPP
-            else "ABSENT"
-        ),
-        "cnpj": establishment.cnpj if establishment else company.cnpj_root,
-        "razaoSocial": company.legal_name,
-        "nomeFantasia": company.trade_name,
-        "situacaoCadastral": company.registration_status,
-        "dataAbertura": company.opened_on.isoformat() if company.opened_on else None,
-        "createdAt": company.created_at.isoformat(),
-        "updatedAt": company.updated_at.isoformat(),
-    }
-
-
 def _lead_for_entity(entity: Entity) -> dict[str, Any] | None:
     if entity.kind == Entity.Kind.COMPANY:
-        company = Company.objects.filter(entity=entity).select_related("entity").first()
-        return _company_lead(company) if company else None
+        try:
+            return _company_lead(entity.company)
+        except Company.DoesNotExist:
+            return None
     if entity.kind == Entity.Kind.PERSON:
-        relationship = (
-            Relationship.objects.filter(
-                tenant=entity.tenant,
-                person__entity=entity,
-                ended_on__isnull=True,
-            )
-            .select_related("person__entity", "company__entity")
-            .order_by("-updated_at")
-            .first()
-        )
-        return _relationship_lead(relationship) if relationship else None
+        try:
+            person = entity.person
+        except Person.DoesNotExist:
+            return None
+        relationship = _active_relationship(person)
+        return _relationship_lead(relationship) if relationship else _person_lead(person)
     return None
 
 
@@ -679,13 +816,17 @@ class DataHealthView(APIView):
             status__in=active_statuses,
             expires_at__lte=now,
         ).update(status=ContactPoint.Status.EXPIRED, updated_at=now)
-        stale_contacts = ContactPoint.objects.filter(
-            tenant=tenant,
-            status__in=active_statuses,
-            stale_at__lte=now,
-        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).update(
-            status=ContactPoint.Status.STALE,
-            updated_at=now,
+        stale_contacts = (
+            ContactPoint.objects.filter(
+                tenant=tenant,
+                status__in=active_statuses,
+                stale_at__lte=now,
+            )
+            .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+            .update(
+                status=ContactPoint.Status.STALE,
+                updated_at=now,
+            )
         )
         expired_profiles = SocialProfile.objects.filter(
             tenant=tenant,
@@ -799,29 +940,44 @@ class DatasetDetailView(APIView):
 
 
 class LeadsCollectionView(APIView):
-    """Consulta de Leads unificados."""
+    """Consulta paginada e filtrável de pessoas e empresas do workspace."""
 
     authentication_classes = (CombinedAuthentication,)
     permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
         tenant = resolve_tenant(request)
-        relationships = list(
-            Relationship.objects.filter(tenant=tenant, ended_on__isnull=True)
-            .select_related("person__entity", "company__entity")
-            .order_by("-updated_at")[:50]
-        )
-        leads_list = [_relationship_lead(relationship) for relationship in relationships]
-        if len(leads_list) < 50:
-            represented_company_ids = {relationship.company_id for relationship in relationships}
-            companies = (
-                Company.objects.filter(entity__tenant=tenant)
-                .exclude(entity_id__in=represented_company_ids)
-                .select_related("entity")
-                .order_by("-updated_at")[: 50 - len(leads_list)]
+        try:
+            page_number = int(request.query_params.get("page", "1"))
+            page_size = int(request.query_params.get("page_size", "25"))
+        except ValueError as exc:
+            raise ValidationError({"pagination": "page e page_size devem ser inteiros."}) from exc
+        if page_number < 1:
+            raise ValidationError({"page": "A página deve ser maior ou igual a 1."})
+        if page_size < 1 or page_size > 100:
+            raise ValidationError({"page_size": "Use um tamanho de página entre 1 e 100."})
+        try:
+            page = search_leads(
+                tenant=tenant,
+                params=request.query_params,
+                page=page_number,
+                page_size=page_size,
             )
-            leads_list.extend(_company_lead(company) for company in companies)
-        return Response(leads_list)
+        except ValueError as exc:
+            raise ValidationError({"filters": str(exc)}) from exc
+        results = [lead for entity in page.entities if (lead := _lead_for_entity(entity))]
+        return Response(
+            {
+                "count": page.count,
+                "page": page.page,
+                "pageSize": page.page_size,
+                "totalPages": page.total_pages,
+                "nextPage": page.next_page,
+                "previousPage": page.previous_page,
+                "facets": {"PJ": page.pj_count, "PF": page.pf_count},
+                "results": results,
+            }
+        )
 
 
 class ListsCollectionView(APIView):
@@ -918,9 +1074,7 @@ class CrmConnectionsView(APIView):
                     "iconBg": "bg-slate-700",
                     "status": status_labels.get(connection.last_status, "Não testado"),
                     "lastTestedAt": (
-                        connection.last_tested_at.isoformat()
-                        if connection.last_tested_at
-                        else None
+                        connection.last_tested_at.isoformat() if connection.last_tested_at else None
                     ),
                     "lastError": connection.last_error_message,
                 }
@@ -1073,9 +1227,7 @@ class EnrichmentCatalogView(APIView):
                         "id": "nao_me_perturbe",
                         "groupId": "risk",
                         "label": "Conformidade Não Me Perturbe (Anatel)",
-                        "description": (
-                            "Consulta de bloqueio quando a integração for aplicável"
-                        ),
+                        "description": ("Consulta de bloqueio quando a integração for aplicável"),
                         "highlights": [
                             "Status consultado",
                             "Canal e fonte",
@@ -1371,10 +1523,7 @@ class ListAddLeadsView(APIView):
                 {"detail": "Lista não encontrada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        members = list(
-            activation_list.members.select_related("entity")
-            .order_by("added_at")[:500]
-        )
+        members = list(activation_list.members.select_related("entity").order_by("added_at")[:500])
         leads = [lead for member in members if (lead := _lead_for_entity(member.entity))]
         total = activation_list.members.count()
         return Response({"count": total, "results": leads, "truncated": total > len(members)})

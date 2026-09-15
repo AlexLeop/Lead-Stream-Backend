@@ -63,4 +63,5 @@ def test_admin_batches_and_clean_analytics():
     leads_resp = client.get("/api/v1/leads/")
     assert leads_resp.status_code == 200
     # Must NOT contain "Carlos Eduardo" or fake demo leads
-    assert len(leads_resp.data) == 0
+    assert leads_resp.data["count"] == 0
+    assert leads_resp.data["results"] == []

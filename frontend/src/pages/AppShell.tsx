@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import Dashboard from './Dashboard';
-import SearchPage from './Search';
+import SearchPage from './SearchEnterprise';
 import ListsPage from './Lists';
 import DatasetsPage from './Datasets';
 import DataHealth from './DataHealth';

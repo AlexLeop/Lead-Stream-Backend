@@ -30,7 +30,8 @@ class Entity(TenantOwnedModel):
             )
         ]
         indexes: ClassVar[list[models.Index]] = [
-            models.Index(fields=("tenant", "kind", "natural_key"), name="entity_lookup_idx")
+            models.Index(fields=("tenant", "kind", "natural_key"), name="entity_lookup_idx"),
+            models.Index(fields=("tenant", "kind", "updated_at"), name="entity_tenant_recent_idx"),
         ]
 
     def __str__(self) -> str:
@@ -65,6 +66,11 @@ class Company(models.Model):
 
     class Meta:
         db_table = "leadstream_company"
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=("primary_cnae",), name="company_cnae_idx"),
+            models.Index(fields=("company_size",), name="company_size_idx"),
+            models.Index(fields=("registration_status",), name="company_status_idx"),
+        ]
 
     def __str__(self) -> str:
         return self.legal_name
@@ -107,7 +113,8 @@ class Establishment(models.Model):
     class Meta:
         db_table = "leadstream_establishment"
         indexes: ClassVar[list[models.Index]] = [
-            models.Index(fields=("company", "is_headquarters"), name="estab_company_hq_idx")
+            models.Index(fields=("company", "is_headquarters"), name="estab_company_hq_idx"),
+            models.Index(fields=("state", "city"), name="estab_location_idx"),
         ]
 
     def __str__(self) -> str:
