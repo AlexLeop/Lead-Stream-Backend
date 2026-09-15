@@ -4,7 +4,6 @@ import {
   ArrowRight,
   CheckCircle2,
   FileSpreadsheet,
-  FolderKanban,
   FolderPlus,
   LoaderCircle,
   Upload,
@@ -127,7 +126,6 @@ export default function UploadEnrichModal({
   isOpen,
   onClose,
   onSuccess,
-  existingSets = [],
 }: UploadEnrichModalProps) {
   const { importRecords } = useLeadStream();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -137,8 +135,6 @@ export default function UploadEnrichModal({
   const [fileSize, setFileSize] = useState('');
   const [headers, setHeaders] = useState<string[]>([]);
   const [records, setRecords] = useState<Array<Record<string, string>>>([]);
-  const [setMode, setSetMode] = useState<'new' | 'existing'>(existingSets.length ? 'existing' : 'new');
-  const [selectedExistingSetId, setSelectedExistingSetId] = useState(existingSets[0]?.id ?? '');
   const [newSetName, setNewSetName] = useState('');
   const [category, setCategory] = useState('Prospecção Outbound');
   const [leadType, setLeadType] = useState<'PJ' | 'PF' | 'MISTO'>('MISTO');
@@ -192,12 +188,8 @@ export default function UploadEnrichModal({
   };
 
   const submit = async () => {
-    if (setMode === 'new' && !newSetName.trim()) {
+    if (!newSetName.trim()) {
       setError('Informe um nome para o novo dataset.');
-      return;
-    }
-    if (setMode === 'existing' && !selectedExistingSetId) {
-      setError('Selecione o dataset de destino.');
       return;
     }
 
@@ -207,17 +199,13 @@ export default function UploadEnrichModal({
       const imported = await importRecords({
         sourceFileName: fileName,
         records,
-        ...(setMode === 'existing'
-          ? { datasetId: selectedExistingSetId }
-          : {
-              dataset: {
-                name: newSetName.trim(),
-                category,
-                leadType,
-                description: `Importado de ${fileName}`,
-                tags: ['Importação CSV'],
-              },
-            }),
+        dataset: {
+          name: newSetName.trim(),
+          category,
+          leadType,
+          description: `Importado de ${fileName}`,
+          tags: ['Importação CSV'],
+        },
       });
       setResult(imported);
       setStep('done');
@@ -330,37 +318,16 @@ export default function UploadEnrichModal({
 
               <div>
                 <div className="mb-2 text-xs font-bold text-slate-700">Destino</div>
-                <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
-                  <button
-                    onClick={() => setSetMode('new')}
-                    className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-bold ${
-                      setMode === 'new' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'
-                    }`}
-                  >
-                    <FolderPlus className="h-4 w-4" /> Novo dataset
-                  </button>
-                  <button
-                    onClick={() => setSetMode('existing')}
-                    disabled={!existingSets.length}
-                    className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40 ${
-                      setMode === 'existing' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'
-                    }`}
-                  >
-                    <FolderKanban className="h-4 w-4" /> Dataset existente
-                  </button>
+                <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+                  <FolderPlus className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
+                  <p>
+                    Cada arquivo cria um lote independente e auditável. Isso preserva a origem,
+                    permite retomar o processamento e evita misturar execuções anteriores.
+                  </p>
                 </div>
               </div>
 
-              {setMode === 'existing' ? (
-                <select
-                  value={selectedExistingSetId}
-                  onChange={(event) => setSelectedExistingSetId(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"
-                >
-                  {existingSets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
-                </select>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
                   <label className="sm:col-span-2">
                     <span className="mb-1.5 block text-xs font-bold text-slate-700">Nome do dataset</span>
                     <input
@@ -383,8 +350,7 @@ export default function UploadEnrichModal({
                       <option value="MISTO">Empresas e contatos</option>
                     </select>
                   </label>
-                </div>
-              )}
+              </div>
 
               <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-5">
                 <button onClick={close} className="rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700">Cancelar</button>
@@ -402,9 +368,9 @@ export default function UploadEnrichModal({
           {step === 'processing' && (
             <div className="flex min-h-72 flex-col items-center justify-center text-center" aria-live="polite">
               <LoaderCircle className="h-10 w-10 animate-spin text-blue-600" />
-              <h3 className="mt-5 text-lg font-bold text-slate-900">Organizando registros</h3>
+              <h3 className="mt-5 text-lg font-bold text-slate-900">Enviando arquivo com segurança</h3>
               <p className="mt-2 max-w-md text-sm text-slate-600">
-                Empresas e contatos estão sendo conciliados por CNPJ, domínio e e-mail em uma operação segura.
+                O lote será higienizado em segundo plano e continuará mesmo se você sair desta página.
               </p>
             </div>
           )}
@@ -412,12 +378,14 @@ export default function UploadEnrichModal({
           {step === 'done' && result && (
             <div className="flex min-h-72 flex-col items-center justify-center text-center">
               <CheckCircle2 className="h-12 w-12 text-emerald-600" />
-              <h3 className="mt-4 text-xl font-extrabold text-slate-900">Importação concluída</h3>
-              <p className="mt-2 text-sm text-slate-600">Dataset “{result.dataset.name}” atualizado com dados do arquivo.</p>
+              <h3 className="mt-4 text-xl font-extrabold text-slate-900">Arquivo recebido</h3>
+              <p className="mt-2 max-w-md text-sm text-slate-600">
+                O lote “{result.dataset.name}” entrou na fila. A higienização e a conciliação acontecem em segundo plano.
+              </p>
               <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-800">{result.companies} {result.companies === 1 ? 'empresa' : 'empresas'}</span>
-                <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-800">{result.contacts} {result.contacts === 1 ? 'contato' : 'contatos'}</span>
-                <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-800">{result.skipped} {result.skipped === 1 ? 'ignorado' : 'ignorados'}</span>
+                <span className="rounded-full bg-blue-50 px-4 py-2 text-sm font-bold text-blue-800">
+                  {result.imported} {result.imported === 1 ? 'linha recebida' : 'linhas recebidas'}
+                </span>
               </div>
               <button
                 onClick={() => {

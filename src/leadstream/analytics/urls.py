@@ -25,6 +25,7 @@ from .views import (
     LeadsCollectionView,
     ListAddLeadsView,
     ListArchiveView,
+    ListExportView,
     ListsCollectionView,
     PixStatusView,
 )
@@ -57,6 +58,11 @@ urlpatterns = [
         r"^lists/(?P<list_id>[^/]+)/leads/?$",
         ListAddLeadsView.as_view(),
         name="manager-list-add-leads",
+    ),
+    re_path(
+        r"^lists/(?P<list_id>[^/]+)/export/?$",
+        ListExportView.as_view(),
+        name="manager-list-export",
     ),
     re_path(r"^activities/?$", ActivitiesCollectionView.as_view(), name="manager-activities"),
     re_path(r"^crm-connections/?$", CrmConnectionsView.as_view(), name="manager-crm-connections"),

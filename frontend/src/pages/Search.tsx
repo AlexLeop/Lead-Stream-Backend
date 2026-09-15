@@ -161,7 +161,7 @@ export default function SearchLeads({ initialSetFilterId = null, onClearSetFilte
   const handleUploadSuccess = (result: ImportResult) => {
     setSelectedSetId(result.dataset.id);
     setIsUploadEnrichModalOpen(false);
-    triggerToast(`${result.contacts} ${result.contacts === 1 ? 'contato' : 'contatos'} e ${result.companies} ${result.companies === 1 ? 'empresa' : 'empresas'} importados para "${result.dataset.name}".`);
+    triggerToast(`${result.imported} linha(s) recebida(s) no lote "${result.dataset.name}". O processamento continuará em segundo plano.`);
   };
 
   const handleCreateSetDirect = async (input: CreateDatasetInput) => {

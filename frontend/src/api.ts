@@ -26,6 +26,7 @@ import type {
   ImportPayload,
   ImportResult,
   Lead,
+  ListLeadsResponse,
   LeadSet,
   WorkspaceSummary,
   BatchExtractInput,
@@ -155,6 +156,80 @@ async function request<T>(path: string, init?: RequestInit, retry = true): Promi
   return payload as T;
 }
 
+async function requestBlob(path: string, retry = true): Promise<Blob> {
+  const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  const headers: Record<string, string> = {};
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  const response = await fetch(url, { credentials: 'include', headers });
+  if (response.status === 401 && retry) {
+    await refreshAccessToken();
+    return requestBlob(path, false);
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new ApiError(
+      payload.detail || payload.error || 'Não foi possível gerar o arquivo.',
+      response.status,
+      payload,
+    );
+  }
+  return response.blob();
+}
+
+function csvCell(value: unknown): string {
+  const text = Array.isArray(value) ? value.join('; ') : String(value ?? '');
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+async function uploadImportRecords(input: ImportPayload): Promise<ImportResult> {
+  if (!input.records.length) throw new ApiError('O arquivo não contém registros.', 400);
+  const headers = [...new Set(input.records.flatMap((record) => Object.keys(record)))];
+  if (!headers.length) throw new ApiError('O arquivo não contém cabeçalhos utilizáveis.', 400);
+  const csv = [
+    headers.map(csvCell).join(','),
+    ...input.records.map((record) => headers.map((header) => csvCell(record[header])).join(',')),
+  ].join('\r\n');
+  const formData = new FormData();
+  const dataset = input.dataset;
+  formData.append('name', dataset?.name || input.sourceFileName.replace(/\.[^.]+$/, ''));
+  formData.append('chunk_size', '500');
+  formData.append(
+    'arquivo',
+    new Blob([`\uFEFF${csv}\r\n`], { type: 'text/csv;charset=utf-8' }),
+    input.sourceFileName || 'importacao.csv',
+  );
+  const batch = await request<DjangoBatch>('/batches/', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body: formData,
+  });
+  const leadType = dataset?.leadType === 'PJ' ? 'PJ' : 'MISTO';
+  return {
+    dataset: {
+      id: batch.id,
+      name: batch.name,
+      category: dataset?.category || 'Validação de Base',
+      description: dataset?.description || `Importado de ${input.sourceFileName}`,
+      leadType,
+      totalLeads: input.records.length,
+      enrichedFields: [],
+      status: 'Processando',
+      enrichmentRate: 0,
+      createdAt: batch.created_at,
+      leadIds: [],
+      fileOriginName: batch.input_original_name,
+      costCredits: batch.cost_cents,
+      lastUpdated: batch.updated_at,
+      tags: dataset?.tags,
+    },
+    imported: input.records.length,
+    companies: 0,
+    contacts: 0,
+    skipped: 0,
+    leads: [],
+  };
+}
+
 export const api = {
   // ==========================================
   // AUTENTICAÇÃO E SESSÃO
@@ -246,7 +321,15 @@ export const api = {
   // ==========================================
   // MÓDULOS DE DADOS E DESCOBERTA
   // ==========================================
-  workspace: () => request<WorkspaceSummary>('/workspace'),
+  workspace: async (): Promise<WorkspaceSummary> => {
+    const dashboard = await request<DashboardData>('/dashboard');
+    return {
+      companies: dashboard.summary.companies,
+      contacts: dashboard.summary.contacts,
+      datasets: dashboard.summary.datasets,
+      lists: dashboard.summary.lists,
+    };
+  },
   leads: () => request<Lead[]>('/leads'),
   lookupLead: (query: string) => request<Lead>(`/leads/lookup?q=${encodeURIComponent(query)}`),
   revealPhone: (id: string) => request<Lead>(`/leads/${encodeURIComponent(id)}/reveal-phone`, { method: 'PATCH' }),
@@ -254,8 +337,7 @@ export const api = {
   createDataset: (input: CreateDatasetInput) =>
     request<LeadSet>('/datasets', { method: 'POST', body: JSON.stringify(input) }),
   deleteDataset: (id: string) => request<void>(`/datasets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  importRecords: (input: ImportPayload) =>
-    request<ImportResult>('/imports', { method: 'POST', body: JSON.stringify(input) }),
+  importRecords: uploadImportRecords,
   lists: () => request<CampaignList[]>('/lists'),
   createList: (input: CreateListInput) =>
     request<CampaignList>('/lists', { method: 'POST', body: JSON.stringify(input) }),
@@ -269,6 +351,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ leadIds }),
     }),
+  listLeads: (id: string) =>
+    request<ListLeadsResponse>(`/lists/${encodeURIComponent(id)}/leads`),
+  exportList: (id: string) => requestBlob(`/lists/${encodeURIComponent(id)}/export`),
   activities: () => request<Activity[]>('/activities'),
   crmConnections: () => request<CRMConnection[]>('/crm-connections'),
   dashboard: (period: string) => request<DashboardData>(`/dashboard?period=${encodeURIComponent(period)}`),

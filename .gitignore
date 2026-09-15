@@ -43,3 +43,8 @@ build/
 *.egg-info/
 scratch/
 .superpowers/
+
+payload_pf.json
+payload.json
+output_lead_canonical.json
+leadstream-507303-a0f7c868dfe5.json

@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Search, Folder, RefreshCw, Download, CheckCircle2, AlertCircle, XCircle, Trash2, Eye, Sparkles, PlugZap } from 'lucide-react';
 import type { Lead } from '../types';
 import LeadDetailsModal from '../components/LeadDetailsModal';
-import ExportModal from '../components/ExportModal';
 import { useLeadStream } from '../LeadStreamContext';
+import { api } from '../api';
 
 export default function Lists() {
-  const { lists, leads, createList, archiveList, refresh } = useLeadStream();
+  const { lists, createList, archiveList, refresh } = useLeadStream();
   const [selectedListId, setSelectedListId] = useState<string>('');
   const [searchListQuery, setSearchListQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
@@ -18,12 +18,14 @@ export default function Lists() {
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [newListDesc, setNewListDesc] = useState('');
-  const [newListCRM, setNewListCRM] = useState<'HubSpot' | 'Salesforce' | 'RD Station' | 'Pipedrive'>('HubSpot');
+  const [newListCRM, setNewListCRM] = useState<'HubSpot' | 'RD Station' | 'Pipedrive'>('HubSpot');
 
   // Modals
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
-  const [isExportOpen, setIsExportOpen] = useState(false);
   const [operationMessage, setOperationMessage] = useState<string | null>(null);
+  const [currentLeads, setCurrentLeads] = useState<Lead[]>([]);
+  const [listLeadCount, setListLeadCount] = useState(0);
+  const [listLeadsLoading, setListLeadsLoading] = useState(false);
 
   useEffect(() => {
     if (!selectedListId && lists.length) setSelectedListId(lists[0].id);
@@ -34,8 +36,35 @@ export default function Lists() {
 
   const selectedList = lists.find(l => l.id === selectedListId) || lists[0];
 
-  // Leads that belong to this list
-  const currentLeads = leads.filter(lead => selectedList?.leadIds?.includes(lead.id));
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedList?.id) {
+      setCurrentLeads([]);
+      setListLeadCount(0);
+      return;
+    }
+    setListLeadsLoading(true);
+    void api.listLeads(selectedList.id)
+      .then((response) => {
+        if (cancelled) return;
+        setCurrentLeads(response.results);
+        setListLeadCount(response.count);
+        if (response.truncated) {
+          setOperationMessage('A tabela mostra os primeiros 500 registros. A exportação completa será feita pelo servidor.');
+        }
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setOperationMessage(cause instanceof Error ? cause.message : 'Não foi possível carregar os leads da lista.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setListLeadsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedList?.id, selectedList?.updatedAt]);
 
   const filteredLists = lists.filter(l => {
     if (!showArchived && l.isArchived) return false;
@@ -93,12 +122,6 @@ export default function Lists() {
         </div>
       )}
       <LeadDetailsModal lead={activeLead} onClose={() => setActiveLead(null)} />
-      <ExportModal 
-        isOpen={isExportOpen} 
-        onClose={() => setIsExportOpen(false)} 
-        leads={currentLeads} 
-        selectedIds={[]} 
-      />
 
       <div className="flex-1 flex flex-col xl:flex-row gap-5 min-h-0">
         {/* Left Column: Saved Lists (Matching Image 4) */}
@@ -138,11 +161,10 @@ export default function Lists() {
               <div className="flex gap-2">
                 <select 
                   value={newListCRM} 
-                  onChange={(e) => setNewListCRM(e.target.value as any)}
+                  onChange={(e) => setNewListCRM(e.target.value as typeof newListCRM)}
                   className="flex-1 text-xs border border-slate-200 bg-white rounded-lg px-2 py-1"
                 >
                   <option value="HubSpot">HubSpot CRM</option>
-                  <option value="Salesforce">Salesforce</option>
                   <option value="RD Station">RD Station CRM</option>
                   <option value="Pipedrive">Pipedrive</option>
                 </select>
@@ -233,7 +255,7 @@ export default function Lists() {
               <div className="flex items-center gap-2.5">
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight">{selectedList?.name}</h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                  {selectedList?.leadCount ?? 0} {(selectedList?.leadCount ?? 0) === 1 ? 'contato' : 'contatos'}
+                  {listLeadCount} {listLeadCount === 1 ? 'contato' : 'contatos'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1 max-w-xl">
@@ -243,7 +265,22 @@ export default function Lists() {
 
             <div className="flex items-center gap-3">
               <button 
-                onClick={() => setIsExportOpen(true)}
+                onClick={() => {
+                  if (!selectedList) return;
+                  void api.exportList(selectedList.id)
+                    .then((blob) => {
+                      const url = URL.createObjectURL(blob);
+                      const anchor = document.createElement('a');
+                      anchor.href = url;
+                      anchor.download = `leadstream-${selectedList.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`;
+                      anchor.click();
+                      URL.revokeObjectURL(url);
+                      setOperationMessage('Exportação completa gerada com dados minimizados e estados de evidência.');
+                    })
+                    .catch((cause) => {
+                      setOperationMessage(cause instanceof Error ? cause.message : 'Não foi possível exportar a lista.');
+                    });
+                }}
                 disabled={!selectedList}
                 className="px-3.5 py-2 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 rounded-xl font-semibold text-xs flex items-center gap-1.5 hover:bg-slate-50 transition-all shadow-2xs"
               >
@@ -252,7 +289,7 @@ export default function Lists() {
 
               <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">
                 <PlugZap className="h-3.5 w-3.5" aria-hidden="true" />
-                Integração CRM em preparação
+                Destino: {selectedList.crmTarget}
               </div>
             </div>
           </div>
@@ -297,6 +334,11 @@ export default function Lists() {
 
           {/* Table of leads in this list */}
           <div className="flex-1 overflow-auto">
+            {listLeadsLoading && (
+              <div className="border-b border-slate-100 px-5 py-3 text-sm text-slate-600" role="status">
+                Carregando registros da lista…
+              </div>
+            )}
             <table className="w-full text-xs text-left">
               <thead className="text-[11px] text-slate-500 uppercase bg-slate-50/80 border-b border-slate-200 sticky top-0 z-10 font-bold tracking-wider">
                 <tr>

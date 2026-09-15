@@ -65,7 +65,7 @@ export default function DatasetsPage({ onNavigateToSearchWithSet }: DatasetsProp
 
   const handleUploadSuccess = (result: ImportResult) => {
     setIsUploadModalOpen(false);
-    triggerToast(`${result.contacts} ${result.contacts === 1 ? 'contato' : 'contatos'} e ${result.companies} ${result.companies === 1 ? 'empresa' : 'empresas'} importados para "${result.dataset.name}".`);
+    triggerToast(`${result.imported} linha(s) recebida(s) no lote "${result.dataset.name}". O processamento continuará em segundo plano.`);
   };
 
   const handleDeleteSet = async (setId: string, setName: string, e: React.MouseEvent) => {

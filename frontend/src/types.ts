@@ -228,13 +228,20 @@ export interface CampaignList {
   leadCount: number;
   lastSynced: string;
   crmTarget: 'HubSpot' | 'Salesforce' | 'RD Station' | 'Pipedrive' | 'Não configurado' | string;
-  crmStatus: 'Em preparação';
+  crmStatus: string;
   validCount: number;
   catchAllCount: number;
   invalidCount: number;
   leadIds: string[];
   createdAt: string;
+  updatedAt?: string;
   isArchived?: boolean;
+}
+
+export interface ListLeadsResponse {
+  count: number;
+  results: Lead[];
+  truncated: boolean;
 }
 
 export interface CRMConnection {
@@ -242,7 +249,7 @@ export interface CRMConnection {
   name: string;
   code: string;
   iconBg: string;
-  status: 'Em preparação';
+  status: string;
 }
 
 export interface GrowthDataPoint {

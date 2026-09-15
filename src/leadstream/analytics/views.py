@@ -5,19 +5,23 @@ from datetime import timedelta
 from typing import Any
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Count, Sum
+from django.db import transaction
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncDate
+from django.http import Http404, StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from leadstream.batches.models import Batch, BatchItem
-from leadstream.common.api import resolve_tenant
+from leadstream.common.api import reject_tenant_override, resolve_tenant
 from leadstream.entities.models import (
     Company,
     ContactPoint,
+    Entity,
     Establishment,
     Person,
     Relationship,
@@ -37,6 +41,9 @@ from leadstream.security.authentication import CombinedAuthentication
 from leadstream.security.models import SecurityAuditLog
 from leadstream.security.permissions import TenantAccessPermission
 
+from .exporter import stream_activation_list_csv
+from .models import ActivationList, ActivationListMember
+
 
 def _get_payload(request: Request) -> dict[str, Any]:
     return request.data if isinstance(request.data, dict) else {}
@@ -50,6 +57,92 @@ VALIDATED_CONTACT_STATUSES = (
     ContactPoint.Status.CAPABILITY_VALID,
     ContactPoint.Status.CONFIRMED,
 )
+
+
+def _activation_lists_for_tenant(tenant: Any) -> Any:
+    return ActivationList.objects.filter(tenant=tenant).annotate(
+        lead_count=Count("members", distinct=True),
+        valid_count=Count(
+            "members__entity",
+            filter=Q(
+                members__entity__contact_points__kind=ContactPoint.Kind.EMAIL,
+                members__entity__contact_points__status__in=VALIDATED_CONTACT_STATUSES,
+            ),
+            distinct=True,
+        ),
+        catch_all_count=Count(
+            "members__entity",
+            filter=Q(
+                members__entity__contact_points__kind=ContactPoint.Kind.EMAIL,
+                members__entity__contact_points__capabilities__catch_all=True,
+            ),
+            distinct=True,
+        ),
+        invalid_count=Count(
+            "members__entity",
+            filter=Q(
+                members__entity__contact_points__kind=ContactPoint.Kind.EMAIL,
+                members__entity__contact_points__status=ContactPoint.Status.INVALID,
+            ),
+            distinct=True,
+        ),
+    )
+
+
+def _activation_list_payload(activation_list: ActivationList) -> dict[str, Any]:
+    lead_ids = [str(value) for value in activation_list.members.values_list("entity_id", flat=True)]
+    return {
+        "id": str(activation_list.pk),
+        "name": activation_list.name,
+        "description": activation_list.description,
+        "leadCount": int(getattr(activation_list, "lead_count", len(lead_ids))),
+        "lastSynced": "Nunca sincronizada",
+        "crmTarget": activation_list.crm_target or "Não configurado",
+        "crmStatus": "Arquivada" if activation_list.archived_at else "Pronta para ativação",
+        "validCount": int(getattr(activation_list, "valid_count", 0)),
+        "catchAllCount": int(getattr(activation_list, "catch_all_count", 0)),
+        "invalidCount": int(getattr(activation_list, "invalid_count", 0)),
+        "leadIds": lead_ids,
+        "createdAt": activation_list.created_at.isoformat(),
+        "updatedAt": activation_list.updated_at.isoformat(),
+        "isArchived": activation_list.archived_at is not None,
+    }
+
+
+def _validated_lead_ids(payload: dict[str, Any]) -> list[uuid.UUID]:
+    values = payload.get("leadIds", [])
+    if not isinstance(values, list) or len(values) > 10_000:
+        raise ValidationError({"leadIds": "Informe uma lista com até 10 mil leads."})
+    try:
+        return list(dict.fromkeys(uuid.UUID(str(value)) for value in values))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValidationError(
+            {"leadIds": "Um ou mais identificadores de lead são inválidos."}
+        ) from exc
+
+
+def _add_entities_to_activation_list(
+    *, activation_list: ActivationList, lead_ids: list[uuid.UUID]
+) -> None:
+    if not lead_ids:
+        return
+    entities = list(Entity.objects.filter(tenant=activation_list.tenant, pk__in=lead_ids))
+    if len(entities) != len(lead_ids):
+        raise ValidationError(
+            {"leadIds": "Um ou mais leads não existem ou pertencem a outro workspace."}
+        )
+    ActivationListMember.objects.bulk_create(
+        [
+            ActivationListMember(
+                tenant=activation_list.tenant,
+                activation_list=activation_list,
+                entity=entity,
+            )
+            for entity in entities
+        ],
+        ignore_conflicts=True,
+    )
+    activation_list.save(update_fields=("updated_at",))
 
 
 def _evidence_status(contact: ContactPoint | None) -> str:
@@ -257,6 +350,25 @@ def _company_lead(company: Company) -> dict[str, Any]:
     }
 
 
+def _lead_for_entity(entity: Entity) -> dict[str, Any] | None:
+    if entity.kind == Entity.Kind.COMPANY:
+        company = Company.objects.filter(entity=entity).select_related("entity").first()
+        return _company_lead(company) if company else None
+    if entity.kind == Entity.Kind.PERSON:
+        relationship = (
+            Relationship.objects.filter(
+                tenant=entity.tenant,
+                person__entity=entity,
+                ended_on__isnull=True,
+            )
+            .select_related("person__entity", "company__entity")
+            .order_by("-updated_at")
+            .first()
+        )
+        return _relationship_lead(relationship) if relationship else None
+    return None
+
+
 class DashboardView(APIView):
     """Retorna o consolidado executivo do Dashboard para gestores e administradores."""
 
@@ -271,6 +383,7 @@ class DashboardView(APIView):
         contacts_count = ContactPoint.objects.filter(tenant=tenant).count()
         persons_count = Person.objects.filter(entity__tenant=tenant).count()
         batches_count = Batch.objects.filter(tenant=tenant).count()
+        lists_count = ActivationList.objects.filter(tenant=tenant, archived_at__isnull=True).count()
 
         valid_emails = ContactPoint.objects.filter(
             tenant=tenant,
@@ -353,7 +466,7 @@ class DashboardView(APIView):
                     "contacts": persons_count + contacts_count,
                     "companies": companies_count,
                     "datasets": batches_count,
-                    "lists": 0,
+                    "lists": lists_count,
                     "validEmails": valid_emails,
                     "deliverabilityRate": deliverability_rate,
                     "phones": phones,
@@ -551,16 +664,42 @@ class DataHealthView(APIView):
         )
 
     def post(self, request: Request) -> Response:
-        """Recusa sucesso sintético enquanto a rotina assíncrona não estiver disponível."""
+        """Aplica somente expiração determinística; não promove nem inventa evidência."""
+        tenant = resolve_tenant(request)
+        reject_tenant_override(_get_payload(request))
+        now = timezone.now()
+        active_statuses = (
+            ContactPoint.Status.OBSERVED,
+            ContactPoint.Status.DOMAIN_VALID,
+            ContactPoint.Status.CAPABILITY_VALID,
+            ContactPoint.Status.CONFIRMED,
+        )
+        expired_contacts = ContactPoint.objects.filter(
+            tenant=tenant,
+            status__in=active_statuses,
+            expires_at__lte=now,
+        ).update(status=ContactPoint.Status.EXPIRED, updated_at=now)
+        stale_contacts = ContactPoint.objects.filter(
+            tenant=tenant,
+            status__in=active_statuses,
+            stale_at__lte=now,
+        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).update(
+            status=ContactPoint.Status.STALE,
+            updated_at=now,
+        )
+        expired_profiles = SocialProfile.objects.filter(
+            tenant=tenant,
+            status__in=active_statuses,
+            expires_at__lte=now,
+        ).update(status=ContactPoint.Status.EXPIRED, updated_at=now)
+        health = self.get(request).data
         return Response(
             {
-                "code": "DATA_REPAIR_NOT_CONFIGURED",
-                "detail": (
-                    "A correção automática ainda não está configurada. "
-                    "Nenhum registro foi alterado."
-                ),
-            },
-            status=status.HTTP_501_NOT_IMPLEMENTED,
+                "success": True,
+                "repairedContacts": expired_contacts + stale_contacts + expired_profiles,
+                "boostedScores": 0,
+                "health": health,
+            }
         )
 
 
@@ -692,20 +831,41 @@ class ListsCollectionView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def get(self, request: Request) -> Response:
-        resolve_tenant(request)
-        return Response([])
+        tenant = resolve_tenant(request)
+        return Response(
+            [
+                _activation_list_payload(activation_list)
+                for activation_list in _activation_lists_for_tenant(tenant)
+            ]
+        )
 
     def post(self, request: Request) -> Response:
-        resolve_tenant(request)
-        return Response(
-            {
-                "code": "ACTIVATION_LISTS_NOT_CONFIGURED",
-                "detail": (
-                    "Listas de ativação ainda não estão configuradas. Nenhuma lista foi criada."
-                ),
-            },
-            status=status.HTTP_501_NOT_IMPLEMENTED,
-        )
+        tenant = resolve_tenant(request)
+        payload = _get_payload(request)
+        reject_tenant_override(payload)
+        name = str(payload.get("name", "")).strip()
+        description = str(payload.get("description", "")).strip()
+        crm_target = str(payload.get("crmTarget", "")).strip()
+        if not name or len(name) > 160:
+            raise ValidationError({"name": "Informe um nome de até 160 caracteres."})
+        if len(description) > 500:
+            raise ValidationError({"description": "Use no máximo 500 caracteres."})
+        if len(crm_target) > 80:
+            raise ValidationError({"crmTarget": "Use no máximo 80 caracteres."})
+        lead_ids = _validated_lead_ids(payload)
+        with transaction.atomic():
+            activation_list = ActivationList.objects.create(
+                tenant=tenant,
+                name=name,
+                description=description,
+                crm_target=crm_target,
+            )
+            _add_entities_to_activation_list(
+                activation_list=activation_list,
+                lead_ids=lead_ids,
+            )
+        activation_list = _activation_lists_for_tenant(tenant).get(pk=activation_list.pk)
+        return Response(_activation_list_payload(activation_list), status=status.HTTP_201_CREATED)
 
 
 class ActivitiesCollectionView(APIView):
@@ -1177,31 +1337,96 @@ class ListArchiveView(APIView):
     permission_classes = (TenantAccessPermission,)
 
     def patch(self, request: Request, list_id: str) -> Response:
-        resolve_tenant(request)
-        return Response(
-            {
-                "code": "ACTIVATION_LISTS_NOT_CONFIGURED",
-                "detail": "Nenhuma lista foi alterada.",
-                "listId": list_id,
-            },
-            status=status.HTTP_501_NOT_IMPLEMENTED,
-        )
+        tenant = resolve_tenant(request)
+        try:
+            list_uuid = uuid.UUID(list_id)
+        except (TypeError, ValueError):
+            raise ValidationError({"listId": "Identificador de lista inválido."}) from None
+        activation_list = ActivationList.objects.filter(tenant=tenant, pk=list_uuid).first()
+        if activation_list is None:
+            return Response(
+                {"detail": "Lista não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if activation_list.archived_at is None:
+            activation_list.archived_at = timezone.now()
+            activation_list.save(update_fields=("archived_at", "updated_at"))
+        activation_list = _activation_lists_for_tenant(tenant).get(pk=activation_list.pk)
+        return Response(_activation_list_payload(activation_list))
 
 
 class ListAddLeadsView(APIView):
     authentication_classes = (CombinedAuthentication,)
     permission_classes = (TenantAccessPermission,)
 
-    def post(self, request: Request, list_id: str) -> Response:
-        resolve_tenant(request)
-        return Response(
-            {
-                "code": "ACTIVATION_LISTS_NOT_CONFIGURED",
-                "detail": "Nenhum lead foi vinculado.",
-                "listId": list_id,
-            },
-            status=status.HTTP_501_NOT_IMPLEMENTED,
+    def get(self, request: Request, list_id: str) -> Response:
+        tenant = resolve_tenant(request)
+        try:
+            list_uuid = uuid.UUID(list_id)
+        except (TypeError, ValueError):
+            raise ValidationError({"listId": "Identificador de lista inválido."}) from None
+        activation_list = ActivationList.objects.filter(tenant=tenant, pk=list_uuid).first()
+        if activation_list is None:
+            return Response(
+                {"detail": "Lista não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        members = list(
+            activation_list.members.select_related("entity")
+            .order_by("added_at")[:500]
         )
+        leads = [lead for member in members if (lead := _lead_for_entity(member.entity))]
+        total = activation_list.members.count()
+        return Response({"count": total, "results": leads, "truncated": total > len(members)})
+
+    def post(self, request: Request, list_id: str) -> Response:
+        tenant = resolve_tenant(request)
+        payload = _get_payload(request)
+        reject_tenant_override(payload)
+        try:
+            list_uuid = uuid.UUID(list_id)
+        except (TypeError, ValueError):
+            raise ValidationError({"listId": "Identificador de lista inválido."}) from None
+        activation_list = ActivationList.objects.filter(tenant=tenant, pk=list_uuid).first()
+        if activation_list is None:
+            return Response(
+                {"detail": "Lista não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if activation_list.archived_at is not None:
+            raise ValidationError({"listId": "Uma lista arquivada não pode receber novos leads."})
+        with transaction.atomic():
+            _add_entities_to_activation_list(
+                activation_list=activation_list,
+                lead_ids=_validated_lead_ids(payload),
+            )
+        activation_list = _activation_lists_for_tenant(tenant).get(pk=activation_list.pk)
+        return Response(_activation_list_payload(activation_list))
+
+
+class ListExportView(APIView):
+    authentication_classes = (CombinedAuthentication,)
+    permission_classes = (TenantAccessPermission,)
+
+    def get(self, request: Request, list_id: str) -> StreamingHttpResponse:
+        tenant = resolve_tenant(request)
+        try:
+            list_uuid = uuid.UUID(list_id)
+        except (TypeError, ValueError):
+            raise ValidationError({"listId": "Identificador de lista inválido."}) from None
+        activation_list = ActivationList.objects.filter(tenant=tenant, pk=list_uuid).first()
+        if activation_list is None:
+            raise Http404("Lista não encontrada.")
+        response = StreamingHttpResponse(
+            stream_activation_list_csv(activation_list),
+            content_type="text/csv; charset=utf-8",
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="leadstream-lista-{activation_list.pk}.csv"'
+        )
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class EnrichmentCompanyView(APIView):
