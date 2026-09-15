@@ -21,6 +21,10 @@ CSRF_TRUSTED_ORIGINS = env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
     default=[f"https://{h}" for h in configured_hosts if h not in ("*", "127.0.0.1", "localhost")],
 )
+CORS_ALLOWED_ORIGINS = env_list(
+    "CORS_ALLOWED_ORIGINS",
+    default=CSRF_TRUSTED_ORIGINS,
+)
 
 production_database_url = required_env("DATABASE_URL")
 CELERY_BROKER_URL = required_env("CELERY_BROKER_URL")
