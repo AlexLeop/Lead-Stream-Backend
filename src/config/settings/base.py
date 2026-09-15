@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import dj_database_url
+from corsheaders.defaults import default_headers
 
 from leadstream.common.env import env, env_bool, env_int, env_list
 from leadstream.common.logging import build_logging_config
@@ -238,6 +239,25 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=DEBUG)
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = env_list(
+    "CORS_ALLOW_HEADERS",
+    default=[
+        *default_headers,
+        "idempotency-key",
+        "x-tenant",
+        "x-workspace-id",
+        "x-request-id",
+        "x-correlation-id",
+    ],
+)
+CORS_EXPOSE_HEADERS = env_list(
+    "CORS_EXPOSE_HEADERS",
+    default=[
+        "content-disposition",
+        "x-total-count",
+        "x-request-id",
+    ],
+)
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
