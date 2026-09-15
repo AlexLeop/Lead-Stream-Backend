@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -31,7 +32,7 @@ from leadstream.entities.normalization import only_digits
 from leadstream.evidence.models import Observation
 from leadstream.integrations.models import CRMConnection
 from leadstream.intelligence.cnae import KNOWN_CNAES
-from leadstream.providers.enrichment_jobs import create_enrichment_job
+from leadstream.providers.enrichment_jobs import create_enrichment_job, execute_enrichment_job
 from leadstream.providers.models import EnrichmentJob
 from leadstream.providers.serializers import (
     EnrichmentJobSerializer,
@@ -44,6 +45,8 @@ from leadstream.security.permissions import TenantAccessPermission
 from .exporter import stream_activation_list_csv
 from .lead_search import search_leads
 from .models import ActivationList, ActivationListMember
+
+logger = logging.getLogger(__name__)
 
 
 def _get_payload(request: Request) -> dict[str, Any]:
@@ -1307,6 +1310,12 @@ class EnrichmentJobDetailView(APIView):
                 {"detail": "Execução de enriquecimento não encontrada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        if job.status == EnrichmentJob.Status.QUEUED:
+            try:
+                job = execute_enrichment_job(str(job.pk), worker_id="api-worker")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Execução resiliente de job pendente %s falhou: %s", job.pk, exc)
+                job.refresh_from_db()
         return Response(EnrichmentJobSerializer(job, context={"include_result": True}).data)
 
 
@@ -1620,9 +1629,16 @@ def _create_individual_enrichment_job(*, request: Request, entity_type: str) -> 
     except DjangoValidationError as exc:
         detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
         return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+    job = creation.job
+    if request.query_params.get("sync") == "1" and job.status == EnrichmentJob.Status.QUEUED:
+        try:
+            job = execute_enrichment_job(str(job.pk), worker_id="api-inline")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Execução síncrona de enriquecimento %s falhou: %s", job.pk, exc)
+            job.refresh_from_db()
     response_status = status.HTTP_202_ACCEPTED if creation.created else status.HTTP_200_OK
     return Response(
-        EnrichmentJobSerializer(creation.job, context={"include_result": True}).data,
+        EnrichmentJobSerializer(job, context={"include_result": True}).data,
         status=response_status,
     )
 

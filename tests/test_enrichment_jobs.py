@@ -176,7 +176,7 @@ def test_expired_enrichment_payloads_are_purged() -> None:
         )
     EnrichmentJob.objects.filter(pk=creation.job.pk).update(
         status=EnrichmentJob.Status.SUCCEEDED,
-        result_payload={"cpf": "52998224725"},  # type: ignore[misc]
+        result_payload={"cpf": "52998224725"},
         purge_after=timezone.now() - timedelta(seconds=1),
     )
 
@@ -185,3 +185,37 @@ def test_expired_enrichment_payloads_are_purged() -> None:
     assert purged.input_payload == {}
     assert purged.result_payload == {}
     assert purged.purged_at is not None
+
+
+def test_enrichment_job_detail_recovers_queued_job_inline(api_client: APIClient) -> None:
+    tenant = get_internal_tenant()
+    with patch("leadstream.providers.tasks.process_enrichment_job_task.delay"):
+        creation = create_enrichment_job(
+            tenant=tenant,
+            entity_type=EnrichmentJob.EntityType.COMPANY,
+            query="11222333000181",
+            capabilities=["cnpj_qsa"],
+            idempotency_key="enrichment-stalled-recovery-001",
+        )
+
+    # O job foi criado como QUEUED (ex: worker offline)
+    assert creation.job.status == EnrichmentJob.Status.QUEUED
+
+    fake_result = {
+        "runId": "run-recovery",
+        "companyId": "comp-rec-1",
+        "company": {"legalName": "Empresa Recuperada com Sucesso"},
+        "sections": [],
+        "costCredits": 3,
+    }
+    with patch(
+        "leadstream.providers.enrichment_jobs.enrich_company_live",
+        return_value=fake_result,
+    ):
+        # A API consulta o status da execução e deve recuperar o job inline
+        response = api_client.get(f"/api/v1/enrichment/runs/{creation.job.pk}/")
+
+    assert response.status_code == 200
+    assert response.data["status"] == "SUCCEEDED"
+    assert response.data["result"]["company"]["legalName"] == "Empresa Recuperada com Sucesso"
+
