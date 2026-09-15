@@ -437,10 +437,11 @@ export interface EnrichedCompanySummary {
   cnae: string;
   companySize: string;
   annualRevenue: string;
+  capitalSocial?: string;
   city: string;
   state: string;
   technologies: string[];
-  branchCount: number;
+  branchCount: number | null;
   partnerCount: number;
   emailCount: number;
   phoneCount: number;
@@ -453,12 +454,23 @@ export interface CompanyEnrichmentResult {
   capabilities: string[];
   companyId: string;
   company: EnrichedCompanySummary;
+  registryEvidence?: {
+    source: string;
+    observedAt: string;
+    method: 'API' | 'CACHE' | 'DATASET';
+    status: 'OBSERVED' | 'INFERRED' | 'VALIDATED' | 'CONFIRMED';
+  };
   coverage: {
     requested: number;
     available: number;
     fieldCount: number;
     recordCount: number;
   };
+  contatosCadastraisEmpresa?: Array<{
+    tipo: 'EMAIL' | 'TELEFONE';
+    valor: string;
+    fonte: string;
+  }>;
   sections: Array<{
     id: string;
     title: string;

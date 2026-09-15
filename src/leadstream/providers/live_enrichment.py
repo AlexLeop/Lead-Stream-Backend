@@ -8,6 +8,7 @@ import httpx
 from django.db import transaction
 from django.utils import timezone
 
+from leadstream.common.redaction import correlation_tag
 from leadstream.entities.models import Company, ContactPoint, Relationship
 from leadstream.entities.normalization import (
     DataValidationError,
@@ -15,6 +16,7 @@ from leadstream.entities.normalization import (
     normalize_cnpj,
     only_digits,
 )
+from leadstream.entities.projections import update_company_registry_projection
 from leadstream.entities.services import (
     create_company,
     create_contact_point,
@@ -55,14 +57,16 @@ def format_cnpj(digits: str) -> str:
     return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
 
 
-def format_currency_brl(value: float | int) -> str:
+def format_currency_brl(value: float | int | None) -> str:
     """Formata valor monetário em Reais (BRL)."""
+    if value is None:
+        return "Não informado"
     try:
         val = float(value)
         formatted = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return f"R$ {formatted}"
     except (ValueError, TypeError):
-        return "R$ 0,00"
+        return "Não informado"
 
 
 def format_phone_br(digits: str) -> str:
@@ -77,8 +81,27 @@ def format_phone_br(digits: str) -> str:
     return digits
 
 
+def optional_bool(value: Any) -> bool | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().casefold()
+    if normalized in {"1", "true", "sim", "s", "yes"}:
+        return True
+    if normalized in {"0", "false", "não", "nao", "n", "no"}:
+        return False
+    return None
+
+
+def display_bool(value: bool | None, *, yes: str, no: str) -> str:
+    if value is None:
+        return "Não informado"
+    return yes if value else no
+
+
 def fetch_official_rfb_data(cnpj_digits: str) -> dict[str, Any] | None:
-    """Consulta dados cadastrais oficiais na RFB via BrasilAPI / MinhaReceita."""
+    """Consulta espelhos públicos do cadastro empresarial via BrasilAPI/Minha Receita."""
     # 1. Tentar BrasilAPI
     try:
         url = f"https://brasilapi.com.br/api/cnpj/v1/{cnpj_digits}"
@@ -87,11 +110,15 @@ def fetch_official_rfb_data(cnpj_digits: str) -> dict[str, Any] | None:
             if resp.status_code == 200:
                 data: dict[str, Any] = resp.json()
                 if isinstance(data, dict) and data.get("razao_social"):
-                    return data
+                    return {**data, "_leadstream_source": "BrasilAPI"}
             elif resp.status_code == 404:
                 return None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Falha na consulta BrasilAPI para CNPJ %s: %s", cnpj_digits, exc)
+        logger.warning(
+            "Falha na consulta BrasilAPI para CNPJ %s: %s",
+            correlation_tag(cnpj_digits),
+            type(exc).__name__,
+        )
 
     # 2. Fallback MinhaReceita
     try:
@@ -101,13 +128,58 @@ def fetch_official_rfb_data(cnpj_digits: str) -> dict[str, Any] | None:
             if resp.status_code == 200:
                 data = resp.json()
                 if isinstance(data, dict) and data.get("razao_social"):
-                    return data
+                    return {**data, "_leadstream_source": "Minha Receita"}
             elif resp.status_code == 404:
                 return None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Falha na consulta MinhaReceita para CNPJ %s: %s", cnpj_digits, exc)
+        logger.warning(
+            "Falha na consulta Minha Receita para CNPJ %s: %s",
+            correlation_tag(cnpj_digits),
+            type(exc).__name__,
+        )
 
     return None
+
+
+def _stored_company_projection(company: Company, cnpj: str) -> dict[str, Any]:
+    establishment = company.establishments.filter(cnpj=cnpj).first()
+    if establishment is None:
+        establishment = company.establishments.order_by("-is_headquarters", "created_at").first()
+    data: dict[str, Any] = {
+        "razao_social": company.legal_name,
+        "nome_fantasia": company.trade_name,
+        "descricao_situacao_cadastral": company.registration_status,
+        "data_inicio_atividade": company.opened_on,
+        "natureza_juridica": company.legal_nature,
+        "porte": company.company_size,
+        "capital_social": company.share_capital,
+        "cnae_fiscal": company.primary_cnae,
+        "cnae_fiscal_descricao": company.primary_cnae_description,
+        "cnaes_secundarios": company.secondary_cnaes,
+        "opcao_pelo_simples": company.simple_national,
+        "opcao_pelo_mei": company.mei,
+        "_leadstream_source": company.registry_source or "Base operacional",
+        "_leadstream_cached": True,
+        "_leadstream_observed_at": company.registry_observed_at,
+    }
+    if establishment is not None:
+        data.update(
+            {
+                "descricao_identificador_matriz_filial": (
+                    "MATRIZ" if establishment.is_headquarters else "FILIAL"
+                ),
+                "descricao_tipo_de_logradouro": establishment.street_type,
+                "logradouro": establishment.street,
+                "numero": establishment.number,
+                "complemento": establishment.complement,
+                "bairro": establishment.district,
+                "municipio": establishment.city,
+                "uf": establishment.state,
+                "cep": establishment.postal_code,
+                "codigo_municipio_ibge": establishment.municipality_ibge_code,
+            }
+        )
+    return data
 
 
 def enrich_company_live(
@@ -219,7 +291,11 @@ def enrich_company_live(
     rfb_data = fetch_official_rfb_data(normalized_cnpj)
     if not rfb_data:
         root = cnpj_root(normalized_cnpj)
-        existing_comp = Company.objects.filter(entity__tenant=tenant, cnpj_root=root).first()
+        existing_comp = (
+            Company.objects.filter(entity__tenant=tenant, cnpj_root=root)
+            .prefetch_related("establishments")
+            .first()
+        )
         if not existing_comp:
             return {
                 "runId": run_id,
@@ -235,13 +311,13 @@ def enrich_company_live(
                 "sections": [
                     {
                         "id": "not_found",
-                        "title": "Registro da Receita Federal",
-                        "description": "Base de dados pública de pessoas jurídicas (RFB)",
+                        "title": "Cadastro empresarial público",
+                        "description": "Fontes públicas configuradas para consulta cadastral",
                         "status": "unavailable",
-                        "summary": "CNPJ não encontrado na base da Receita Federal.",
+                        "summary": "CNPJ não localizado nas fontes públicas configuradas.",
                         "errorMessage": (
-                            f"O CNPJ {formatted_cnpj_str} não possui registro "
-                            "ativo ou inativo na base oficial da Receita Federal."
+                            f"O CNPJ {formatted_cnpj_str} não foi localizado. "
+                            "A fonte também pode estar temporariamente indisponível."
                         ),
                         "fields": [{"label": "CNPJ Consultado", "value": formatted_cnpj_str}],
                         "items": [],
@@ -253,51 +329,52 @@ def enrich_company_live(
                 "capabilitiesApplied": applied_caps,
                 "costCredits": 0,
             }
+        rfb_data = _stored_company_projection(existing_comp, normalized_cnpj)
 
     # --- 3. Extração dos dados oficiais reais ---
-    razao_social = str(rfb_data.get("razao_social") or "").strip() if rfb_data else ""
-    nome_fantasia = str(rfb_data.get("nome_fantasia") or "").strip() if rfb_data else ""
-    situacao = (
-        str(rfb_data.get("descricao_situacao_cadastral") or "ATIVA").strip()
-        if rfb_data
-        else "ATIVA"
-    )
-    data_abertura = str(rfb_data.get("data_inicio_atividade") or "").strip() if rfb_data else ""
-    natureza_juridica = str(rfb_data.get("natureza_juridica") or "").strip() if rfb_data else ""
-    porte = str(rfb_data.get("porte") or "").strip() if rfb_data else ""
-    capital_social_val = float(rfb_data.get("capital_social") or 0.0) if rfb_data else 0.0
-    cnae_principal_cod = str(rfb_data.get("cnae_fiscal") or "").strip() if rfb_data else ""
+    source_name = str(rfb_data.get("_leadstream_source") or "Fonte pública configurada")
+    source_observed_at = rfb_data.get("_leadstream_observed_at") or timezone.now()
+    razao_social = str(rfb_data.get("razao_social") or "").strip()
+    nome_fantasia = str(rfb_data.get("nome_fantasia") or "").strip()
+    situacao = str(rfb_data.get("descricao_situacao_cadastral") or "").strip()
+    data_abertura = str(rfb_data.get("data_inicio_atividade") or "").strip()
+    natureza_juridica = str(rfb_data.get("natureza_juridica") or "").strip()
+    porte = str(rfb_data.get("porte") or "").strip()
+    raw_capital_social = rfb_data.get("capital_social")
+    try:
+        capital_social_val = (
+            float(str(raw_capital_social)) if raw_capital_social not in (None, "") else None
+        )
+    except (TypeError, ValueError):
+        capital_social_val = None
+    cnae_principal_cod = str(rfb_data.get("cnae_fiscal") or "").strip()
     cnae_principal_desc = (
-        str(rfb_data.get("cnae_fiscal_descricao") or "").strip() if rfb_data else ""
+        str(rfb_data.get("cnae_fiscal_descricao") or "").strip()
     )
-    matriz_filial = (
-        str(rfb_data.get("descricao_identificador_matriz_filial") or "MATRIZ").strip()
-        if rfb_data
-        else "MATRIZ"
-    )
+    matriz_filial = str(rfb_data.get("descricao_identificador_matriz_filial") or "").strip()
 
     # Endereço
     tipo_logradouro = (
-        str(rfb_data.get("descricao_tipo_de_logradouro") or "").strip() if rfb_data else ""
+        str(rfb_data.get("descricao_tipo_de_logradouro") or "").strip()
     )
-    logradouro_nome = str(rfb_data.get("logradouro") or "").strip() if rfb_data else ""
+    logradouro_nome = str(rfb_data.get("logradouro") or "").strip()
     logradouro_completo = f"{tipo_logradouro} {logradouro_nome}".strip()
-    numero_end = str(rfb_data.get("numero") or "").strip() if rfb_data else ""
-    complemento_end = str(rfb_data.get("complemento") or "").strip() if rfb_data else ""
-    bairro_end = str(rfb_data.get("bairro") or "").strip() if rfb_data else ""
-    municipio_end = str(rfb_data.get("municipio") or "").strip() if rfb_data else ""
-    uf_end = str(rfb_data.get("uf") or "").strip() if rfb_data else ""
-    cep_end = str(rfb_data.get("cep") or "").strip() if rfb_data else ""
+    numero_end = str(rfb_data.get("numero") or "").strip()
+    complemento_end = str(rfb_data.get("complemento") or "").strip()
+    bairro_end = str(rfb_data.get("bairro") or "").strip()
+    municipio_end = str(rfb_data.get("municipio") or "").strip()
+    uf_end = str(rfb_data.get("uf") or "").strip()
+    cep_end = str(rfb_data.get("cep") or "").strip()
     cep_formatado = f"{cep_end[:5]}-{cep_end[5:]}" if len(cep_end) == 8 else cep_end
 
     # Tributação
-    simples_nacional = bool(rfb_data.get("opcao_pelo_simples")) if rfb_data else False
-    mei_enquadrado = bool(rfb_data.get("opcao_pelo_mei")) if rfb_data else False
-    data_opcao_simples = str(rfb_data.get("data_opcao_pelo_simples") or "") if rfb_data else ""
-    data_opcao_mei = str(rfb_data.get("data_opcao_pelo_mei") or "") if rfb_data else ""
+    simples_nacional = optional_bool(rfb_data.get("opcao_pelo_simples"))
+    mei_enquadrado = optional_bool(rfb_data.get("opcao_pelo_mei"))
+    data_opcao_simples = str(rfb_data.get("data_opcao_pelo_simples") or "")
+    data_opcao_mei = str(rfb_data.get("data_opcao_pelo_mei") or "")
 
     # Quadro de Sócios e Administradores (QSA) Real
-    raw_qsa: list[dict[str, Any]] = rfb_data.get("qsa", []) if rfb_data else []
+    raw_qsa: list[dict[str, Any]] = rfb_data.get("qsa", [])
     qsa_socios: list[dict[str, Any]] = []
     for s in raw_qsa:
         nome_socio = str(s.get("nome_socio") or "").strip()
@@ -305,7 +382,7 @@ def enrich_company_live(
             qsa_socios.append(
                 {
                     "nome": nome_socio,
-                    "qualificacao": str(s.get("qualificacao_socio") or "Sócio").strip(),
+                    "qualificacao": str(s.get("qualificacao_socio") or "").strip(),
                     "faixaEtaria": str(s.get("faixa_etaria") or "Não informada").strip(),
                     "documentoMascarado": str(s.get("cnpj_cpf_do_socio") or "").strip(),
                     "dataEntrada": str(s.get("data_entrada_sociedade") or "").strip(),
@@ -313,7 +390,7 @@ def enrich_company_live(
             )
 
     # CNAEs secundários reais
-    raw_sec: list[dict[str, Any]] = rfb_data.get("cnaes_secundarios", []) if rfb_data else []
+    raw_sec: list[dict[str, Any]] = rfb_data.get("cnaes_secundarios", [])
     cnaes_secundarios: list[dict[str, str]] = []
     for c in raw_sec:
         c_code = str(c.get("codigo") or "").strip()
@@ -323,15 +400,15 @@ def enrich_company_live(
 
     # Contatos Oficiais declarados na RFB (NUNCA inventar dados!)
     telefones_oficiais: list[str] = []
-    t1 = str(rfb_data.get("ddd_telefone_1") or "").strip() if rfb_data else ""
-    t2 = str(rfb_data.get("ddd_telefone_2") or "").strip() if rfb_data else ""
+    t1 = str(rfb_data.get("ddd_telefone_1") or "").strip()
+    t2 = str(rfb_data.get("ddd_telefone_2") or "").strip()
     if t1 and len(only_digits(t1)) >= 8:
         telefones_oficiais.append(format_phone_br(t1))
     if t2 and len(only_digits(t2)) >= 8 and t2 != t1:
         telefones_oficiais.append(format_phone_br(t2))
 
     emails_oficiais: list[str] = []
-    email_rfb = str(rfb_data.get("email") or "").strip() if rfb_data else ""
+    email_rfb = str(rfb_data.get("email") or "").strip()
     if email_rfb and "@" in email_rfb:
         emails_oficiais.append(email_rfb.lower())
 
@@ -343,9 +420,44 @@ def enrich_company_live(
             legal_name=razao_social or f"Empresa {formatted_cnpj_str}",
             trade_name=nome_fantasia,
             registration_status=situacao,
-            is_headquarters=(matriz_filial.upper() == "MATRIZ"),
+            is_headquarters=(
+                True
+                if matriz_filial.upper() == "MATRIZ"
+                else False
+                if matriz_filial.upper() == "FILIAL"
+                else None
+            ),
         )
         company_record = comp_identity.company
+        if not rfb_data.get("_leadstream_cached"):
+            update_company_registry_projection(
+                company=company_record,
+                data={
+                    "legal_name": razao_social,
+                    "trade_name": nome_fantasia,
+                    "registration_status": situacao,
+                    "opened_on": data_abertura,
+                    "legal_nature": natureza_juridica,
+                    "company_size": porte,
+                    "share_capital": raw_capital_social,
+                    "primary_cnae": cnae_principal_cod,
+                    "primary_cnae_description": cnae_principal_desc,
+                    "secondary_cnaes": cnaes_secundarios,
+                    "simple_national": rfb_data.get("opcao_pelo_simples"),
+                    "mei": rfb_data.get("opcao_pelo_mei"),
+                    "street_type": tipo_logradouro,
+                    "street": logradouro_nome,
+                    "number": numero_end,
+                    "complement": complemento_end,
+                    "district": bairro_end,
+                    "city": municipio_end,
+                    "state": uf_end,
+                    "postal_code": cep_end,
+                    "municipality_ibge_code": rfb_data.get("codigo_municipio_ibge"),
+                },
+                source=source_name,
+                observed_at=source_observed_at,
+            )
 
         # Persistir sócios no grafo de entidades
         for socio in qsa_socios:
@@ -396,23 +508,24 @@ def enrich_company_live(
     sections.append(
         {
             "id": "registry",
-            "title": "Dados Cadastrais & RFB",
-            "description": "Registro oficial de pessoa jurídica na Receita Federal do Brasil",
-            "status": "available",
+            "title": "Dados cadastrais",
+            "description": f"Dados observados em {source_name}",
+            "status": "available" if razao_social else "empty",
             "summary": (
-                f"Situação cadastral {situacao} na Receita Federal. "
-                f"Registro oficial de {matriz_filial}."
+                f"Situação cadastral: {situacao or 'não informada'}. "
+                f"Unidade: {matriz_filial or 'não informada'}."
             ),
             "fields": [
                 {"label": "CNPJ", "value": formatted_cnpj_str},
                 {"label": "Razão Social", "value": razao_social or "Não informada"},
                 {"label": "Nome Fantasia", "value": nome_fantasia or "Não informado"},
-                {"label": "Situação Cadastral", "value": situacao},
+                {"label": "Situação Cadastral", "value": situacao or "Não informada"},
                 {"label": "Data de Abertura", "value": data_abertura or "Não informada"},
                 {"label": "Natureza Jurídica", "value": natureza_juridica or "Não informada"},
-                {"label": "Porte", "value": porte or "DEMAIS"},
+                {"label": "Porte", "value": porte or "Não informado"},
                 {"label": "Capital Social", "value": format_currency_brl(capital_social_val)},
-                {"label": "Matriz / Filial", "value": matriz_filial},
+                {"label": "Matriz / Filial", "value": matriz_filial or "Não informado"},
+                {"label": "Fonte", "value": source_name},
             ],
             "items": [],
         }
@@ -437,9 +550,9 @@ def enrich_company_live(
             "description": "Sócios, diretores e administradores registrados no contrato social",
             "status": "available" if qsa_items else "empty",
             "summary": (
-                f"{len(qsa_items)} sócio(s) ou administrador(es) identificado(s) na base oficial."
+                f"{len(qsa_items)} sócio(s) ou administrador(es) observado(s) em {source_name}."
                 if qsa_items
-                else "Nenhum sócio ou administrador constante no cadastro público da RFB."
+                else "Nenhum sócio ou administrador foi informado pela fonte consultada."
             ),
             "fields": [
                 {"label": "Total de Integrantes", "value": str(len(qsa_items))},
@@ -489,7 +602,7 @@ def enrich_company_live(
         {
             "id": "address",
             "title": "Endereço & Localização",
-            "description": "Domicílio fiscal registrado perante a Receita Federal",
+            "description": f"Domicílio fiscal observado em {source_name}",
             "status": "available" if has_address else "empty",
             "summary": f"{municipio_end} / {uf_end} — CEP {cep_formatado}"
             if has_address
@@ -510,22 +623,30 @@ def enrich_company_live(
     )
 
     # 5.5 Seção Regime Tributário
+    has_tax_data = simples_nacional is not None or mei_enquadrado is not None
     sections.append(
         {
             "id": "tax",
             "title": "Regime Tributário & Fiscal",
             "description": "Opção pelo Simples Nacional, MEI e regularidade",
-            "status": "available",
+            "status": "available" if has_tax_data else "empty",
             "summary": (
-                f"Simples: {'Optante' if simples_nacional else 'Não optante'} · "
-                f"MEI: {'Sim' if mei_enquadrado else 'Não'}"
+                f"Simples: {display_bool(simples_nacional, yes='Optante', no='Não optante')} · "
+                f"MEI: {display_bool(mei_enquadrado, yes='Sim', no='Não')}"
+                if has_tax_data
+                else "A fonte consultada não informou o enquadramento tributário."
             ),
             "fields": [
                 {
                     "label": "Simples Nacional",
-                    "value": "Optante" if simples_nacional else "Não optante",
+                    "value": display_bool(
+                        simples_nacional, yes="Optante", no="Não optante"
+                    ),
                 },
-                {"label": "Microempreendedor (MEI)", "value": "Sim" if mei_enquadrado else "Não"},
+                {
+                    "label": "Microempreendedor (MEI)",
+                    "value": display_bool(mei_enquadrado, yes="Sim", no="Não"),
+                },
                 {"label": "Opção Simples Desde", "value": data_opcao_simples or "—"},
                 {"label": "Opção MEI Desde", "value": data_opcao_mei or "—"},
             ],
@@ -533,28 +654,29 @@ def enrich_company_live(
         }
     )
 
-    # 5.6 Seção Contatos Oficiais RFB (Sem dados inventados!)
+    # 5.6 Contatos cadastrais da empresa. Nunca atribuir estes canais a uma pessoa.
     has_contacts = bool(telefones_oficiais or emails_oficiais)
     contact_fields: list[dict[str, str]] = []
     for idx, tel in enumerate(telefones_oficiais, 1):
-        contact_fields.append({"label": f"Telefone RFB {idx}", "value": tel})
+        contact_fields.append({"label": f"Telefone cadastral {idx}", "value": tel})
     for idx, em in enumerate(emails_oficiais, 1):
         contact_fields.append({"label": f"E-mail Cadastral {idx}", "value": em})
 
     sections.append(
         {
             "id": "contacts",
-            "title": "Contatos Cadastrais RFB",
-            "description": "Canais de contato oficiais declarados perante a Receita Federal",
+            "title": "Contatos cadastrais da empresa",
+            "description": f"Canais empresariais observados em {source_name}; não são do decisor",
             "status": "available" if has_contacts else "empty",
             "summary": (
-                f"{len(telefones_oficiais)} telefone(s) e {len(emails_oficiais)} e-mail(s) na RFB."
+                f"{len(telefones_oficiais)} telefone(s) e "
+                f"{len(emails_oficiais)} e-mail(s) cadastral(is)."
                 if has_contacts
-                else "Nenhum canal de contato informado no cadastro da Receita Federal."
+                else "Nenhum canal de contato empresarial foi informado pela fonte."
             ),
             "fields": contact_fields
             if has_contacts
-            else [{"label": "Canais Públicos Declarados", "value": "Ausentes no cadastro da RFB"}],
+            else [{"label": "Canais públicos", "value": "Ausentes na fonte consultada"}],
             "items": [],
         }
     )
@@ -577,17 +699,18 @@ def enrich_company_live(
         "status": situacao,
         "industry": cnae_principal_desc or "Atividade empresarial",
         "cnae": f"{cnae_principal_cod} — {cnae_principal_desc}" if cnae_principal_cod else "",
-        "companySize": porte or "DEMAIS",
-        "annualRevenue": format_currency_brl(capital_social_val),
+        "companySize": porte,
+        "annualRevenue": "",
+        "capitalSocial": format_currency_brl(capital_social_val),
         "city": municipio_end,
         "state": uf_end,
         "technologies": [],
-        "branchCount": 0 if matriz_filial.upper() == "MATRIZ" else 1,
+        "branchCount": None,
         "partnerCount": len(qsa_socios),
         "emailCount": len(emails_oficiais),
         "phoneCount": len(telefones_oficiais),
         "siteCount": 0,
-        "observedAt": timezone.now().isoformat(),
+        "observedAt": source_observed_at.isoformat(),
     }
 
     return {
@@ -595,18 +718,26 @@ def enrich_company_live(
         "companyId": str(company_record.entity.id),
         "capabilities": applied_caps,
         "company": company_summary,
+        "registryEvidence": {
+            "source": source_name,
+            "observedAt": source_observed_at.isoformat(),
+            "method": "CACHE" if rfb_data.get("_leadstream_cached") else "API",
+            "status": "OBSERVED",
+        },
         "coverage": coverage,
         "sections": sections,
         "socioAdministradores": qsa_socios,
-        "emailsValidados": [
-            {"email": em, "status": "CADASTRO_RFB", "score": 85} for em in emails_oficiais
-        ],
-        "telefonesAtribuiveis": [
+        "emailsValidados": [],
+        "telefonesAtribuiveis": [],
+        "contatosCadastraisEmpresa": [
+            {"tipo": "EMAIL", "valor": em, "fonte": source_name}
+            for em in emails_oficiais
+        ]
+        + [
             {
-                "numero": tel,
-                "tipo": "Comercial (RFB)",
-                "whatsappDisponivel": False,
-                "atribuicao": "Cadastro Oficial RFB",
+                "tipo": "TELEFONE",
+                "valor": tel,
+                "fonte": source_name,
             }
             for tel in telefones_oficiais
         ],

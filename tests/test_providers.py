@@ -197,6 +197,46 @@ def test_executor_persiste_decisor_contatos_e_cobra_apenas_qualidade_suficiente(
     )
 
 
+def test_contato_cadastral_da_empresa_nao_vira_contato_direto_do_decisor() -> None:
+    context = make_context(suffix="company-contact")
+    policy = make_policy(context, slug="company-contact-fixture")
+
+    result = ProviderResult(
+        outcome=ProviderCall.Status.SUCCEEDED,
+        confirmed_cost_cents=1,
+        observations=(
+            FieldObservation(
+                field_path="company.city",
+                value="São Paulo",
+                confidence=100,
+                evidence_status=EvidenceStatus.CONFIRMED,
+                method=CaptureMethod.DATASET,
+            ),
+        ),
+        company_contacts=(
+            ContactCandidate(
+                kind=ContactPoint.Kind.EMAIL,
+                value="contato@empresa.example",
+                confidence=100,
+                evidence_status=EvidenceStatus.OBSERVED,
+            ),
+        ),
+    )
+    execution = execute_provider(
+        adapter=FixtureProviderAdapter("company-contact-fixture", lambda _: result),
+        policy=policy,
+        context=context,
+    )
+
+    contact = ContactPoint.objects.get(normalized_value="contato@empresa.example")
+    assert contact.owner_id == context.item.entity_id
+    assert execution.delivered_blocks == frozenset({DataBlock.COMPANY_REGISTRY})
+    assert not BillableEvent.objects.filter(
+        batch=context.batch,
+        block__in=(DataBlock.DIRECT_EMAIL, DataBlock.DIRECT_PHONE),
+    ).exists()
+
+
 def test_circuit_breaker_e_orcamento_bloqueiam_chamadas() -> None:
     context = make_context(suffix="002")
     policy = make_policy(context, slug="unstable", failure_threshold=2)
@@ -248,6 +288,9 @@ def test_adapter_bigquery_mapeia_empresa_e_qsa_sem_rede() -> None:
                 {
                     "razao_social": "Empresa Exemplo S.A.",
                     "municipio": "São Paulo",
+                    "email": "contato@empresa.example",
+                    "ddd_1": "11",
+                    "telefone_1": "33334444",
                     "socios": [
                         {"nome_socio": "Maria Souza", "qualificacao_socio": "Administradora"}
                     ],
@@ -260,8 +303,15 @@ def test_adapter_bigquery_mapeia_empresa_e_qsa_sem_rede() -> None:
     assert result.outcome == ProviderCall.Status.SUCCEEDED
     assert result.observations[0].evidence_status == EvidenceStatus.CONFIRMED
     assert result.people[0].full_name == "Maria Souza"
+    assert result.people[0].contacts == ()
+    assert {candidate.kind for candidate in result.company_contacts} == {
+        ContactPoint.Kind.EMAIL,
+        ContactPoint.Kind.PHONE,
+    }
     assert DataBlock.COMPANY_REGISTRY in result.delivered_blocks
     assert DataBlock.DECISION_MAKER in result.delivered_blocks
+    assert DataBlock.DIRECT_EMAIL not in result.delivered_blocks
+    assert DataBlock.DIRECT_PHONE not in result.delivered_blocks
 
 
 @override_settings(

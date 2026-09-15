@@ -12,6 +12,7 @@ from leadstream.batches.models import BatchItem
 from leadstream.billing.models import DataBlock
 from leadstream.entities.models import Company, ContactPoint, Relationship
 from leadstream.entities.normalization import DataValidationError, fingerprint_value
+from leadstream.entities.projections import update_company_registry_projection
 from leadstream.entities.services import (
     create_contact_point,
     create_person,
@@ -31,7 +32,7 @@ from leadstream.evidence.services import append_observation, canonicalize
 from leadstream.governance.models import Suppression
 from leadstream.governance.services import is_suppressed
 
-from .contracts import FieldObservation, PersonCandidate, ProviderResult
+from .contracts import ContactCandidate, FieldObservation, PersonCandidate, ProviderResult
 from .models import ProviderPolicy
 
 
@@ -147,6 +148,48 @@ def _contact_block(kind: str) -> str:
     if kind == ContactPoint.Kind.WHATSAPP:
         return DataBlock.WHATSAPP
     return DataBlock.DIRECT_PHONE
+
+
+def _persist_company_contact(
+    *,
+    item: BatchItem,
+    company: Company,
+    record: SourceRecord,
+    candidate: ContactCandidate,
+) -> None:
+    """Persiste um canal da empresa sem promovê-lo a contato direto do decisor."""
+    scope = (
+        Suppression.Scope.EMAIL
+        if candidate.kind == ContactPoint.Kind.EMAIL
+        else Suppression.Scope.PHONE
+    )
+    if is_suppressed(tenant=item.tenant, scope=scope, value=candidate.value):
+        return
+    status = candidate.evidence_status
+    try:
+        create_contact_point(
+            tenant=item.tenant,
+            owner=company.entity,
+            kind=candidate.kind,
+            value=candidate.value,
+            status=ContactPoint.Status.OBSERVED,
+        )
+    except DataValidationError:
+        status = EvidenceStatus.REJECTED
+    _observe(
+        record=record,
+        target=company.entity,
+        observation=FieldObservation(
+            field_path=f"company.contact.{candidate.kind.casefold()}",
+            value=candidate.value,
+            confidence=candidate.confidence,
+            evidence_status=status,
+            method="API" if record.source.category == Source.Category.COMMERCIAL else "DATASET",
+            source_url=candidate.source_url,
+            external_id=candidate.external_id,
+            metadata={**candidate.metadata, "owner_type": "COMPANY"},
+        ),
+    )
 
 
 def _quality_update(
@@ -383,6 +426,7 @@ def persist_provider_result(
     )
     qualities: dict[str, BlockQuality] = {}
     normalized_updates: dict[str, Any] = dict(item.normalized_data or {})
+    projection_updates: dict[str, Any] = {}
     field_to_norm_key = {
         "company.legal_name": "razao_social",
         "company.trade_name": "nome_fantasia",
@@ -404,6 +448,30 @@ def persist_provider_result(
         "company.data_situacao_cadastral": "data_situacao_cadastral",
         "company.motivo_situacao_cadastral": "motivo_situacao_cadastral",
         "company.codigo_municipio_ibge": "codigo_municipio_ibge",
+        "company.simple_national": "opcao_pelo_simples",
+        "company.mei": "opcao_pelo_mei",
+    }
+    field_to_projection_key = {
+        "company.legal_name": "legal_name",
+        "company.trade_name": "trade_name",
+        "company.registration_status": "registration_status",
+        "company.primary_cnae": "primary_cnae",
+        "company.secondary_cnaes": "secondary_cnaes",
+        "company.city": "city",
+        "company.state": "state",
+        "company.tipo_logradouro": "street_type",
+        "company.logradouro": "street",
+        "company.numero": "number",
+        "company.complemento": "complement",
+        "company.bairro": "district",
+        "company.cep": "postal_code",
+        "company.capital_social": "share_capital",
+        "company.porte": "company_size",
+        "company.natureza_juridica": "legal_nature",
+        "company.data_inicio_atividade": "opened_on",
+        "company.codigo_municipio_ibge": "municipality_ibge_code",
+        "company.simple_national": "simple_national",
+        "company.mei": "mei",
     }
     for observation in result.observations:
         _observe(record=record, target=item.entity, observation=observation)
@@ -427,6 +495,35 @@ def persist_provider_result(
             norm_key = field_to_norm_key.get(observation.field_path)
             if norm_key and observation.value not in (None, ""):
                 normalized_updates[norm_key] = observation.value
+            projection_key = field_to_projection_key.get(observation.field_path)
+            if projection_key and observation.value not in (None, ""):
+                projection_updates[projection_key] = observation.value
+
+    if projection_updates:
+        update_company_registry_projection(
+            company=company,
+            data=projection_updates,
+            source=source.name,
+            observed_at=record.captured_at,
+        )
+
+    for company_contact in result.company_contacts:
+        _persist_company_contact(
+            item=item,
+            company=company,
+            record=record,
+            candidate=company_contact,
+        )
+        if (
+            company_contact.kind == ContactPoint.Kind.EMAIL
+            and "correio_eletronico" not in normalized_updates
+        ):
+            normalized_updates["correio_eletronico"] = company_contact.value
+        elif (
+            company_contact.kind in (ContactPoint.Kind.PHONE, ContactPoint.Kind.WHATSAPP)
+            and "ddd_telefone_1" not in normalized_updates
+        ):
+            normalized_updates["ddd_telefone_1"] = company_contact.value
 
     qsa_list: list[dict[str, Any]] = list(normalized_updates.get("qsa") or [])
     existing_qsa_names = {
@@ -453,18 +550,12 @@ def persist_provider_result(
                 if soc.network.upper() == "LINKEDIN":
                     socio_entry["linkedin_url"] = soc.profile_url
             for cont in candidate.contacts:
-                if (
-                    cont.kind == ContactPoint.Kind.EMAIL
-                    and "correio_eletronico" not in normalized_updates
-                ):
-                    normalized_updates["correio_eletronico"] = cont.value
-                    normalized_updates["email"] = cont.value
-                elif (
-                    cont.kind in (ContactPoint.Kind.PHONE, ContactPoint.Kind.WHATSAPP)
-                    and "ddd_telefone_1" not in normalized_updates
-                ):
-                    normalized_updates["ddd_telefone_1"] = cont.value
-                    normalized_updates["telefone"] = cont.value
+                if cont.kind == ContactPoint.Kind.EMAIL:
+                    socio_entry["email_direto"] = cont.value
+                elif cont.kind == ContactPoint.Kind.WHATSAPP:
+                    socio_entry["whatsapp"] = cont.value
+                elif cont.kind == ContactPoint.Kind.PHONE:
+                    socio_entry["telefone_direto"] = cont.value
             qsa_list.append(socio_entry)
             existing_qsa_names.add(cand_name.upper())
 

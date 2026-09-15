@@ -76,6 +76,7 @@ class ProviderResult:
     confirmed_cost_cents: int
     observations: tuple[FieldObservation, ...] = ()
     people: tuple[PersonCandidate, ...] = ()
+    company_contacts: tuple[ContactCandidate, ...] = ()
     delivered_blocks: frozenset[str] = frozenset()
     external_request_id: str = ""
     raw_payload_hash: str = ""

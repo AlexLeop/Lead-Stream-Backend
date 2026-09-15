@@ -132,6 +132,8 @@ class BigQueryOpenCNPJAdapter:
             "company.data_situacao_cadastral": ("data_situacao_cadastral",),
             "company.motivo_situacao_cadastral": ("motivo_situacao_cadastral",),
             "company.codigo_municipio_ibge": ("codigo_municipio_ibge", "id_municipio"),
+            "company.simple_national": ("opcao_pelo_simples", "simples_nacional"),
+            "company.mei": ("opcao_pelo_mei", "mei"),
         }
         for field_path, aliases in field_map.items():
             value = pick(row, *aliases)
@@ -161,7 +163,7 @@ class BigQueryOpenCNPJAdapter:
                     kind="EMAIL",
                     value=str(email).strip().lower(),
                     confidence=getattr(settings, "BIGQUERY_CONFIDENCE", 100),
-                    evidence_status=EvidenceStatus.CONFIRMED,
+                    evidence_status=EvidenceStatus.OBSERVED,
                     source_url="",
                     external_id=context.cnpj,
                 )
@@ -176,7 +178,7 @@ class BigQueryOpenCNPJAdapter:
                         kind="PHONE",
                         value=phone_clean,
                         confidence=getattr(settings, "BIGQUERY_CONFIDENCE", 100),
-                        evidence_status=EvidenceStatus.CONFIRMED,
+                        evidence_status=EvidenceStatus.OBSERVED,
                         source_url="",
                         external_id=context.cnpj,
                     )
@@ -225,36 +227,16 @@ class BigQueryOpenCNPJAdapter:
                         )
                     )
 
-        if contacts and people:
-            primary = people[0]
-            people[0] = PersonCandidate(
-                full_name=primary.full_name,
-                external_key=primary.external_key,
-                qualification=primary.qualification,
-                observed_title=primary.observed_title,
-                seniority=primary.seniority,
-                buying_role=primary.buying_role,
-                buying_role_is_inferred=primary.buying_role_is_inferred,
-                confidence=primary.confidence,
-                evidence_status=primary.evidence_status,
-                contacts=tuple(contacts),
-                socials=primary.socials,
-                source_url=primary.source_url,
-            )
-
         delivered = {DataBlock.COMPANY_REGISTRY}
         if people:
             delivered.add(DataBlock.DECISION_MAKER)
-        if any(c.kind == "EMAIL" for c in contacts):
-            delivered.add(DataBlock.DIRECT_EMAIL)
-        if any(c.kind == "PHONE" for c in contacts):
-            delivered.add(DataBlock.DIRECT_PHONE)
 
         return ProviderResult(
             outcome="SUCCEEDED",
             confirmed_cost_cents=self._cost(response),
             observations=tuple(observations),
             people=tuple(people),
+            company_contacts=tuple(contacts),
             delivered_blocks=frozenset(delivered),
             external_request_id=context.cnpj,
         )
