@@ -137,3 +137,15 @@ class TestAuthMeAndSwitchWorkspaceAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["active_workspace"]["id"] == str(self.tenant_b.id)
+
+    def test_auth_me_with_superuser_returns_super_admin(self):
+        token = RefreshToken.for_user(self.superuser).access_token
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        response = self.client.get("/api/v1/auth/me/")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["user"]["username"] == "admin_global"
+        assert data["user"]["is_superuser"] is True
+        assert data["active_workspace"]["role"] == "SUPER_ADMIN"
+        assert data["active_workspace"]["is_owner"] is True

@@ -435,9 +435,7 @@ class AuthMeView(APIView):
         else:
             user = request.user
             if not user or not user.is_authenticated:
-                return Response(
-                    {"detail": "Não autenticado."}, status=status.HTTP_401_UNAUTHORIZED
-                )
+                return Response({"detail": "Não autenticado."}, status=status.HTTP_401_UNAUTHORIZED)
 
             is_super = bool(getattr(user, "is_superuser", False))
             user_id = str(user.pk)
@@ -519,20 +517,24 @@ class AuthMeView(APIView):
                         "is_active": m.is_active,
                         "is_current": (m.tenant.id == tenant.id),
                     }
-                for m in memberships
-            ]
-            active_workspace_data = {
-                "id": tenant.id,
-                "name": tenant.name,
-                "slug": tenant.slug,
-                "role": current_role,
-                "is_owner": (current_role == WorkspaceRole.ADMIN),
-                "stats": {
-                    "total_batches": Batch.objects.filter(tenant=tenant).count(),
-                    "total_leads_processed": BatchItem.objects.filter(batch__tenant=tenant).count(),
-                    "active_api_keys": APIKey.objects.filter(tenant=tenant, is_active=True).count(),
-                },
-            }
+                    for m in memberships
+                ]
+                active_workspace_data = {
+                    "id": tenant.id,
+                    "name": tenant.name,
+                    "slug": tenant.slug,
+                    "role": current_role,
+                    "is_owner": (current_role == WorkspaceRole.ADMIN),
+                    "stats": {
+                        "total_batches": Batch.objects.filter(tenant=tenant).count(),
+                        "total_leads_processed": BatchItem.objects.filter(
+                            batch__tenant=tenant
+                        ).count(),
+                        "active_api_keys": APIKey.objects.filter(
+                            tenant=tenant, is_active=True
+                        ).count(),
+                    },
+                }
 
         payload = {
             "user": user_data,
