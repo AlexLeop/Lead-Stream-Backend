@@ -27,6 +27,7 @@ REDIS_URL=redis://localhost:6379/15 \
 DJANGO_SECURE_SSL_REDIRECT=true \
 DATA_HASH_KEY=quality-check-only-data-hash-key \
 DATA_HASH_KEY_VERSION=v1 \
+FIELD_ENCRYPTION_KEYS=LN9efNDmugNtrk_5pkcuBrkDKU3LrWZgHEZVWlUzvDI= \
   "$leadstream_python" manage.py check --deploy --fail-level WARNING
 
 printf '\n==> Testes\n'
