@@ -1329,7 +1329,8 @@ class DiscoveryCnaesView(APIView):
         query = request.query_params.get("q", "").lower().strip()
         limit = int(request.query_params.get("limit", 30))
 
-        results = []
+        results: list[dict[str, Any]] = []
+        empty_buying_group: list[str] = []
         for code, details in KNOWN_CNAES.items():
             desc = details.get("descricao", "")
             setor = details.get("setor", "")
@@ -1348,7 +1349,7 @@ class DiscoveryCnaesView(APIView):
                         "industry": setor,
                         "typicalPorte": None,
                         "averageTicket": None,
-                        "defaultBuyingGroup": [],
+                        "defaultBuyingGroup": empty_buying_group,
                     }
                 )
                 if len(results) >= limit:

@@ -80,11 +80,12 @@ def test_enrichment_job_result_is_encrypted_and_available_to_its_tenant(
             idempotency_key="enrichment-result-001",
         )
 
+    empty_sections: list[dict[str, Any]] = []
     fake_result = {
         "runId": "run-safe",
         "companyId": "company-123",
         "company": {"legalName": "Empresa Observada"},
-        "sections": [],
+        "sections": empty_sections,
         "costCredits": 7,
         "telefonesAtribuiveis": [{"value": "+5511999999999"}],
     }
@@ -201,11 +202,12 @@ def test_enrichment_job_detail_recovers_queued_job_inline(api_client: APIClient)
     # O job foi criado como QUEUED (ex: worker offline)
     assert creation.job.status == EnrichmentJob.Status.QUEUED
 
+    empty_sections_rec: list[dict[str, Any]] = []
     fake_result = {
         "runId": "run-recovery",
         "companyId": "comp-rec-1",
         "company": {"legalName": "Empresa Recuperada com Sucesso"},
-        "sections": [],
+        "sections": empty_sections_rec,
         "costCredits": 3,
     }
     with patch(
