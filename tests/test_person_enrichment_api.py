@@ -5,9 +5,11 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from django.core.cache import cache
 from django.test import override_settings
 from rest_framework.test import APIClient
 
+from leadstream.analytics.views import _person_lead
 from leadstream.canonical.contracts import CanonicalPersonPayload
 from leadstream.entities.models import ContactPoint, Person
 from leadstream.providers.live_enrichment_person import (
@@ -53,6 +55,79 @@ def test_enrich_person_live_invalid_dv() -> None:
     assert sec["id"] == "validation_error"
     assert "dígitos verificadores incorretos" in sec["errorMessage"]
     assert res["costCredits"] == 0
+
+
+@pytest.mark.django_db
+def test_enrich_person_live_persiste_portal_sem_cobrar_nome_publico() -> None:
+    tenant = Tenant.objects.create(name="Tenant Portal PF", slug="tenant-portal-pf")
+    cpf = "52998224725"
+    requests: list[str] = []
+    cache.clear()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        if request.url.path.endswith("/pessoa-fisica"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "cpf": cpf,
+                        "nome": "PESSOA PUBLICA EXEMPLO",
+                        "servidor": False,
+                        "servidorInativo": False,
+                        "beneficiarioDiarias": False,
+                        "permissionario": False,
+                        "contratado": False,
+                        "sancionadoCEIS": False,
+                        "sancionadoCNEP": False,
+                        "sancionadoCEAF": False,
+                        "portadorCPDC": False,
+                        "portadorCPGF": False,
+                        "favorecidoDespesas": False,
+                        "favorecidoTransferencias": False,
+                        "favorecidoCPCC": False,
+                        "favorecidoCPDC": False,
+                        "favorecidoCPGF": False,
+                        "participanteLicitacao": False,
+                    }
+                ],
+            )
+        if request.url.path.endswith("/peps"):
+            return httpx.Response(200, json=[])
+        return httpx.Response(500)
+
+    with (
+        override_settings(
+            BIGDATACORP_ACCESS_TOKEN=None,
+            BIGDATACORP_TOKEN_ID=None,
+            WHATSAPP_PROBE_URL=None,
+            WHATSAPP_PROBE_API_KEY=None,
+            PORTAL_TRANSPARENCIA_TOKEN="test-token",
+            PORTAL_TRANSPARENCIA_BASE_URL=(
+                "https://api.portaldatransparencia.gov.br/api-de-dados"
+            ),
+            PORTAL_TRANSPARENCIA_CACHE_SECONDS=60,
+        ),
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+    ):
+        result = enrich_person_live(query=cpf, tenant=tenant, http_client=client)
+
+    person = Person.objects.get(entity__tenant=tenant)
+    assert result["person"]["name"] == "PESSOA PUBLICA EXEMPLO"
+    assert result["costCredits"] == 0
+    assert result["governmentIntelligence"]["strategy"] == (
+        "PROFILE_GUIDED_PROFESSIONAL_ONLY"
+    )
+    assert person.government_profile["indexed_in_portal"] is True
+    assert person.government_profile_observed_at is not None
+    lead = _person_lead(person)
+    assert lead["governmentIntelligence"]["strategy"] == (
+        "PROFILE_GUIDED_PROFESSIONAL_ONLY"
+    )
+    assert lead["governmentRisk"]["status"] == "NOT_QUERIED_NO_PROFILE_FLAG"
+    assert lead["publicSectorProfile"]["server_records"] == []
+    assert lead["enriched"] is True
+    assert requests == ["/api-de-dados/pessoa-fisica", "/api-de-dados/peps"]
 
 
 @pytest.mark.django_db

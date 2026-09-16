@@ -24,6 +24,8 @@ from leadstream.intelligence.cpf_rfb import (
     validate_cpf_with_details,
 )
 from leadstream.providers.adapters.bigdatacorp_person import BigDataCorpPersonAdapter, format_cpf_br
+from leadstream.providers.adapters.portal_transparencia import PortalTransparenciaAdapter
+from leadstream.providers.exceptions import ProviderError
 from leadstream.tenancy.models import Tenant
 from leadstream.validation.phone_check import get_phone_operator_hint
 from leadstream.validation.whatsapp_probe import (
@@ -75,6 +77,7 @@ def enrich_person_live(
         "nao_me_perturbe",
         "mailing_top3_discagem",
         "phones_whatsapp_garantido",
+        "government_intelligence",
     ]
     run_id = f"run_{uuid.uuid4().hex[:10]}"
     cleaned_digits = only_digits(query)
@@ -241,6 +244,8 @@ def enrich_person_live(
     renda_data: dict[str, Any] = {}
     bloqueios_nmp: list[dict[str, Any]] | None = None
     bureau_result: dict[str, Any] | None = None
+    bureau_identity_found = False
+    government_intelligence: dict[str, Any] | None = None
 
     nome_pessoa = ""
     data_nascimento = None
@@ -255,6 +260,7 @@ def enrich_person_live(
         try:
             bureau_result = bureau_adapter.enrich_cpf(cleaned_digits)
             if bureau_result.get("encontrado") and bureau_result.get("dados_cadastrais"):
+                bureau_identity_found = True
                 cad = bureau_result["dados_cadastrais"]
                 nome_pessoa = cad.get("nome") or ""
                 data_nascimento = cad.get("data_nascimento")
@@ -351,7 +357,116 @@ def enrich_person_live(
             }
         )
 
-    # 4. Camada 1: Filtro de Perda (Óbito & RFB)
+    # 4. Inteligência governamental profissional (sem benefícios/remuneração).
+    if "government_intelligence" in applied_caps:
+        portal_adapter = PortalTransparenciaAdapter(client=http_client)
+        if portal_adapter.is_configured():
+            try:
+                government_intelligence = portal_adapter.enrich_person(cleaned_digits)
+                portal_name = str(
+                    government_intelligence.get("profile", {}).get("name") or ""
+                ).strip()
+                if not nome_pessoa and portal_name:
+                    nome_pessoa = portal_name
+                pep = government_intelligence.get("pep", {})
+                risk = government_intelligence.get("government_risk", {})
+                public_sector = government_intelligence.get("public_sector", {})
+                professional_records = sum(
+                    len(public_sector.get(key) or [])
+                    for key in (
+                        "server_records",
+                        "permission_records",
+                        "contracts",
+                        "travel_records",
+                        "card_records",
+                        "resources_received",
+                        "expense_documents",
+                    )
+                )
+                has_government_data = bool(
+                    government_intelligence.get("indexed_in_portal")
+                    or pep.get("has_matches")
+                    or risk.get("has_matches")
+                    or professional_records
+                )
+                sections.append(
+                    {
+                        "id": "government_intelligence",
+                        "title": "Inteligência Governamental Profissional",
+                        "description": (
+                            "PEP, sanções e vínculos públicos oficiais; benefícios sociais e "
+                            "remuneração são excluídos"
+                        ),
+                        "status": "available" if has_government_data else "empty",
+                        "summary": (
+                            "Vínculos profissionais governamentais localizados."
+                            if has_government_data
+                            else "Nenhum vínculo profissional localizado nas fontes acionadas."
+                        ),
+                        "fields": [
+                            {
+                                "label": "Indexado no Portal",
+                                "value": (
+                                    "Sim"
+                                    if government_intelligence.get("indexed_in_portal")
+                                    else "Não"
+                                ),
+                            },
+                            {"label": "Registros PEP", "value": str(pep.get("match_count", 0))},
+                            {
+                                "label": "Ocorrências em sanções",
+                                "value": str(risk.get("match_count", 0)),
+                            },
+                            {
+                                "label": "Registros profissionais públicos",
+                                "value": str(professional_records),
+                            },
+                            {
+                                "label": "Endpoints executados",
+                                "value": str(
+                                    len(government_intelligence.get("executed_endpoints") or [])
+                                ),
+                            },
+                            {
+                                "label": "Fontes sensíveis",
+                                "value": "Benefícios, remuneração e pensões não consultados",
+                            },
+                        ],
+                        "items": [],
+                    }
+                )
+            except ProviderError as exc:
+                logger.warning(
+                    "Falha no Portal da Transparência para CPF %s [%s]: %s",
+                    mask_cpf(cleaned_digits),
+                    correlation_tag(cleaned_digits),
+                    exc.__class__.__name__,
+                )
+                sections.append(
+                    {
+                        "id": "government_intelligence",
+                        "title": "Inteligência Governamental Profissional",
+                        "description": "Consulta a fontes oficiais por CPF",
+                        "status": "unavailable",
+                        "summary": "Portal da Transparência indisponível nesta execução.",
+                        "fields": [],
+                        "items": [],
+                    }
+                )
+        else:
+            sections.append(
+                {
+                    "id": "government_intelligence",
+                    "title": "Inteligência Governamental Profissional",
+                    "description": "Consulta a fontes oficiais por CPF",
+                    "status": "unavailable",
+                    "summary": "Portal da Transparência não configurado no ambiente.",
+                    "fields": [],
+                    "items": [],
+                }
+            )
+
+    # 5. Camada 1: Filtro de Perda (Óbito & RFB)
     filtro_perda = evaluate_filtro_perda(
         is_deceased=is_deceased,
         death_date=death_date,
@@ -842,6 +957,16 @@ def enrich_person_live(
                     cpf=cleaned_digits,
                     hash_key=settings.DATA_HASH_KEY,
                 )
+                if government_intelligence is not None:
+                    person_record.government_profile = government_intelligence
+                    person_record.government_profile_observed_at = timezone.now()
+                    person_record.save(
+                        update_fields=(
+                            "government_profile",
+                            "government_profile_observed_at",
+                            "updated_at",
+                        )
+                    )
                 if whatsapp_garantido and whatsapp_garantido.get("numeroE164"):
                     create_contact_point(
                         tenant=tenant,
@@ -908,7 +1033,7 @@ def enrich_person_live(
     # 3. Se lead válido e vivo com dados entregues, costCredits = 1
     if filtro_perda["status"] == "EXPURGADO_OBITO":
         cost_credits = 0
-    elif not (nome_pessoa or whatsapp_garantido or mailing_top3):
+    elif not (bureau_identity_found or whatsapp_garantido or mailing_top3):
         cost_credits = 0
     else:
         cost_credits = 1
@@ -947,5 +1072,6 @@ def enrich_person_live(
         "capabilitiesApplied": applied_caps,
         "costCredits": cost_credits,
         "regiaoFiscal": regiao_info,
+        "governmentIntelligence": government_intelligence,
         "canonical": canonical_payload,
     }

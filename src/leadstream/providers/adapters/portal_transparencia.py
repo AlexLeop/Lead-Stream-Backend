@@ -12,6 +12,7 @@ from django.utils import timezone
 from leadstream.billing.models import DataBlock
 from leadstream.entities.normalization import fingerprint_value, only_digits
 from leadstream.evidence.models import CaptureMethod, EvidenceStatus
+from leadstream.intelligence.cpf_rfb import validate_cpf_with_details
 from leadstream.providers.contracts import (
     FieldObservation,
     ProviderContext,
@@ -42,8 +43,8 @@ class PortalPageResult:
     truncated: bool
     request_ids: tuple[str, ...]
 
-# Lista publicada no cadastro da API. Nenhuma destas rotas é utilizada pelo adapter atual,
-# mas o contrato fica explícito para evitar que uma expansão futura use o teto incorreto.
+# Lista publicada no cadastro da API. O limite reduzido é aplicado por requisição real,
+# inclusive quando uma rota restrita é acionada pela cascata guiada por perfil.
 RESTRICTED_ENDPOINTS = frozenset(
     {
         "despesas/documentos-por-favorecido",
@@ -55,6 +56,43 @@ RESTRICTED_ENDPOINTS = frozenset(
         "auxilio-emergencial-por-municipio",
         "seguro-defeso-codigo",
     }
+)
+
+PERSON_PROFESSIONAL_FLAGS = frozenset(
+    {
+        "favorecidoDespesas",
+        "servidor",
+        "beneficiarioDiarias",
+        "permissionario",
+        "contratado",
+        "sancionadoCEIS",
+        "sancionadoCNEP",
+        "sancionadoCEAF",
+        "portadorCPDC",
+        "portadorCPGF",
+        "favorecidoTransferencias",
+        "favorecidoCPCC",
+        "favorecidoCPDC",
+        "favorecidoCPGF",
+        "participanteLicitacao",
+        "servidorInativo",
+    }
+)
+SENSITIVE_PERSON_MARKERS = (
+    "nis",
+    "bolsafamilia",
+    "peti",
+    "safra",
+    "segurodefeso",
+    "bpc",
+    "auxilioemergencial",
+    "auxiliobrasil",
+    "novobolsafamilia",
+    "auxilioreconstrucao",
+    "pensao",
+    "pensionista",
+    "instituidor",
+    "remuneracao",
 )
 
 
@@ -213,6 +251,45 @@ def _minimize_company_payload(value: Any) -> Any:
     return minimized
 
 
+def _minimize_person_payload(value: Any) -> Any:
+    """Mantém sinais profissionais e remove documentos/benefícios/remuneração de PF."""
+
+    if isinstance(value, list):
+        return [_minimize_person_payload(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    minimized: dict[str, Any] = {}
+    for key, item in value.items():
+        normalized_key = str(key).casefold().replace("_", "")
+        if "cpf" in normalized_key or any(
+            marker in normalized_key for marker in SENSITIVE_PERSON_MARKERS
+        ):
+            continue
+        minimized[str(key)] = _minimize_person_payload(item)
+    return minimized
+
+
+def _ceaf_record(record: dict[str, Any]) -> dict[str, Any]:
+    person = _dict(record.get("pessoa"))
+    punishment = _dict(record.get("punicao"))
+    punishment_type = _dict(record.get("tipoPunicao"))
+    organ = _dict(record.get("orgaoLotacao"))
+    state = _dict(record.get("ufLotacaoPessoa"))
+    return {
+        "source": "CEAF",
+        "record_id": record.get("id"),
+        "sanctioned_name": person.get("nome") or person.get("razaoSocialReceita"),
+        "published_on": record.get("dataPublicacao"),
+        "reference_date": record.get("dataReferencia"),
+        "reason": punishment.get("descricao") or punishment.get("nome"),
+        "sanction_type": punishment_type.get("descricao") or punishment_type.get("nome"),
+        "sanctioning_organ": organ.get("nome") or organ.get("descricao"),
+        "state": state.get("sigla") or state.get("descricao"),
+        "position": record.get("cargoEfetivo") or record.get("cargoComissao"),
+        "legal_basis": _minimize_person_payload(record.get("fundamentacao", [])),
+    }
+
+
 class PortalTransparenciaAdapter:
     slug = "portal-transparencia"
     resumable = True
@@ -360,6 +437,263 @@ class PortalTransparenciaAdapter:
             if not document or document == cnpj:
                 return record, request_id
         return {}, request_id
+
+    def _person_profile(
+        self,
+        *,
+        client: httpx.Client,
+        cpf: str,
+    ) -> tuple[dict[str, Any], str]:
+        records, request_id = self._request(
+            client=client,
+            endpoint="pessoa-fisica",
+            params={"cpf": cpf},
+        )
+        return (records[0] if records else {}), request_id
+
+    def enrich_person(self, cpf: str) -> dict[str, Any]:
+        """Consulta apenas sinais públicos profissionais de PF, nunca benefícios/remuneração."""
+
+        if not self.is_configured():
+            raise ProviderNotConfigured("Portal da Transparência não configurado.")
+        digits = only_digits(cpf)
+        if not validate_cpf_with_details(digits).get("valido"):
+            raise ProviderPermanentError("CPF inválido para consulta governamental.")
+        if self._client is not None:
+            return self._enrich_person_with_client(cpf=digits, client=self._client)
+        with httpx.Client(
+            timeout=settings.PORTAL_TRANSPARENCIA_TIMEOUT_SECONDS,
+            follow_redirects=True,
+        ) as client:
+            return self._enrich_person_with_client(cpf=digits, client=client)
+
+    def _enrich_person_with_client(
+        self,
+        *,
+        cpf: str,
+        client: httpx.Client,
+    ) -> dict[str, Any]:
+        request_ids: list[str] = []
+        executed_endpoints: list[str] = []
+        skipped_endpoints: list[dict[str, str]] = []
+        coverage: dict[str, dict[str, Any]] = {}
+
+        def fetch_pages(
+            endpoint: str,
+            params: dict[str, Any],
+            *,
+            coverage_key: str | None = None,
+        ) -> PortalPageResult:
+            result = self._request_pages(client=client, endpoint=endpoint, params=params)
+            executed_endpoints.append(endpoint)
+            request_ids.extend(result.request_ids)
+            coverage[coverage_key or endpoint] = {
+                "records": len(result.records),
+                "pages_checked": result.pages_checked,
+                "truncated": result.truncated,
+            }
+            return result
+
+        def skip(endpoint: str, reason: str) -> None:
+            skipped_endpoints.append({"endpoint": endpoint, "reason": reason})
+
+        profile, profile_request_id = self._person_profile(client=client, cpf=cpf)
+        executed_endpoints.append("pessoa-fisica")
+        if profile_request_id:
+            request_ids.append(profile_request_id)
+        coverage["pessoa-fisica"] = {
+            "records": 1 if profile else 0,
+            "pages_checked": 1,
+            "truncated": False,
+        }
+        professional_flags = {
+            key: bool(profile.get(key)) for key in sorted(PERSON_PROFESSIONAL_FLAGS)
+        }
+
+        # PEP não possui flag no perfil-resumo; é a única consulta adicional incondicional.
+        pep_page = fetch_pages("peps", {"cpf": cpf})
+        pep_records = _minimize_person_payload(list(pep_page.records))
+
+        server_records: list[dict[str, Any]] = []
+        if professional_flags["servidor"] or professional_flags["servidorInativo"]:
+            server_records = _minimize_person_payload(
+                list(fetch_pages("servidores", {"cpf": cpf}).records)
+            )
+        else:
+            skip("servidores", "perfil_sem_vinculo_servidor")
+
+        permission_records: list[dict[str, Any]] = []
+        if professional_flags["permissionario"]:
+            permission_records = _minimize_person_payload(
+                list(fetch_pages("permissionarios", {"cpfOcupante": cpf}).records)
+            )
+        else:
+            skip("permissionarios", "perfil_sem_imovel_funcional")
+
+        risk_records: list[dict[str, Any]] = []
+        checked_risk_sources: list[str] = []
+        for flag, source, endpoint, parameter in (
+            ("sancionadoCEIS", "CEIS", "ceis", "codigoSancionado"),
+            ("sancionadoCNEP", "CNEP", "cnep", "codigoSancionado"),
+            ("sancionadoCEAF", "CEAF", "ceaf", "cpfSancionado"),
+        ):
+            if professional_flags[flag]:
+                page = fetch_pages(endpoint, {parameter: cpf})
+                checked_risk_sources.append(source)
+                if source == "CEAF":
+                    risk_records.extend(_ceaf_record(record) for record in page.records)
+                else:
+                    risk_records.extend(
+                        _sanction_record(record, source) for record in page.records
+                    )
+            else:
+                skip(endpoint, f"perfil_{flag}_falso")
+
+        contracts: list[dict[str, Any]] = []
+        if professional_flags["contratado"]:
+            contracts = [
+                _contract_record(record)
+                for record in fetch_pages(
+                    "contratos/cpf-cnpj", {"cpfCnpj": cpf}
+                ).records
+            ]
+        else:
+            skip("contratos/cpf-cnpj", "perfil_sem_contratacao")
+
+        travel_records: list[dict[str, Any]] = []
+        if professional_flags["beneficiarioDiarias"]:
+            travel_records = _minimize_person_payload(
+                list(fetch_pages("viagens-por-cpf", {"cpf": cpf}).records)
+            )
+        else:
+            skip("viagens-por-cpf", "perfil_sem_diarias")
+
+        card_records: list[dict[str, Any]] = []
+        if professional_flags["portadorCPDC"] or professional_flags["portadorCPGF"]:
+            card_records.extend(
+                _minimize_person_payload(
+                    list(fetch_pages("cartoes", {"cpfPortador": cpf}).records)
+                )
+            )
+        else:
+            skip("cartoes:portador", "perfil_sem_cartao_como_portador")
+        if any(
+            professional_flags[key]
+            for key in ("favorecidoCPCC", "favorecidoCPDC", "favorecidoCPGF")
+        ):
+            card_records.extend(
+                _minimize_person_payload(
+                    list(
+                        fetch_pages(
+                            "cartoes",
+                            {"cpfCnpjFavorecido": cpf},
+                            coverage_key="cartoes:favorecido",
+                        ).records
+                    )
+                )
+            )
+        else:
+            skip("cartoes:favorecido", "perfil_sem_cartao_como_favorecido")
+
+        resources_received: list[dict[str, Any]] = []
+        expense_documents: list[dict[str, Any]] = []
+        has_public_expense = bool(
+            professional_flags["favorecidoDespesas"]
+            or professional_flags["favorecidoTransferencias"]
+        )
+        if has_public_expense:
+            today = timezone.localdate()
+            lookback_years = max(
+                min(int(settings.PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS), 10), 1
+            )
+            for year in range(today.year - lookback_years + 1, today.year + 1):
+                end_month = today.month if year == today.year else 12
+                resources_received.extend(
+                    _minimize_person_payload(
+                        list(
+                            fetch_pages(
+                                "despesas/recursos-recebidos",
+                                {
+                                    "mesAnoInicio": f"01/{year}",
+                                    "mesAnoFim": f"{end_month:02d}/{year}",
+                                    "codigoFavorecido": cpf,
+                                },
+                                coverage_key=f"despesas/recursos-recebidos:{year}",
+                            ).records
+                        )
+                    )
+                )
+            if professional_flags["favorecidoDespesas"]:
+                for year in range(today.year - lookback_years + 1, today.year + 1):
+                    for phase in (1, 2, 3):
+                        expense_documents.extend(
+                            _minimize_person_payload(
+                                list(
+                                    fetch_pages(
+                                        "despesas/documentos-por-favorecido",
+                                        {"codigoPessoa": cpf, "fase": phase, "ano": year},
+                                        coverage_key=(
+                                            "despesas/documentos-por-favorecido:"
+                                            f"{year}:fase-{phase}"
+                                        ),
+                                    ).records
+                                )
+                            )
+                        )
+        else:
+            skip("despesas/recursos-recebidos", "perfil_sem_recursos_publicos")
+            skip("despesas/documentos-por-favorecido", "perfil_sem_despesas")
+
+        return {
+            "indexed_in_portal": bool(profile),
+            "profile": {
+                "name": _text(profile.get("nome")),
+                "professional_flags": professional_flags,
+            },
+            "pep": {
+                "has_matches": bool(pep_records),
+                "match_count": len(pep_records),
+                "records": pep_records,
+            },
+            "government_risk": {
+                "status": (
+                    "MATCH_FOUND"
+                    if risk_records
+                    else (
+                        "NO_MATCH_ON_CHECKED_SOURCES"
+                        if checked_risk_sources
+                        else "NOT_QUERIED_NO_PROFILE_FLAG"
+                    )
+                ),
+                "has_matches": bool(risk_records),
+                "match_count": len(risk_records),
+                "checked_sources": checked_risk_sources,
+                "records": risk_records,
+            },
+            "public_sector": {
+                "server_records": server_records,
+                "permission_records": permission_records,
+                "contracts": contracts,
+                "travel_records": travel_records,
+                "card_records": card_records,
+                "resources_received": resources_received,
+                "expense_documents": expense_documents,
+                "unresolved_signals": {
+                    "procurement_participant": professional_flags["participanteLicitacao"]
+                },
+            },
+            "coverage": coverage,
+            "executed_endpoints": list(dict.fromkeys(executed_endpoints)),
+            "skipped_endpoints": skipped_endpoints,
+            "strategy": "PROFILE_GUIDED_PROFESSIONAL_ONLY",
+            "sensitive_sources_excluded": [
+                "beneficios_sociais",
+                "remuneracao",
+                "pensoes",
+            ],
+            "external_request_id": ",".join(dict.fromkeys(request_ids))[:255],
+            "observed_at": timezone.now().isoformat(),
+        }
 
     def enrich(self, context: ProviderContext) -> ProviderResult:
         if not self.is_configured():

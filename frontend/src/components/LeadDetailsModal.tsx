@@ -81,6 +81,26 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
   // Heurística de formato: 11 dígitos nacionais com o nono dígito de celular.
   const isMobile = (nationalDigits.length === 11 && nationalDigits[2] === '9') || (nationalDigits.length === 9 && nationalDigits[0] === '9');
   const isPJ = lead.leadType === 'PJ';
+  const publicProfile = lead.publicSectorProfile;
+  const governmentMetrics: Array<[string, number]> = isPJ
+    ? [
+        ['Contratos', publicProfile?.contract_count ?? publicProfile?.contracts?.length ?? 0],
+        ['Notas fiscais', publicProfile?.invoice_count ?? publicProfile?.invoices?.length ?? 0],
+        ['Recursos', publicProfile?.resources_received_count ?? publicProfile?.resources_received?.length ?? 0],
+        ['Documentos', publicProfile?.expense_document_count ?? publicProfile?.expense_documents?.length ?? 0],
+        ['Cartões', publicProfile?.card_transaction_count ?? publicProfile?.card_transactions?.length ?? 0],
+      ]
+    : [
+        ['Servidor', publicProfile?.server_records?.length ?? 0],
+        ['Imóvel funcional', publicProfile?.permission_records?.length ?? 0],
+        ['Contratos', publicProfile?.contracts?.length ?? 0],
+        ['Viagens', publicProfile?.travel_records?.length ?? 0],
+        ['Cartões', publicProfile?.card_records?.length ?? 0],
+        ['Recursos', publicProfile?.resources_received?.length ?? 0],
+        ['Documentos', publicProfile?.expense_documents?.length ?? 0],
+      ];
+  const governmentRecordCount = governmentMetrics.reduce((total, [, count]) => total + count, 0);
+  const indexedInPortal = publicProfile?.indexed_in_portal ?? lead.governmentIntelligence?.indexed_in_portal;
 
   // Busca todos os decisores e sócios da mesma empresa no contexto de leads
   const companyDecisors = leads.filter(
@@ -382,12 +402,16 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                         <ShieldAlert className="w-4 h-4 text-amber-600" /> Inteligência governamental
                       </h3>
                       <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                        Consulta oficial por CNPJ. Ausência significa somente que não houve correspondência nas fontes e no momento indicados.
+                        Consulta oficial por {isPJ ? 'CNPJ' : 'CPF'}, limitada a sinais profissionais. Ausência significa somente que não houve correspondência nas fontes e no momento indicados.
                       </p>
                     </div>
                     {lead.governmentRisk?.status && (
                       <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${lead.governmentRisk.has_matches ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                        {lead.governmentRisk.has_matches ? `${lead.governmentRisk.match_count ?? 0} ocorrência(s)` : 'Sem correspondência'}
+                        {lead.governmentRisk.has_matches
+                          ? `${lead.governmentRisk.match_count ?? 0} ocorrência(s)`
+                          : lead.governmentRisk.status === 'NOT_QUERIED_NO_PROFILE_FLAG'
+                            ? 'Perfil sem sinal de sanção'
+                            : 'Sem correspondência'}
                       </span>
                     )}
                   </div>
@@ -401,6 +425,17 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                       ))}
                     </div>
                   ) : null}
+
+                  {!isPJ && lead.governmentIntelligence?.pep && (
+                    <div className={`rounded-xl border p-3 text-xs ${lead.governmentIntelligence.pep.has_matches ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+                      <span className="font-bold text-slate-900">Pessoa Exposta Politicamente (PEP)</span>
+                      <span className="mt-0.5 block text-[10px] text-slate-600">
+                        {lead.governmentIntelligence.pep.has_matches
+                          ? `${lead.governmentIntelligence.pep.match_count ?? 0} registro(s) localizado(s)`
+                          : 'Nenhum registro localizado nas páginas consultadas'}
+                      </span>
+                    </div>
+                  )}
 
                   {(lead.governmentRisk?.records?.length ?? 0) > 0 && (
                     <div className="space-y-2">
@@ -433,20 +468,14 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                     <div className="border-t border-slate-100 pt-4">
                       <div className="flex items-center justify-between gap-3">
                         <span className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                          <Landmark className="h-4 w-4 text-indigo-600" /> Contratos federais
+                          <Landmark className="h-4 w-4 text-indigo-600" /> {isPJ ? 'Relações com o setor público' : 'Vínculos profissionais públicos'}
                         </span>
                         <span className="text-[10px] font-semibold text-slate-500">
-                          {lead.publicSectorProfile.contract_count ?? 0} registro(s) coletado(s)
+                          {governmentRecordCount} registro(s) coletado(s)
                         </span>
                       </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                        {[
-                          ['Contratos', lead.publicSectorProfile.contract_count ?? 0],
-                          ['Notas fiscais', lead.publicSectorProfile.invoice_count ?? 0],
-                          ['Recursos', lead.publicSectorProfile.resources_received_count ?? 0],
-                          ['Documentos', lead.publicSectorProfile.expense_document_count ?? 0],
-                          ['Cartões', lead.publicSectorProfile.card_transaction_count ?? 0],
-                        ].map(([label, value]) => (
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        {governmentMetrics.map(([label, value]) => (
                           <div key={String(label)} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
                             <span className="block text-[9px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
                             <span className="mt-0.5 block text-sm font-bold text-slate-900">{value}</span>
@@ -468,14 +497,19 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                       ) : (
                         <p className="mt-2 text-[11px] text-slate-500">Nenhum contrato federal localizado nas páginas consultadas.</p>
                       )}
-                      {lead.publicSectorProfile.indexed_in_portal === false && (
+                      {indexedInPortal === false && (
                         <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] leading-4 text-slate-600">
-                          Empresa não indexada no perfil-resumo do Portal. As rotas públicas dependentes foram omitidas para evitar consultas redundantes.
+                          {isPJ ? 'Empresa' : 'Pessoa'} não indexada no perfil-resumo do Portal. As rotas dependentes foram omitidas para evitar consultas redundantes.
                         </p>
                       )}
                       {(lead.publicSectorProfile.unresolved_signals?.agreements || lead.publicSectorProfile.unresolved_signals?.procurement_participant) && (
                         <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800">
-                          O perfil oficial indica convênio ou participação em licitação, mas a API não oferece busca reversa por CNPJ para detalhar esse vínculo.
+                          O perfil oficial indica {isPJ ? 'convênio ou participação em licitação' : 'participação em licitação'}, mas a API não oferece busca reversa pelo documento para detalhar esse vínculo.
+                        </p>
+                      )}
+                      {!isPJ && (lead.governmentIntelligence?.sensitive_sources_excluded?.length ?? 0) > 0 && (
+                        <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] leading-4 text-emerald-800">
+                          Privacidade aplicada: benefícios sociais, remuneração e pensões não foram consultados.
                         </p>
                       )}
                     </div>

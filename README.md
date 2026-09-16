@@ -171,18 +171,29 @@ Cliente Web / CRM / Integração
 
 ### Portal da Transparência / CGU
 
-O provedor `portal-transparencia` acrescenta dois blocos verificáveis por CNPJ:
+O provedor `portal-transparencia` usa uma cascata guiada pelo perfil-resumo oficial. Ele não
+dispara todos os endpoints para cada lead: primeiro consulta `pessoa-juridica` ou
+`pessoa-fisica`, aciona somente as famílias sinalizadas e pagina cada rota dentro dos limites
+configurados. IDs retornados podem abrir detalhes de contratos e notas fiscais, também com
+limite explícito. A resposta registra endpoints executados, endpoints omitidos, cobertura,
+truncamento, data da observação e identificadores externos de requisição.
 
-- `GOVERNMENT_RISK`: consulta CEIS, CNEP, CEPIM e acordos de leniência;
-- `PUBLIC_SECTOR`: consulta contratos do Poder Executivo Federal pelo CNPJ do fornecedor.
+- **PJ:** CEIS, CNEP, CEPIM e acordos de leniência são sempre verificados no bloco de risco;
+  contratos, notas fiscais, renúncias fiscais, recursos, documentos de despesa e cartões são
+  consultados somente quando o perfil indicar o vínculo.
+- **PF:** PEP é verificado porque o perfil não possui flag correspondente. Servidor público,
+  imóvel funcional, sanções CEIS/CNEP/CEAF, contratos, viagens, cartões e recebimentos públicos
+  são consultados somente quando sinalizados. Benefícios sociais, remuneração e pensões são
+  deliberadamente excluídos da cascata automática.
 
 O token é enviado exclusivamente no cabeçalho `chave-api-dados`. A quota é global entre todos
-os workspaces e contabiliza as requisições HTTP reais: 400 por minuto entre 06:00 e 23:59,
-700 por minuto entre 00:00 e 05:59 e 180 por minuto para rotas restritas. Ao atingir a quota,
-o chunk volta à fila sem consumir uma tentativa técnica nem classificar o lead como ausente.
-As respostas ficam em cache por 24 horas por padrão. O enriquecimento em tempo real registra
-explicitamente que consultou somente a primeira página de cada rota; cargas exaustivas devem
-usar os arquivos de dados abertos do próprio Portal.
+os workspaces e contabiliza somente requisições HTTP reais (acertos de cache não consomem
+quota): 400 por minuto entre 06:00 e 23:59, 700 entre 00:00 e 05:59 e 180 para rotas restritas.
+Ao atingir a quota, o chunk volta à fila sem consumir uma tentativa técnica nem classificar o
+lead como ausente. Respostas ficam em cache por 24 horas por padrão. Os limites de páginas,
+detalhes e janela histórica são controlados por `PORTAL_TRANSPARENCIA_MAX_PAGES`,
+`PORTAL_TRANSPARENCIA_MAX_DETAIL_RECORDS` e
+`PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS`.
 
 ---
 

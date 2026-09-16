@@ -687,6 +687,72 @@ def test_portal_usa_perfil_para_pular_rotas_publicas_sem_sinal() -> None:
 
 
 @override_settings(
+    PORTAL_TRANSPARENCIA_TOKEN="test-token",
+    PORTAL_TRANSPARENCIA_BASE_URL="https://api.portaldatransparencia.gov.br/api-de-dados",
+    PORTAL_TRANSPARENCIA_DAY_RPM=400,
+    PORTAL_TRANSPARENCIA_NIGHT_RPM=700,
+    PORTAL_TRANSPARENCIA_RESTRICTED_RPM=180,
+    PORTAL_TRANSPARENCIA_CACHE_SECONDS=60,
+    PORTAL_TRANSPARENCIA_MAX_PAGES=3,
+    PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS=2,
+)
+def test_portal_pf_usa_perfil_profissional_e_exclui_fontes_sensiveis() -> None:
+    cache.clear()
+    cpf = "52998224725"
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        assert request.headers["chave-api-dados"] == "test-token"
+        if request.url.path.endswith("/pessoa-fisica"):
+            assert request.url.params["cpf"] == cpf
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "cpf": cpf,
+                        "nome": "PESSOA EXEMPLO",
+                        "servidor": False,
+                        "servidorInativo": False,
+                        "beneficiarioDiarias": False,
+                        "permissionario": False,
+                        "contratado": False,
+                        "sancionadoCEIS": False,
+                        "sancionadoCNEP": False,
+                        "sancionadoCEAF": False,
+                        "portadorCPDC": False,
+                        "portadorCPGF": False,
+                        "favorecidoDespesas": False,
+                        "favorecidoTransferencias": False,
+                        "favorecidoCPCC": False,
+                        "favorecidoCPDC": False,
+                        "favorecidoCPGF": False,
+                        "participanteLicitacao": False,
+                        "beneficiarioBolsaFamilia": True,
+                    }
+                ],
+            )
+        assert request.url.path.endswith("/peps")
+        assert request.url.params["cpf"] == cpf
+        assert request.url.params["pagina"] == "1"
+        return httpx.Response(200, json=[])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = PortalTransparenciaAdapter(client=client).enrich_person(cpf)
+
+    assert requests == ["/api-de-dados/pessoa-fisica", "/api-de-dados/peps"]
+    assert result["strategy"] == "PROFILE_GUIDED_PROFESSIONAL_ONLY"
+    assert result["executed_endpoints"] == ["pessoa-fisica", "peps"]
+    assert result["sensitive_sources_excluded"] == [
+        "beneficios_sociais",
+        "remuneracao",
+        "pensoes",
+    ]
+    assert cpf not in str(result)
+    assert "beneficiarioBolsaFamilia" not in str(result)
+
+
+@override_settings(
     PORTAL_TRANSPARENCIA_DAY_RPM=400,
     PORTAL_TRANSPARENCIA_NIGHT_RPM=700,
     PORTAL_TRANSPARENCIA_RESTRICTED_RPM=180,

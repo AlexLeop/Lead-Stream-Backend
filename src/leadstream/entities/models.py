@@ -154,6 +154,8 @@ class Person(models.Model):
     normalized_name = models.CharField(max_length=255)
     cpf_masked = models.CharField(max_length=14, blank=True)
     cpf_hash = models.CharField(max_length=64, blank=True)
+    government_profile = models.JSONField(default=dict, blank=True)
+    government_profile_observed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

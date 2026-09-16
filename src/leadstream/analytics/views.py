@@ -306,7 +306,7 @@ def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
         "intentTopic": "",
         "initials": "".join(part[:1] for part in person.full_name.split()[:2]).upper(),
         "linkedinUrl": linkedin.normalized_url if linkedin else "",
-        "enriched": bool(email or phone or linkedin),
+        "enriched": bool(email or phone or linkedin or person.government_profile),
         "identityEvidenceStatus": "OBSERVED",
         "emailEvidenceStatus": _evidence_status(email),
         "phoneEvidenceStatus": _evidence_status(phone),
@@ -323,16 +323,17 @@ def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
         "cnae": company.primary_cnae,
         "capitalSocial": str(company.share_capital) if company.share_capital is not None else "",
         "naturezaJuridica": company.legal_nature,
-        "governmentRisk": company.government_risk,
+        "governmentIntelligence": person.government_profile,
+        "governmentRisk": person.government_profile.get("government_risk", {}),
         "governmentRiskObservedAt": (
-            company.government_risk_observed_at.isoformat()
-            if company.government_risk_observed_at
+            person.government_profile_observed_at.isoformat()
+            if person.government_profile_observed_at
             else None
         ),
-        "publicSectorProfile": company.public_sector_profile,
+        "publicSectorProfile": person.government_profile.get("public_sector", {}),
         "publicSectorObservedAt": (
-            company.public_sector_observed_at.isoformat()
-            if company.public_sector_observed_at
+            person.government_profile_observed_at.isoformat()
+            if person.government_profile_observed_at
             else None
         ),
         "papelCompra": relationship.buying_role,
@@ -402,7 +403,13 @@ def _company_lead(company: Company) -> dict[str, Any]:
         "intentTopic": "",
         "initials": (company.trade_name or company.legal_name)[:2].upper(),
         "linkedinUrl": linkedin.normalized_url if linkedin else "",
-        "enriched": bool(email or phone or linkedin),
+        "enriched": bool(
+            email
+            or phone
+            or linkedin
+            or company.government_risk
+            or company.public_sector_profile
+        ),
         "identityEvidenceStatus": "OBSERVED",
         "emailEvidenceStatus": _evidence_status(email),
         "phoneEvidenceStatus": _evidence_status(phone),
@@ -469,6 +476,7 @@ def _person_lead(person: Person) -> dict[str, Any]:
                 email.last_observed_at if email else None,
                 phone.last_observed_at if phone else None,
                 linkedin.last_observed_at if linkedin else None,
+                person.government_profile_observed_at,
             )
             if value is not None
         ],
@@ -503,7 +511,7 @@ def _person_lead(person: Person) -> dict[str, Any]:
         "intentTopic": "",
         "initials": "".join(part[:1] for part in person.full_name.split()[:2]).upper(),
         "linkedinUrl": linkedin.normalized_url if linkedin else "",
-        "enriched": bool(email or phone or linkedin),
+        "enriched": bool(email or phone or linkedin or person.government_profile),
         "identityEvidenceStatus": "OBSERVED",
         "emailEvidenceStatus": _evidence_status(email),
         "phoneEvidenceStatus": _evidence_status(phone),
@@ -513,6 +521,19 @@ def _person_lead(person: Person) -> dict[str, Any]:
             else "ABSENT"
         ),
         "cpf": person.cpf_masked,
+        "governmentIntelligence": person.government_profile,
+        "governmentRisk": person.government_profile.get("government_risk", {}),
+        "governmentRiskObservedAt": (
+            person.government_profile_observed_at.isoformat()
+            if person.government_profile_observed_at
+            else None
+        ),
+        "publicSectorProfile": person.government_profile.get("public_sector", {}),
+        "publicSectorObservedAt": (
+            person.government_profile_observed_at.isoformat()
+            if person.government_profile_observed_at
+            else None
+        ),
         "observedAt": observed_at.isoformat() if observed_at else None,
         "createdAt": person.created_at.isoformat(),
         "updatedAt": person.updated_at.isoformat(),

@@ -132,7 +132,7 @@ export interface Lead {
     expiresAt?: string;
   }>;
   governmentRisk?: {
-    status?: 'MATCH_FOUND' | 'NO_MATCH_ON_CHECKED_SOURCES';
+    status?: 'MATCH_FOUND' | 'NO_MATCH_ON_CHECKED_SOURCES' | 'NOT_QUERIED_NO_PROFILE_FLAG';
     has_matches?: boolean;
     match_count?: number;
     checked_sources?: string[];
@@ -156,6 +156,23 @@ export interface Lead {
     }>;
   };
   governmentRiskObservedAt?: string;
+  governmentIntelligence?: {
+    indexed_in_portal?: boolean;
+    profile?: {
+      name?: string;
+      professional_flags?: Record<string, boolean>;
+    };
+    pep?: {
+      has_matches?: boolean;
+      match_count?: number;
+      records?: Array<Record<string, unknown>>;
+    };
+    coverage?: Record<string, { records?: number; pages_checked?: number; truncated?: boolean }>;
+    executed_endpoints?: string[];
+    skipped_endpoints?: Array<{ endpoint: string; reason: string }>;
+    strategy?: string;
+    sensitive_sources_excluded?: string[];
+  };
   publicSectorProfile?: {
     indexed_in_portal?: boolean;
     profile?: {
@@ -192,6 +209,10 @@ export interface Lead {
     expense_documents?: Array<Record<string, unknown>>;
     card_transaction_count?: number;
     card_transactions?: Array<Record<string, unknown>>;
+    server_records?: Array<Record<string, unknown>>;
+    permission_records?: Array<Record<string, unknown>>;
+    travel_records?: Array<Record<string, unknown>>;
+    card_records?: Array<Record<string, unknown>>;
     unresolved_signals?: {
       agreements?: boolean;
       procurement_participant?: boolean;
