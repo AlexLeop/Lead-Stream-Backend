@@ -48,7 +48,7 @@ from leadstream.providers.models import (
     ProviderPolicy,
 )
 from leadstream.providers.pipeline import process_enrichment_chunk
-from leadstream.providers.resilience import _rate_limit
+from leadstream.providers.resilience import _rate_limit, reserve_shared_rate_limit
 from leadstream.tenancy.services import get_internal_tenant
 
 pytestmark = pytest.mark.django_db
@@ -637,6 +637,23 @@ def test_quota_compartilhada_contabiliza_requisicoes_reais() -> None:
             requests_per_minute=5,
             units=2,
         )
+
+
+def test_adapter_pode_contabilizar_quota_por_requisicao_real() -> None:
+    cache.clear()
+    context = make_context(suffix="quota-adapter-managed")
+    policy = make_policy(context, slug="quota-adapter-managed", requests_per_minute=1)
+
+    _rate_limit(
+        tenant=context.tenant,
+        policy=policy,
+        scope="adapter-managed",
+        requests_per_minute=1,
+        units=0,
+    )
+    reserve_shared_rate_limit(scope="adapter-managed", requests_per_minute=1)
+    with pytest.raises(ProviderRateLimited):
+        reserve_shared_rate_limit(scope="adapter-managed", requests_per_minute=1)
 
 
 def test_resposta_429_nao_consumira_tentativas_tecnicas_do_provedor() -> None:

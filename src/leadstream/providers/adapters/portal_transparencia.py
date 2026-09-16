@@ -23,6 +23,7 @@ from leadstream.providers.exceptions import (
     ProviderRateLimited,
     ProviderTemporaryError,
 )
+from leadstream.providers.resilience import reserve_shared_rate_limit
 
 RISK_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("CEIS", "ceis", "codigoSancionado"),
@@ -177,15 +178,12 @@ class PortalTransparenciaAdapter:
         return bool(settings.PORTAL_TRANSPARENCIA_TOKEN)
 
     def quota_for(self, context: ProviderContext) -> ProviderQuota:
-        units = 0
-        if DataBlock.GOVERNMENT_RISK in context.missing_blocks:
-            units += len(RISK_ENDPOINTS)
-        if DataBlock.PUBLIC_SECTOR in context.missing_blocks:
-            units += 1
+        del context
         return ProviderQuota(
             scope="portal-transparencia-api",
             requests_per_minute=portal_requests_per_minute(),
-            units=max(units, 1),
+            # O plano é dinâmico e respostas em cache não consomem a quota oficial.
+            units=0,
         )
 
     def _request(
@@ -200,6 +198,13 @@ class PortalTransparenciaAdapter:
         cached = cache.get(cache_key)
         if isinstance(cached, dict) and isinstance(cached.get("items"), list):
             return cached["items"], _text(cached.get("request_id"))
+        reserve_shared_rate_limit(
+            scope="portal-transparencia-api",
+            requests_per_minute=portal_requests_per_minute(
+                restricted=endpoint in RESTRICTED_ENDPOINTS
+            ),
+            provider_label="portal-transparencia",
+        )
         url = f"{settings.PORTAL_TRANSPARENCIA_BASE_URL.rstrip('/')}/{endpoint}"
         try:
             response = client.get(

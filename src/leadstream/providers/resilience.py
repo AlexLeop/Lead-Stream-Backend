@@ -24,33 +24,27 @@ class ProviderGate:
     reserved_cost_cents: int
 
 
-def _rate_limit(
+def reserve_shared_rate_limit(
     *,
-    tenant: Tenant,
-    policy: ProviderPolicy,
-    scope: str | None = None,
-    requests_per_minute: int | None = None,
+    scope: str,
+    requests_per_minute: int,
     units: int = 1,
+    provider_label: str | None = None,
 ) -> None:
-    del tenant  # As credenciais atuais são globais, compartilhadas pelos tenants.
     if units < 1:
         raise ValidationError("Unidades de quota devem ser positivas.")
-    configured_limit = policy.requests_per_minute
-    effective_limit = (
-        min(configured_limit, requests_per_minute)
-        if requests_per_minute is not None
-        else configured_limit
-    )
+    effective_limit = max(int(requests_per_minute), 0)
+    label = provider_label or scope
     timestamp = int(timezone.now().timestamp())
     minute = timestamp // 60
     retry_after = 60 - (timestamp % 60)
-    key = f"provider-rate:{scope or policy.provider}:{minute}"
+    key = f"provider-rate:{scope}:{minute}"
     if effective_limit == 0:
-        raise ProviderRateLimited(f"Provedor {policy.provider} está pausado por quota zero.")
+        raise ProviderRateLimited(f"Provedor {label} está pausado por quota zero.")
     if cache.add(key, units, timeout=120):
         if units > effective_limit:
             raise ProviderRateLimited(
-                f"Limite por minuto atingido para {policy.provider}.",
+                f"Limite por minuto atingido para {label}.",
                 retry_after_seconds=retry_after,
             )
         return
@@ -61,9 +55,36 @@ def _rate_limit(
         count = units
     if count > effective_limit:
         raise ProviderRateLimited(
-            f"Limite por minuto atingido para {policy.provider}.",
+            f"Limite por minuto atingido para {label}.",
             retry_after_seconds=retry_after,
         )
+
+
+def _rate_limit(
+    *,
+    tenant: Tenant,
+    policy: ProviderPolicy,
+    scope: str | None = None,
+    requests_per_minute: int | None = None,
+    units: int = 1,
+) -> None:
+    del tenant  # As credenciais atuais são globais, compartilhadas pelos tenants.
+    if units == 0:
+        return
+    if units < 0:
+        raise ValidationError("Unidades de quota não podem ser negativas.")
+    configured_limit = policy.requests_per_minute
+    effective_limit = (
+        min(configured_limit, requests_per_minute)
+        if requests_per_minute is not None
+        else configured_limit
+    )
+    reserve_shared_rate_limit(
+        scope=scope or policy.provider,
+        requests_per_minute=effective_limit,
+        units=units,
+        provider_label=policy.provider,
+    )
 
 
 def _spent(*, tenant: Tenant, policy: ProviderPolicy, batch: Batch | None) -> int:

@@ -76,6 +76,7 @@ class ProviderQuota:
 
     scope: str
     requests_per_minute: int
+    # Zero indica que o próprio adapter contabiliza cada chamada HTTP após o cache.
     units: int = 1
 
 
