@@ -436,8 +436,22 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                           <Landmark className="h-4 w-4 text-indigo-600" /> Contratos federais
                         </span>
                         <span className="text-[10px] font-semibold text-slate-500">
-                          {lead.publicSectorProfile.contract_count ?? 0} na página consultada
+                          {lead.publicSectorProfile.contract_count ?? 0} registro(s) coletado(s)
                         </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                        {[
+                          ['Contratos', lead.publicSectorProfile.contract_count ?? 0],
+                          ['Notas fiscais', lead.publicSectorProfile.invoice_count ?? 0],
+                          ['Recursos', lead.publicSectorProfile.resources_received_count ?? 0],
+                          ['Documentos', lead.publicSectorProfile.expense_document_count ?? 0],
+                          ['Cartões', lead.publicSectorProfile.card_transaction_count ?? 0],
+                        ].map(([label, value]) => (
+                          <div key={String(label)} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                            <span className="block text-[9px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+                            <span className="mt-0.5 block text-sm font-bold text-slate-900">{value}</span>
+                          </div>
+                        ))}
                       </div>
                       {(lead.publicSectorProfile.contracts?.length ?? 0) > 0 ? (
                         <div className="mt-2 space-y-2">
@@ -452,7 +466,17 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                           ))}
                         </div>
                       ) : (
-                        <p className="mt-2 text-[11px] text-slate-500">Nenhum contrato federal localizado na página consultada.</p>
+                        <p className="mt-2 text-[11px] text-slate-500">Nenhum contrato federal localizado nas páginas consultadas.</p>
+                      )}
+                      {lead.publicSectorProfile.indexed_in_portal === false && (
+                        <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] leading-4 text-slate-600">
+                          Empresa não indexada no perfil-resumo do Portal. As rotas públicas dependentes foram omitidas para evitar consultas redundantes.
+                        </p>
+                      )}
+                      {(lead.publicSectorProfile.unresolved_signals?.agreements || lead.publicSectorProfile.unresolved_signals?.procurement_participant) && (
+                        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800">
+                          O perfil oficial indica convênio ou participação em licitação, mas a API não oferece busca reversa por CNPJ para detalhar esse vínculo.
+                        </p>
                       )}
                     </div>
                   )}

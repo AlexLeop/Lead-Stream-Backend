@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -32,6 +33,14 @@ RISK_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("ACORDO_LENIENCIA", "acordos-leniencia", "cnpjSancionado"),
 )
 CONTRACT_ENDPOINT = ("CONTRATOS", "contratos/cpf-cnpj", "cpfCnpj")
+
+
+@dataclass(frozen=True)
+class PortalPageResult:
+    records: tuple[dict[str, Any], ...]
+    pages_checked: int
+    truncated: bool
+    request_ids: tuple[str, ...]
 
 # Lista publicada no cadastro da API. Nenhuma destas rotas é utilizada pelo adapter atual,
 # mas o contrato fica explícito para evitar que uma expansão futura use o teto incorreto.
@@ -167,6 +176,43 @@ def _contract_record(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _invoice_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "record_id": record.get("id"),
+        "recipient_superior_body": record.get("orgaoSuperiorDestinatario"),
+        "recipient_body": record.get("orgaoDestinatario"),
+        "supplier_name": record.get("nomeFornecedor"),
+        "supplier_cnpj": record.get("cnpjFornecedor"),
+        "supplier_city": record.get("municipioFornecedor"),
+        "invoice_key": record.get("chaveNotaFiscal"),
+        "value": record.get("valorNotaFiscal"),
+        "issued_on": record.get("dataEmissao"),
+        "latest_event": record.get("tipoEventoMaisRecente"),
+        "latest_event_on": record.get("dataTipoEventoMaisRecente"),
+        "number": record.get("numero"),
+        "series": record.get("serie"),
+    }
+
+
+def _minimize_company_payload(value: Any) -> Any:
+    """Remove contatos e identificadores de PF de payloads empresariais aninhados."""
+
+    if isinstance(value, list):
+        return [_minimize_company_payload(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    minimized: dict[str, Any] = {}
+    for key, item in value.items():
+        normalized_key = str(key).casefold()
+        if any(
+            marker in normalized_key
+            for marker in ("cpf", "nis", "email", "telefone", "celular")
+        ) and "cnpj" not in normalized_key:
+            continue
+        minimized[str(key)] = _minimize_company_payload(item)
+    return minimized
+
+
 class PortalTransparenciaAdapter:
     slug = "portal-transparencia"
     resumable = True
@@ -191,10 +237,11 @@ class PortalTransparenciaAdapter:
         *,
         client: httpx.Client,
         endpoint: str,
-        parameter: str,
-        cnpj: str,
+        params: dict[str, Any],
     ) -> tuple[list[dict[str, Any]], str]:
-        cache_key = f"portal-transparencia:{endpoint}:{cnpj}:page-1"
+        cache_key = "portal-transparencia:" + fingerprint_value(
+            {"endpoint": endpoint, "params": params}
+        )
         cached = cache.get(cache_key)
         if isinstance(cached, dict) and isinstance(cached.get("items"), list):
             return cached["items"], _text(cached.get("request_id"))
@@ -212,8 +259,9 @@ class PortalTransparenciaAdapter:
                 headers={
                     "chave-api-dados": str(settings.PORTAL_TRANSPARENCIA_TOKEN),
                     "Accept": "application/json",
+                    "User-Agent": "LeadStream/1.0",
                 },
-                params={parameter: cnpj, "pagina": 1},
+                params=params,
             )
             response.raise_for_status()
             payload: Any = response.json()
@@ -258,6 +306,61 @@ class PortalTransparenciaAdapter:
         )
         return items, request_id
 
+    def _request_pages(
+        self,
+        *,
+        client: httpx.Client,
+        endpoint: str,
+        params: dict[str, Any],
+    ) -> PortalPageResult:
+        records: list[dict[str, Any]] = []
+        request_ids: list[str] = []
+        pages_checked = 0
+        max_pages = max(int(settings.PORTAL_TRANSPARENCIA_MAX_PAGES), 1)
+        last_page_had_records = False
+        seen: set[str] = set()
+        for page in range(1, max_pages + 1):
+            items, request_id = self._request(
+                client=client,
+                endpoint=endpoint,
+                params={**params, "pagina": page},
+            )
+            pages_checked += 1
+            if request_id:
+                request_ids.append(request_id)
+            if not items:
+                last_page_had_records = False
+                break
+            last_page_had_records = True
+            for item in items:
+                digest = fingerprint_value(item)
+                if digest not in seen:
+                    seen.add(digest)
+                    records.append(item)
+        return PortalPageResult(
+            records=tuple(records),
+            pages_checked=pages_checked,
+            truncated=last_page_had_records and pages_checked == max_pages,
+            request_ids=tuple(dict.fromkeys(request_ids)),
+        )
+
+    def _profile(
+        self,
+        *,
+        client: httpx.Client,
+        cnpj: str,
+    ) -> tuple[dict[str, Any], str]:
+        records, request_id = self._request(
+            client=client,
+            endpoint="pessoa-juridica",
+            params={"cnpj": cnpj},
+        )
+        for record in records:
+            document = only_digits(_text(record.get("cnpj")))
+            if not document or document == cnpj:
+                return record, request_id
+        return {}, request_id
+
     def enrich(self, context: ProviderContext) -> ProviderResult:
         if not self.is_configured():
             raise ProviderNotConfigured("Portal da Transparência não configurado.")
@@ -285,22 +388,72 @@ class PortalTransparenciaAdapter:
         payload_for_hash: dict[str, Any] = {}
         base_url = settings.PORTAL_TRANSPARENCIA_BASE_URL.rstrip("/")
 
+        profile: dict[str, Any] = {}
+        executed_endpoints: list[str] = []
+        skipped_endpoints: list[dict[str, str]] = []
+        coverage: dict[str, dict[str, Any]] = {}
+        if DataBlock.PUBLIC_SECTOR in context.missing_blocks:
+            profile, profile_request_id = self._profile(client=client, cnpj=cnpj)
+            if profile_request_id:
+                request_ids.append(profile_request_id)
+            executed_endpoints.append("pessoa-juridica")
+            coverage["pessoa-juridica"] = {
+                "records": 1 if profile else 0,
+                "pages_checked": 1,
+                "truncated": False,
+            }
+
+        def fetch_pages(
+            endpoint: str,
+            params: dict[str, Any],
+            *,
+            coverage_key: str | None = None,
+        ) -> PortalPageResult:
+            result = self._request_pages(client=client, endpoint=endpoint, params=params)
+            executed_endpoints.append(endpoint)
+            request_ids.extend(result.request_ids)
+            coverage[coverage_key or endpoint] = {
+                "records": len(result.records),
+                "pages_checked": result.pages_checked,
+                "truncated": result.truncated,
+            }
+            return result
+
+        def fetch_once(
+            endpoint: str,
+            params: dict[str, Any],
+            *,
+            coverage_key: str | None = None,
+        ) -> list[dict[str, Any]]:
+            records, request_id = self._request(
+                client=client,
+                endpoint=endpoint,
+                params=params,
+            )
+            executed_endpoints.append(endpoint)
+            if request_id:
+                request_ids.append(request_id)
+            coverage[coverage_key or endpoint] = {
+                "records": len(records),
+                "pages_checked": 1,
+                "truncated": False,
+            }
+            return records
+
+        def skip(endpoint: str, reason: str) -> None:
+            skipped_endpoints.append({"endpoint": endpoint, "reason": reason})
+
         if DataBlock.GOVERNMENT_RISK in context.missing_blocks:
             risk_records: list[dict[str, Any]] = []
             checked_sources: list[str] = []
+            risk_pagination: dict[str, dict[str, Any]] = {}
             for source, endpoint, parameter in RISK_ENDPOINTS:
-                records, request_id = self._request(
-                    client=client,
-                    endpoint=endpoint,
-                    parameter=parameter,
-                    cnpj=cnpj,
-                )
+                page = fetch_pages(endpoint, {parameter: cnpj})
                 checked_sources.append(source)
-                if request_id:
-                    request_ids.append(request_id)
+                risk_pagination[source] = coverage[endpoint]
                 risk_records.extend(
                     _sanction_record(record, source)
-                    for record in records
+                    for record in page.records
                     if _document_matches(record, cnpj, source)
                 )
             risk = {
@@ -309,7 +462,8 @@ class PortalTransparenciaAdapter:
                 "match_count": len(risk_records),
                 "checked_sources": checked_sources,
                 "records": risk_records,
-                "pagination": "FIRST_PAGE_PER_SOURCE",
+                "pagination": risk_pagination,
+                "profile_indexed": bool(profile),
             }
             payload_for_hash["government_risk"] = risk
             observations.append(
@@ -327,25 +481,183 @@ class PortalTransparenciaAdapter:
             delivered.add(DataBlock.GOVERNMENT_RISK)
 
         if DataBlock.PUBLIC_SECTOR in context.missing_blocks:
-            source, endpoint, parameter = CONTRACT_ENDPOINT
-            records, request_id = self._request(
-                client=client,
-                endpoint=endpoint,
-                parameter=parameter,
-                cnpj=cnpj,
+            contracts: list[dict[str, Any]] = []
+            invoices: list[dict[str, Any]] = []
+            tax_waivers: dict[str, list[dict[str, Any]]] = {
+                "values": [],
+                "immune_or_exempt": [],
+                "enabled_benefits": [],
+            }
+            resources_received: list[dict[str, Any]] = []
+            expense_documents: list[dict[str, Any]] = []
+            card_transactions: list[dict[str, Any]] = []
+
+            if profile.get("possuiContratacao"):
+                source, endpoint, parameter = CONTRACT_ENDPOINT
+                page = fetch_pages(endpoint, {parameter: cnpj})
+                raw_contracts = [
+                    record
+                    for record in page.records
+                    if _document_matches(record, cnpj, source)
+                ]
+                detail_limit = max(int(settings.PORTAL_TRANSPARENCIA_MAX_DETAIL_RECORDS), 0)
+                for index, record in enumerate(raw_contracts):
+                    contract = _contract_record(record)
+                    record_id = record.get("id")
+                    if record_id is not None and index < detail_limit:
+                        details: dict[str, Any] = {}
+                        details["amendments"] = _minimize_company_payload(
+                            fetch_once(
+                                "contratos/termo-aditivo",
+                                {"id": record_id},
+                                coverage_key=f"contratos/termo-aditivo:{record_id}",
+                            )
+                        )
+                        details["items"] = _minimize_company_payload(
+                            list(
+                                fetch_pages(
+                                    "contratos/itens-contratados",
+                                    {"id": record_id},
+                                    coverage_key=f"contratos/itens-contratados:{record_id}",
+                                ).records
+                            )
+                        )
+                        details["documents"] = _minimize_company_payload(
+                            fetch_once(
+                                "contratos/documentos-relacionados",
+                                {"id": record_id},
+                                coverage_key=f"contratos/documentos-relacionados:{record_id}",
+                            )
+                        )
+                        details["price_adjustments"] = _minimize_company_payload(
+                            fetch_once(
+                                "contratos/apostilamento",
+                                {"id": record_id},
+                                coverage_key=f"contratos/apostilamento:{record_id}",
+                            )
+                        )
+                        contract["details"] = details
+                    contracts.append(contract)
+            else:
+                skip("contratos/cpf-cnpj", "perfil_sem_contratacao")
+
+            if profile.get("emitiuNFe"):
+                page = fetch_pages("notas-fiscais", {"cnpjEmitente": cnpj})
+                detail_limit = max(int(settings.PORTAL_TRANSPARENCIA_MAX_DETAIL_RECORDS), 0)
+                for index, record in enumerate(page.records):
+                    invoice = _invoice_record(record)
+                    invoice_key = _text(record.get("chaveNotaFiscal"))
+                    if invoice_key and index < detail_limit:
+                        invoice["details"] = _minimize_company_payload(
+                            fetch_once(
+                                "notas-fiscais-por-chave",
+                                {"chaveUnicaNotaFiscal": invoice_key},
+                                coverage_key=f"notas-fiscais-por-chave:{index + 1}",
+                            )
+                        )
+                    invoices.append(invoice)
+            else:
+                skip("notas-fiscais", "perfil_sem_nfe")
+
+            tax_routes = (
+                (
+                    "beneficiadoRenunciaFiscal",
+                    "renuncias-valor",
+                    "values",
+                ),
+                (
+                    "isentoImuneRenunciaFiscal",
+                    "renuncias-fiscais-empresas-imunes-isentas",
+                    "immune_or_exempt",
+                ),
+                (
+                    "habilitadoRenunciaFiscal",
+                    "renuncias-fiscais-empresas-habilitadas-beneficios-fiscais",
+                    "enabled_benefits",
+                ),
             )
-            if request_id:
-                request_ids.append(request_id)
-            contracts = [
-                _contract_record(record)
-                for record in records
-                if _document_matches(record, cnpj, source)
-            ]
+            for flag, endpoint, result_key in tax_routes:
+                if profile.get(flag):
+                    page = fetch_pages(endpoint, {"cnpj": cnpj})
+                    tax_waivers[result_key] = _minimize_company_payload(list(page.records))
+                else:
+                    skip(endpoint, f"perfil_{flag}_falso")
+
+            has_public_expense = bool(
+                profile.get("favorecidoDespesas") or profile.get("favorecidoTransferencias")
+            )
+            if has_public_expense:
+                today = timezone.localdate()
+                lookback_years = max(
+                    min(int(settings.PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS), 10), 1
+                )
+                for year in range(today.year - lookback_years + 1, today.year + 1):
+                    end_month = today.month if year == today.year else 12
+                    page = fetch_pages(
+                        "despesas/recursos-recebidos",
+                        {
+                            "mesAnoInicio": f"01/{year}",
+                            "mesAnoFim": f"{end_month:02d}/{year}",
+                            "codigoFavorecido": cnpj,
+                        },
+                        coverage_key=f"despesas/recursos-recebidos:{year}",
+                    )
+                    resources_received.extend(
+                        _minimize_company_payload(list(page.records))
+                    )
+
+                if profile.get("favorecidoDespesas"):
+                    for year in range(today.year - lookback_years + 1, today.year + 1):
+                        for phase in (1, 2, 3):
+                            page = fetch_pages(
+                                "despesas/documentos-por-favorecido",
+                                {"codigoPessoa": cnpj, "fase": phase, "ano": year},
+                                coverage_key=(
+                                    f"despesas/documentos-por-favorecido:{year}:fase-{phase}"
+                                ),
+                            )
+                            expense_documents.extend(
+                                _minimize_company_payload(list(page.records))
+                            )
+                    card_page = fetch_pages("cartoes", {"cpfCnpjFavorecido": cnpj})
+                    card_transactions = _minimize_company_payload(list(card_page.records))
+            else:
+                skip("despesas/recursos-recebidos", "perfil_sem_recursos_publicos")
+                skip("despesas/documentos-por-favorecido", "perfil_sem_despesas")
+                skip("cartoes", "perfil_sem_despesas")
+
+            profile_flags = {
+                key: value
+                for key, value in profile.items()
+                if isinstance(value, bool)
+            }
             public_sector = {
+                "indexed_in_portal": bool(profile),
+                "profile": {
+                    "legal_name": profile.get("razaoSocial"),
+                    "trade_name": profile.get("nomeFantasia"),
+                    "flags": profile_flags,
+                },
                 "has_federal_contracts": bool(contracts),
                 "contract_count": len(contracts),
                 "contracts": contracts,
-                "pagination": "FIRST_PAGE",
+                "invoice_count": len(invoices),
+                "invoices": invoices,
+                "tax_waivers": tax_waivers,
+                "resources_received_count": len(resources_received),
+                "resources_received": resources_received,
+                "expense_document_count": len(expense_documents),
+                "expense_documents": expense_documents,
+                "card_transaction_count": len(card_transactions),
+                "card_transactions": card_transactions,
+                "unresolved_signals": {
+                    "agreements": bool(profile.get("convenios")),
+                    "procurement_participant": bool(profile.get("participanteLicitacao")),
+                },
+                "coverage": coverage,
+                "executed_endpoints": list(dict.fromkeys(executed_endpoints)),
+                "skipped_endpoints": skipped_endpoints,
+                "strategy": "PROFILE_GUIDED_WITH_BOUNDED_DETAILS",
             }
             payload_for_hash["public_sector"] = public_sector
             observations.append(
@@ -355,8 +667,8 @@ class PortalTransparenciaAdapter:
                     confidence=100,
                     evidence_status=EvidenceStatus.TECHNICALLY_VALIDATED,
                     method=CaptureMethod.API,
-                    source_url=f"{base_url}/{endpoint}",
-                    external_id=f"contracts:{cnpj}",
+                    source_url=f"{base_url}/pessoa-juridica",
+                    external_id=f"public-sector:{cnpj}",
                     metadata={"official_source": "CGU", "queried_by": "CNPJ"},
                 )
             )

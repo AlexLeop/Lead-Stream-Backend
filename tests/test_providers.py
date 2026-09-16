@@ -523,8 +523,12 @@ def test_api_expoe_politicas_sem_credenciais_e_inicia_enriquecimento(
     PORTAL_TRANSPARENCIA_NIGHT_RPM=700,
     PORTAL_TRANSPARENCIA_RESTRICTED_RPM=180,
     PORTAL_TRANSPARENCIA_CACHE_SECONDS=60,
+    PORTAL_TRANSPARENCIA_MAX_PAGES=3,
+    PORTAL_TRANSPARENCIA_MAX_DETAIL_RECORDS=3,
+    PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS=2,
 )
 def test_portal_transparencia_mapeia_risco_e_contratos_sem_expor_token() -> None:
+    cache.clear()
     context = replace(
         make_context(suffix="portal-001"),
         missing_blocks=frozenset({DataBlock.GOVERNMENT_RISK, DataBlock.PUBLIC_SECTOR}),
@@ -533,8 +537,34 @@ def test_portal_transparencia_mapeia_risco_e_contratos_sem_expor_token() -> None
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["chave-api-dados"] == "test-token"
-        assert request.url.params["pagina"] == "1"
         requests.append(request.url.path)
+        if request.url.path.endswith("/pessoa-juridica"):
+            assert request.url.params["cnpj"] == context.cnpj
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "cnpj": context.cnpj,
+                        "razaoSocial": "Empresa Exemplo",
+                        "possuiContratacao": True,
+                        "emitiuNFe": False,
+                        "favorecidoDespesas": False,
+                        "favorecidoTransferencias": False,
+                    }
+                ],
+            )
+        if request.url.path.endswith(
+            (
+                "/contratos/termo-aditivo",
+                "/contratos/documentos-relacionados",
+                "/contratos/apostilamento",
+            )
+        ):
+            assert request.url.params["id"] == "456"
+            return httpx.Response(200, json=[])
+        assert request.url.params["pagina"] == "1" or request.url.params["pagina"] == "2"
+        if request.url.params["pagina"] == "2":
+            return httpx.Response(200, json=[])
         if request.url.path.endswith("/ceis"):
             assert request.url.params["codigoSancionado"] == context.cnpj
             return httpx.Response(
@@ -579,7 +609,7 @@ def test_portal_transparencia_mapeia_risco_e_contratos_sem_expor_token() -> None
         policy = make_policy(context, slug=adapter.slug, estimated_cost_cents=0)
         execution = execute_provider(adapter=adapter, policy=policy, context=context)
 
-    assert len(requests) == 5
+    assert len(requests) == 12
     assert result.delivered_blocks == frozenset(
         {DataBlock.GOVERNMENT_RISK, DataBlock.PUBLIC_SECTOR}
     )
@@ -589,6 +619,13 @@ def test_portal_transparencia_mapeia_risco_e_contratos_sem_expor_token() -> None
     company = Company.objects.get(entity=context.item.entity)
     assert company.government_risk["match_count"] == 1
     assert company.public_sector_profile["contracts"][0]["number"] == "10/2026"
+    assert company.public_sector_profile["indexed_in_portal"] is True
+    assert company.public_sector_profile["strategy"] == "PROFILE_GUIDED_WITH_BOUNDED_DETAILS"
+    assert "notas-fiscais" not in company.public_sector_profile["executed_endpoints"]
+    assert any(
+        item["endpoint"] == "notas-fiscais"
+        for item in company.public_sector_profile["skipped_endpoints"]
+    )
     assert execution.delivered_blocks == frozenset(
         {DataBlock.GOVERNMENT_RISK, DataBlock.PUBLIC_SECTOR}
     )
@@ -597,6 +634,56 @@ def test_portal_transparencia_mapeia_risco_e_contratos_sem_expor_token() -> None
             "value", "source_record__source_url"
         )
     )
+
+
+@override_settings(
+    PORTAL_TRANSPARENCIA_TOKEN="test-token",
+    PORTAL_TRANSPARENCIA_BASE_URL="https://api.portaldatransparencia.gov.br/api-de-dados",
+    PORTAL_TRANSPARENCIA_DAY_RPM=400,
+    PORTAL_TRANSPARENCIA_NIGHT_RPM=700,
+    PORTAL_TRANSPARENCIA_RESTRICTED_RPM=180,
+    PORTAL_TRANSPARENCIA_CACHE_SECONDS=60,
+    PORTAL_TRANSPARENCIA_MAX_PAGES=3,
+    PORTAL_TRANSPARENCIA_MAX_DETAIL_RECORDS=3,
+    PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS=2,
+)
+def test_portal_usa_perfil_para_pular_rotas_publicas_sem_sinal() -> None:
+    cache.clear()
+    context = replace(
+        make_context(suffix="portal-profile-guided"),
+        missing_blocks=frozenset({DataBlock.PUBLIC_SECTOR}),
+    )
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        assert request.url.path.endswith("/pessoa-juridica")
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "cnpj": context.cnpj,
+                    "razaoSocial": "Empresa sem vínculo público",
+                    "possuiContratacao": False,
+                    "emitiuNFe": False,
+                    "favorecidoDespesas": False,
+                    "favorecidoTransferencias": False,
+                    "beneficiadoRenunciaFiscal": False,
+                    "isentoImuneRenunciaFiscal": False,
+                    "habilitadoRenunciaFiscal": False,
+                }
+            ],
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = PortalTransparenciaAdapter(client=client).enrich(context)
+
+    assert requests == ["/api-de-dados/pessoa-juridica"]
+    public_profile = result.observations[0].value
+    assert public_profile["executed_endpoints"] == ["pessoa-juridica"]
+    assert public_profile["contract_count"] == 0
+    assert public_profile["invoice_count"] == 0
+    assert len(public_profile["skipped_endpoints"]) == 8
 
 
 @override_settings(

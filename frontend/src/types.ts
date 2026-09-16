@@ -157,9 +157,14 @@ export interface Lead {
   };
   governmentRiskObservedAt?: string;
   publicSectorProfile?: {
+    indexed_in_portal?: boolean;
+    profile?: {
+      legal_name?: string;
+      trade_name?: string;
+      flags?: Record<string, boolean>;
+    };
     has_federal_contracts?: boolean;
     contract_count?: number;
-    pagination?: string;
     contracts?: Array<{
       record_id?: number | string;
       number?: string;
@@ -172,7 +177,29 @@ export interface Lead {
       managing_unit?: string;
       initial_value?: number;
       final_value?: number;
+      details?: Record<string, unknown>;
     }>;
+    invoice_count?: number;
+    invoices?: Array<Record<string, unknown>>;
+    tax_waivers?: {
+      values?: Array<Record<string, unknown>>;
+      immune_or_exempt?: Array<Record<string, unknown>>;
+      enabled_benefits?: Array<Record<string, unknown>>;
+    };
+    resources_received_count?: number;
+    resources_received?: Array<Record<string, unknown>>;
+    expense_document_count?: number;
+    expense_documents?: Array<Record<string, unknown>>;
+    card_transaction_count?: number;
+    card_transactions?: Array<Record<string, unknown>>;
+    unresolved_signals?: {
+      agreements?: boolean;
+      procurement_participant?: boolean;
+    };
+    coverage?: Record<string, { records?: number; pages_checked?: number; truncated?: boolean }>;
+    executed_endpoints?: string[];
+    skipped_endpoints?: Array<{ endpoint: string; reason: string }>;
+    strategy?: string;
   };
   publicSectorObservedAt?: string;
   commercialPhoneSecondary?: string;
