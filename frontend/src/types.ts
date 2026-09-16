@@ -167,11 +167,11 @@ export interface Lead {
       match_count?: number;
       records?: Array<Record<string, unknown>>;
     };
-    coverage?: Record<string, { records?: number; pages_checked?: number; truncated?: boolean }>;
-    executed_endpoints?: string[];
-    skipped_endpoints?: Array<{ endpoint: string; reason: string }>;
-    strategy?: string;
-    sensitive_sources_excluded?: string[];
+    social_benefits?: {
+      flags?: Record<string, boolean>;
+      records?: Array<Record<string, unknown>>;
+      unresolved_signals?: string[];
+    };
   };
   publicSectorProfile?: {
     indexed_in_portal?: boolean;
@@ -213,6 +213,8 @@ export interface Lead {
     permission_records?: Array<Record<string, unknown>>;
     travel_records?: Array<Record<string, unknown>>;
     card_records?: Array<Record<string, unknown>>;
+    remuneration_records?: Array<Record<string, unknown>>;
+    pension_records?: Array<Record<string, unknown>>;
     unresolved_signals?: {
       agreements?: boolean;
       procurement_participant?: boolean;
@@ -227,6 +229,29 @@ export interface Lead {
 
   // Campos específicos de Pessoa Física (PF)
   cpf?: string; // Mascarado ex: 284.***.***-12
+  birthDate?: string | null;
+  motherName?: string | null;
+  fatherName?: string | null;
+  gender?: string | null;
+  maritalStatus?: string | null;
+  education?: string | null;
+  taxStatus?: string | null;
+  taxIdOrigin?: string | null;
+  electoral?: {
+    titulo_eleitor?: string;
+    status_titulo?: string;
+    local_votacao?: string;
+    zona?: string;
+    secao?: string;
+  } | null;
+  addresses?: Array<Record<string, unknown>>;
+  phone1?: string | null;
+  phone2?: string | null;
+  phone3?: string | null;
+  financialRestrictions?: Record<string, unknown>;
+  socialBenefits?: Array<Record<string, unknown>>;
+  inssBenefits?: Array<Record<string, unknown>>;
+  personBankRelationships?: Array<Record<string, unknown>>;
   profissao?: string;
   faixaRenda?: string;
   escolaridade?: string;
@@ -668,13 +693,24 @@ export interface EnrichedPersonSummary {
   birthDate?: string | null;
   age?: number | null;
   motherName?: string | null;
+  fatherName?: string | null;
   gender?: string | null;
+  maritalStatus?: string | null;
+  education?: string | null;
   taxStatus: string;
+  taxIdOrigin?: string | null;
   isDeceased?: boolean;
   deathDate?: string | null;
   phone: string;
   whatsapp?: string | null;
   hasWhatsApp: boolean;
+  phones?: Array<string | null>;
+  address?: Record<string, unknown> | null;
+  electoral?: Record<string, unknown> | null;
+  financialRestrictions?: Record<string, unknown>;
+  bankRelationships?: Array<Record<string, unknown>>;
+  socialBenefits?: Array<Record<string, unknown>>;
+  inssBenefits?: Array<Record<string, unknown>>;
   observedAt: string;
 }
 

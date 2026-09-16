@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
+from leadstream.common.encrypted_fields import EncryptedJSONField
 from leadstream.tenancy.models import TenantOwnedModel
 
 
@@ -156,6 +157,8 @@ class Person(models.Model):
     cpf_hash = models.CharField(max_length=64, blank=True)
     government_profile = models.JSONField(default=dict, blank=True)
     government_profile_observed_at = models.DateTimeField(null=True, blank=True)
+    enrichment_profile = EncryptedJSONField(default=dict, blank=True)
+    enrichment_profile_observed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

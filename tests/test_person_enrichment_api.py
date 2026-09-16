@@ -115,15 +115,12 @@ def test_enrich_person_live_persiste_portal_sem_cobrar_nome_publico() -> None:
     person = Person.objects.get(entity__tenant=tenant)
     assert result["person"]["name"] == "PESSOA PUBLICA EXEMPLO"
     assert result["costCredits"] == 0
-    assert result["governmentIntelligence"]["strategy"] == (
-        "PROFILE_GUIDED_PROFESSIONAL_ONLY"
-    )
+    assert "strategy" not in result["governmentIntelligence"]
     assert person.government_profile["indexed_in_portal"] is True
     assert person.government_profile_observed_at is not None
     lead = _person_lead(person)
-    assert lead["governmentIntelligence"]["strategy"] == (
-        "PROFILE_GUIDED_PROFESSIONAL_ONLY"
-    )
+    assert "strategy" not in lead["governmentIntelligence"]
+    assert person.government_profile["strategy"] == "PROFILE_GUIDED_COMPLETE"
     assert lead["governmentRisk"]["status"] == "NOT_QUERIED_NO_PROFILE_FLAG"
     assert lead["publicSectorProfile"]["server_records"] == []
     assert lead["enriched"] is True

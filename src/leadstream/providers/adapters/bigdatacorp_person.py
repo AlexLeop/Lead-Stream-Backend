@@ -8,6 +8,11 @@ from django.conf import settings
 
 from leadstream.common.redaction import correlation_tag, mask_cpf
 from leadstream.entities.normalization import only_digits
+from leadstream.providers.adapters.bigdatacorp_person_payload import (
+    parse_credit_response,
+    parse_electoral_response,
+    parse_person_response,
+)
 from leadstream.providers.exceptions import (
     ProviderNotConfigured,
     ProviderPermanentError,
@@ -85,7 +90,13 @@ class BigDataCorpPersonAdapter:
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
-        datasets = getattr(settings, "BIGDATACORP_PERSON_DATASETS", "basic_data,phones_extended")
+        datasets = getattr(
+            settings,
+            "BIGDATACORP_PERSON_DATASETS",
+            "basic_data,phones_extended,addresses_extended,financial_data,"
+            "financial_risk,social_assistance_extended,profession_data,"
+            "university_student_data",
+        )
         payload = {"q": f"doc{{{clean_cpf}}}", "Datasets": datasets}
 
         timeout = getattr(settings, "BIGDATACORP_TIMEOUT_SECONDS", 30)
@@ -125,6 +136,81 @@ class BigDataCorpPersonAdapter:
 
         if not isinstance(body, (dict, list)):
             raise ProviderPermanentError("Resposta da BigDataCorp fora do contrato esperado.")
+
+        # O endpoint oficial envolve os datasets em ``Result``. A versão anterior
+        # tratava o envelope como se ele próprio fosse BasicData e descartava dados pagos.
+        electoral_data: dict[str, Any] | None = None
+        electoral_error: str | None = None
+        on_demand_datasets = str(
+            getattr(settings, "BIGDATACORP_PERSON_ONDEMAND_DATASETS", "") or ""
+        ).strip()
+        if on_demand_datasets:
+            electoral_client = self._client or httpx.Client(timeout=timeout)
+            try:
+                electoral_response = electoral_client.post(
+                    f"{base_url.rstrip('/')}/ondemand",
+                    headers=headers,
+                    json={
+                        "q": f"doc{{{clean_cpf}}}",
+                        "Datasets": on_demand_datasets,
+                        "Limit": 1,
+                    },
+                )
+                electoral_response.raise_for_status()
+                electoral_data = parse_electoral_response(electoral_response.json())
+            except (httpx.HTTPError, ValueError) as exc:
+                electoral_error = exc.__class__.__name__
+                logger.warning(
+                    "Consulta eleitoral indisponível para CPF %s [%s]: %s",
+                    mask_cpf(clean_cpf),
+                    correlation_tag(clean_cpf),
+                    electoral_error,
+                )
+            finally:
+                if self._client is None:
+                    electoral_client.close()
+
+        credit_data: dict[str, Any] | None = None
+        credit_error: str | None = None
+        credit_datasets = str(
+            getattr(settings, "BIGDATACORP_PERSON_CREDIT_DATASETS", "") or ""
+        ).strip()
+        if credit_datasets:
+            credit_client = self._client or httpx.Client(timeout=timeout)
+            try:
+                credit_response = credit_client.post(
+                    f"{base_url.rstrip('/')}/marketplace",
+                    headers=headers,
+                    json={
+                        "q": f"doc{{{clean_cpf}}}",
+                        "Datasets": credit_datasets,
+                        "Limit": 1,
+                    },
+                )
+                credit_response.raise_for_status()
+                credit_data = parse_credit_response(credit_response.json())
+            except (httpx.HTTPError, ValueError) as exc:
+                credit_error = exc.__class__.__name__
+                logger.warning(
+                    "Consulta restritiva indisponível para CPF %s [%s]: %s",
+                    mask_cpf(clean_cpf),
+                    correlation_tag(clean_cpf),
+                    credit_error,
+                )
+            finally:
+                if self._client is None:
+                    credit_client.close()
+
+        if getattr(settings, "BIGDATACORP_PERSON_RESPONSE_V2", True):
+            return parse_person_response(
+                body=body,
+                cpf=clean_cpf,
+                datasets=str(datasets),
+                electoral_data=electoral_data,
+                electoral_error=electoral_error,
+                credit_data=credit_data,
+                credit_error=credit_error,
+            )
 
         # Tratamento do retorno BigDataCorp (lista ou dict único)
         empty_root: dict[str, Any] = {}

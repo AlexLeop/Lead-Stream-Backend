@@ -161,7 +161,21 @@ BIGDATACORP_TOKEN_ID = env("BIGDATACORP_TOKEN_ID")
 BIGDATACORP_DATASETS = env("BIGDATACORP_DATASETS", default="basic_data,relationships")
 BIGDATACORP_PERSON_DATASETS = env(
     "BIGDATACORP_PERSON_DATASETS",
-    default="basic_data,phones_extended,employment_relationships,social_benefits,incomes,do_not_call",
+    default=(
+        "basic_data,phones_extended,addresses_extended,financial_data,financial_risk,"
+        "social_assistance_extended,profession_data,university_student_data"
+    ),
+)
+BIGDATACORP_PERSON_ONDEMAND_DATASETS = env(
+    "BIGDATACORP_PERSON_ONDEMAND_DATASETS",
+    default="ondemand_tse_polling_place_person",
+)
+# Opt-in explícito: os datasets restritivos de marketplace têm custo unitário elevado.
+BIGDATACORP_PERSON_CREDIT_DATASETS = env(
+    "BIGDATACORP_PERSON_CREDIT_DATASETS", default=""
+)
+BIGDATACORP_PERSON_RESPONSE_V2 = env_bool(
+    "BIGDATACORP_PERSON_RESPONSE_V2", default=True
 )
 BIGDATACORP_TIMEOUT_SECONDS = env_int("BIGDATACORP_TIMEOUT_SECONDS", default=30)
 BIGDATACORP_COST_CENTS = env_int("BIGDATACORP_COST_CENTS", default=0)
@@ -226,6 +240,9 @@ PORTAL_TRANSPARENCIA_CACHE_SECONDS = env_int(
 PORTAL_TRANSPARENCIA_MAX_PAGES = env_int("PORTAL_TRANSPARENCIA_MAX_PAGES", default=5)
 PORTAL_TRANSPARENCIA_MAX_DETAIL_RECORDS = env_int(
     "PORTAL_TRANSPARENCIA_MAX_DETAIL_RECORDS", default=3
+)
+PORTAL_TRANSPARENCIA_REMUNERATION_LOOKBACK_MONTHS = env_int(
+    "PORTAL_TRANSPARENCIA_REMUNERATION_LOOKBACK_MONTHS", default=3
 )
 PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS = env_int(
     "PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS", default=2

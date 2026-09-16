@@ -418,7 +418,10 @@ class PersonCadastralDataPayload(BasePayloadModel):
     genero: str | None = None
     nome_mae: str | None = None
     nome_pai: str | None = None
+    estado_civil: str | None = None
+    instrucao: str | None = None
     situacao_cadastral_rfb: str = "DESCONHECIDA"
+    origem_cpf: str | None = None
     data_situacao_cadastral: str | None = None
     codigo_controle_rfb: str | None = None
 
@@ -608,6 +611,11 @@ class CanonicalPersonPayload(BasePayloadModel):
     )
     mailing_qualificado_top3: list[MailingQualificadoItemPayload] = Field(default_factory=list)
     address_cadastral: AddressCadastralPayload | None = None
+    electoral_data: dict[str, Any] | None = None
+    social_benefits: list[dict[str, Any]] = Field(default_factory=list)
+    financial_restrictions: dict[str, Any] = Field(default_factory=dict)
+    bank_relationships: list[dict[str, Any]] = Field(default_factory=list)
+    education_history: list[dict[str, Any]] = Field(default_factory=list)
     financial_indicators: FinancialIndicatorsPayload = Field(
         default_factory=FinancialIndicatorsPayload
     )

@@ -169,6 +169,19 @@ Cliente Web / CRM / Integração
        +------------+---> Cascata de Provedores (OpenCNPJ / Portal da Transparência / BigDataCorp / Apify)
 ```
 
+### Enriquecimento PF / BigDataCorp
+
+O conector PF interpreta o envelope oficial `Result` e consolida dados básicos, até três
+telefones priorizados, endereço, escolaridade, benefícios sociais, vínculos e remunerações,
+indicadores financeiros e instituições bancárias observadas em declarações de IR. O dataset
+on-demand do TSE complementa título, situação, local, zona e seção eleitoral.
+
+Dados restritivos detalhados são suportados pelo endpoint de marketplace, mas ficam desativados
+por padrão por possuírem custo unitário elevado. Para habilitar o bloco Quod de forma explícita,
+configure `BIGDATACORP_PERSON_CREDIT_DATASETS=partner_quod_credit_risk_details_person` e ajuste o
+orçamento do tenant. A ausência dessa variável nunca é convertida em “zero protestos” ou “zero
+cheques sem fundo”; o resultado permanece “não informado”.
+
 ### Portal da Transparência / CGU
 
 O provedor `portal-transparencia` usa uma cascata guiada pelo perfil-resumo oficial. Ele não
@@ -183,8 +196,9 @@ truncamento, data da observação e identificadores externos de requisição.
   consultados somente quando o perfil indicar o vínculo.
 - **PF:** PEP é verificado porque o perfil não possui flag correspondente. Servidor público,
   imóvel funcional, sanções CEIS/CNEP/CEAF, contratos, viagens, cartões e recebimentos públicos
-  são consultados somente quando sinalizados. Benefícios sociais, remuneração e pensões são
-  deliberadamente excluídos da cascata automática.
+  são consultados somente quando sinalizados. Benefícios sociais, remunerações e pensões também
+  integram a cascata; identificadores auxiliares como NIS são usados apenas durante a consulta e
+  removidos da resposta persistida.
 
 O token é enviado exclusivamente no cabeçalho `chave-api-dados`. A quota é global entre todos
 os workspaces e contabiliza somente requisições HTTP reais (acertos de cache não consomem
@@ -193,7 +207,8 @@ Ao atingir a quota, o chunk volta à fila sem consumir uma tentativa técnica ne
 lead como ausente. Respostas ficam em cache por 24 horas por padrão. Os limites de páginas,
 detalhes e janela histórica são controlados por `PORTAL_TRANSPARENCIA_MAX_PAGES`,
 `PORTAL_TRANSPARENCIA_MAX_DETAIL_RECORDS` e
-`PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS`.
+`PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS`. A janela de remunerações é configurada por
+`PORTAL_TRANSPARENCIA_REMUNERATION_LOOKBACK_MONTHS`.
 
 ---
 

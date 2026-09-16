@@ -444,7 +444,10 @@ class CanonicalPersonBuilder:
                 "genero": genero,
                 "nome_mae": nome_mae,
                 "nome_pai": dados_cadastrais.get("nome_pai"),
+                "estado_civil": dados_cadastrais.get("estado_civil"),
+                "instrucao": dados_cadastrais.get("instrucao"),
                 "situacao_cadastral_rfb": situacao_rfb,
+                "origem_cpf": dados_cadastrais.get("origem_cpf"),
                 "data_situacao_cadastral": dados_cadastrais.get("data_situacao_cadastral"),
                 "codigo_controle_rfb": dados_cadastrais.get("codigo_controle_rfb"),
             },
@@ -464,6 +467,17 @@ class CanonicalPersonBuilder:
             },
             "mailing_qualificado_top3": mailing_top3,
             "address_cadastral": address_payload,
+            "electoral_data": bureau_result.get("dados_eleitorais"),
+            "social_benefits": bureau_result.get("beneficios_sociais", []),
+            "financial_restrictions": bureau_result.get(
+                "restricoes_financeiras", {}
+            ),
+            "bank_relationships": bureau_result.get(
+                "relacionamentos_bancarios", []
+            ),
+            "education_history": bureau_result.get("escolaridade", {}).get(
+                "historico", []
+            ),
             "financial_indicators": {
                 "renda_estimada_declarada": renda_estimada,
                 "faixa_renda": "DE_5_A_10_SALARIOS_MINIMOS"

@@ -696,7 +696,7 @@ def test_portal_usa_perfil_para_pular_rotas_publicas_sem_sinal() -> None:
     PORTAL_TRANSPARENCIA_MAX_PAGES=3,
     PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS=2,
 )
-def test_portal_pf_usa_perfil_profissional_e_exclui_fontes_sensiveis() -> None:
+def test_portal_pf_preserva_sinal_social_sem_expor_identificador_auxiliar() -> None:
     cache.clear()
     cpf = "52998224725"
     requests: list[str] = []
@@ -741,15 +741,67 @@ def test_portal_pf_usa_perfil_profissional_e_exclui_fontes_sensiveis() -> None:
         result = PortalTransparenciaAdapter(client=client).enrich_person(cpf)
 
     assert requests == ["/api-de-dados/pessoa-fisica", "/api-de-dados/peps"]
-    assert result["strategy"] == "PROFILE_GUIDED_PROFESSIONAL_ONLY"
+    assert result["strategy"] == "PROFILE_GUIDED_COMPLETE"
     assert result["executed_endpoints"] == ["pessoa-fisica", "peps"]
-    assert result["sensitive_sources_excluded"] == [
-        "beneficios_sociais",
-        "remuneracao",
-        "pensoes",
-    ]
+    assert result["profile"]["social_flags"]["bolsa_familia"] is True
+    assert result["social_benefits"]["records"] == []
     assert cpf not in str(result)
-    assert "beneficiarioBolsaFamilia" not in str(result)
+
+
+@override_settings(
+    PORTAL_TRANSPARENCIA_TOKEN="test-token",
+    PORTAL_TRANSPARENCIA_BASE_URL="https://api.portaldatransparencia.gov.br/api-de-dados",
+    PORTAL_TRANSPARENCIA_CACHE_SECONDS=60,
+    PORTAL_TRANSPARENCIA_MAX_PAGES=1,
+    PORTAL_TRANSPARENCIA_EXPENSE_LOOKBACK_YEARS=1,
+    PORTAL_TRANSPARENCIA_REMUNERATION_LOOKBACK_MONTHS=1,
+)
+def test_portal_pf_consulta_beneficio_remuneracao_e_pensao_sinalizados() -> None:
+    cache.clear()
+    cpf = "52998224725"
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        path = request.url.path
+        if path.endswith("/pessoa-fisica"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "cpf": cpf,
+                        "nis": "12345678901",
+                        "nome": "PESSOA EXEMPLO",
+                        "servidor": True,
+                        "servidorInativo": False,
+                        "pensionistaOuRepresentanteLegal": True,
+                        "instituidorPensao": False,
+                        "favorecidoBolsaFamilia": True,
+                    }
+                ],
+            )
+        if path.endswith("/servidores"):
+            return httpx.Response(200, json=[{"nome": "PESSOA EXEMPLO", "cpf": cpf}])
+        if path.endswith("/servidores/remuneracao"):
+            assert len(request.url.params["mesAno"]) == 6
+            return httpx.Response(200, json=[{"valorRemuneracaoAposDeducoes": 5000}])
+        if path.endswith("/bolsa-familia-sacado-por-nis"):
+            assert request.url.params["nis"] == "12345678901"
+            return httpx.Response(200, json=[{"valorSaque": 600, "nis": "12345678901"}])
+        if path.endswith("/peps"):
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = PortalTransparenciaAdapter(client=client).enrich_person(cpf)
+
+    assert any(path.endswith("/bolsa-familia-sacado-por-nis") for path in requests)
+    assert any(path.endswith("/servidores/remuneracao") for path in requests)
+    assert result["social_benefits"]["records"][0]["program"] == "bolsa_familia"
+    assert result["public_sector"]["remuneration_records"]
+    assert result["public_sector"]["pension_records"]
+    assert cpf not in str(result)
+    assert "12345678901" not in str(result)
 
 
 @override_settings(

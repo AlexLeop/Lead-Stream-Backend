@@ -51,6 +51,8 @@ RESTRICTED_ENDPOINTS = frozenset(
         "bolsa-familia-disponivel-por-cpf-ou-nis",
         "bolsa-familia-por-municipio",
         "bolsa-familia-sacado-por-nis",
+        "novo-bolsa-familia-sacado-por-nis",
+        "auxilio-brasil-sacado-por-nis",
         "auxilio-emergencial-beneficiario-por-municipio",
         "auxilio-emergencial-por-cpf-ou-nis",
         "auxilio-emergencial-por-municipio",
@@ -76,23 +78,30 @@ PERSON_PROFESSIONAL_FLAGS = frozenset(
         "favorecidoCPGF",
         "participanteLicitacao",
         "servidorInativo",
+        "pensionistaOuRepresentanteLegal",
+        "instituidorPensao",
     }
 )
-SENSITIVE_PERSON_MARKERS = (
+PERSON_SOCIAL_FLAGS: dict[str, tuple[str, ...]] = {
+    "bolsa_familia": ("favorecidoBolsaFamilia", "beneficiarioBolsaFamilia"),
+    "peti": ("favorecidoPeti", "beneficiarioPeti"),
+    "garantia_safra": ("favorecidoSafra", "beneficiarioSafra"),
+    "seguro_defeso": ("favorecidoSeguroDefeso", "beneficiarioSeguroDefeso"),
+    "bpc": ("favorecidoBpc", "beneficiarioBpc"),
+    "auxilio_emergencial": ("auxilioEmergencial", "beneficiarioAuxilioEmergencial"),
+    "auxilio_brasil": ("favorecidoAuxilioBrasil", "beneficiarioAuxilioBrasil"),
+    "novo_bolsa_familia": (
+        "favorecidoNovoBolsaFamilia",
+        "beneficiarioNovoBolsaFamilia",
+    ),
+    "auxilio_reconstrucao": (
+        "favorecidoAuxilioReconstrucao",
+        "beneficiarioAuxilioReconstrucao",
+    ),
+}
+PERSON_DIRECT_IDENTIFIER_MARKERS = (
+    "cpf",
     "nis",
-    "bolsafamilia",
-    "peti",
-    "safra",
-    "segurodefeso",
-    "bpc",
-    "auxilioemergencial",
-    "auxiliobrasil",
-    "novobolsafamilia",
-    "auxilioreconstrucao",
-    "pensao",
-    "pensionista",
-    "instituidor",
-    "remuneracao",
 )
 
 
@@ -252,7 +261,7 @@ def _minimize_company_payload(value: Any) -> Any:
 
 
 def _minimize_person_payload(value: Any) -> Any:
-    """Mantém sinais profissionais e remove documentos/benefícios/remuneração de PF."""
+    """Remove identificadores diretos redundantes sem descartar dados úteis do titular."""
 
     if isinstance(value, list):
         return [_minimize_person_payload(item) for item in value]
@@ -261,12 +270,22 @@ def _minimize_person_payload(value: Any) -> Any:
     minimized: dict[str, Any] = {}
     for key, item in value.items():
         normalized_key = str(key).casefold().replace("_", "")
-        if "cpf" in normalized_key or any(
-            marker in normalized_key for marker in SENSITIVE_PERSON_MARKERS
-        ):
+        if any(marker in normalized_key for marker in PERSON_DIRECT_IDENTIFIER_MARKERS):
             continue
         minimized[str(key)] = _minimize_person_payload(item)
     return minimized
+
+
+def public_person_portal_profile(payload: dict[str, Any]) -> dict[str, Any]:
+    """Remove telemetria de roteamento da representação entregue ao cliente."""
+    internal_keys = {
+        "coverage",
+        "executed_endpoints",
+        "skipped_endpoints",
+        "strategy",
+        "external_request_id",
+    }
+    return {key: value for key, value in payload.items() if key not in internal_keys}
 
 
 def _ceaf_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -452,7 +471,7 @@ class PortalTransparenciaAdapter:
         return (records[0] if records else {}), request_id
 
     def enrich_person(self, cpf: str) -> dict[str, Any]:
-        """Consulta apenas sinais públicos profissionais de PF, nunca benefícios/remuneração."""
+        """Consulta o perfil público completo de PF com cascata guiada por sinais oficiais."""
 
         if not self.is_configured():
             raise ProviderNotConfigured("Portal da Transparência não configurado.")
@@ -509,13 +528,27 @@ class PortalTransparenciaAdapter:
         professional_flags = {
             key: bool(profile.get(key)) for key in sorted(PERSON_PROFESSIONAL_FLAGS)
         }
+        social_flags = {
+            label: any(bool(profile.get(key)) for key in aliases)
+            for label, aliases in PERSON_SOCIAL_FLAGS.items()
+        }
+        nis = only_digits(_text(profile.get("nis")))
 
         # PEP não possui flag no perfil-resumo; é a única consulta adicional incondicional.
         pep_page = fetch_pages("peps", {"cpf": cpf})
         pep_records = _minimize_person_payload(list(pep_page.records))
 
         server_records: list[dict[str, Any]] = []
-        if professional_flags["servidor"] or professional_flags["servidorInativo"]:
+        has_public_income = any(
+            professional_flags[key]
+            for key in (
+                "servidor",
+                "servidorInativo",
+                "pensionistaOuRepresentanteLegal",
+                "instituidorPensao",
+            )
+        )
+        if has_public_income:
             server_records = _minimize_person_payload(
                 list(fetch_pages("servidores", {"cpf": cpf}).records)
             )
@@ -644,11 +677,92 @@ class PortalTransparenciaAdapter:
             skip("despesas/recursos-recebidos", "perfil_sem_recursos_publicos")
             skip("despesas/documentos-por-favorecido", "perfil_sem_despesas")
 
+        social_programs: list[dict[str, Any]] = []
+        benefit_routes = (
+            (
+                "bolsa_familia",
+                "bolsa-familia-sacado-por-nis",
+                "nis",
+                nis,
+            ),
+            (
+                "novo_bolsa_familia",
+                "novo-bolsa-familia-sacado-por-nis",
+                "nis",
+                nis,
+            ),
+            (
+                "auxilio_brasil",
+                "auxilio-brasil-sacado-por-nis",
+                "nis",
+                nis,
+            ),
+            (
+                "auxilio_emergencial",
+                "auxilio-emergencial-por-cpf-ou-nis",
+                "codigoBeneficiario",
+                cpf,
+            ),
+        )
+        for label, endpoint, parameter, value in benefit_routes:
+            if not social_flags[label]:
+                skip(endpoint, f"perfil_sem_{label}")
+                continue
+            if not value:
+                skip(endpoint, f"identificador_indisponivel_para_{label}")
+                continue
+            page = fetch_pages(endpoint, {parameter: value}, coverage_key=label)
+            social_programs.extend(
+                {
+                    "program": label,
+                    "details": _minimize_person_payload(record),
+                }
+                for record in page.records
+            )
+
+        remuneration_records: list[dict[str, Any]] = []
+        if has_public_income:
+            today = timezone.localdate()
+            lookback_months = max(
+                min(
+                    int(settings.PORTAL_TRANSPARENCIA_REMUNERATION_LOOKBACK_MONTHS),
+                    24,
+                ),
+                1,
+            )
+            year, month = today.year, today.month
+            for offset in range(lookback_months):
+                month_index = year * 12 + month - 1 - offset
+                reference = f"{month_index // 12:04d}{month_index % 12 + 1:02d}"
+                page = fetch_pages(
+                    "servidores/remuneracao",
+                    {"cpf": cpf, "mesAno": reference},
+                    coverage_key=f"servidores/remuneracao:{reference}",
+                )
+                remuneration_records.extend(
+                    _minimize_person_payload(list(page.records))
+                )
+        else:
+            skip("servidores/remuneracao", "perfil_sem_remuneracao_ou_pensao")
+
+        unresolved_social_signals = [
+            label
+            for label in (
+                "peti",
+                "garantia_safra",
+                "seguro_defeso",
+                "bpc",
+                "auxilio_reconstrucao",
+            )
+            if social_flags[label]
+        ]
+
         return {
             "indexed_in_portal": bool(profile),
             "profile": {
                 "name": _text(profile.get("nome")),
                 "professional_flags": professional_flags,
+                "social_flags": social_flags,
             },
             "pep": {
                 "has_matches": bool(pep_records),
@@ -678,19 +792,26 @@ class PortalTransparenciaAdapter:
                 "card_records": card_records,
                 "resources_received": resources_received,
                 "expense_documents": expense_documents,
+                "remuneration_records": remuneration_records,
+                "pension_records": (
+                    remuneration_records
+                    if professional_flags["pensionistaOuRepresentanteLegal"]
+                    or professional_flags["instituidorPensao"]
+                    else []
+                ),
                 "unresolved_signals": {
                     "procurement_participant": professional_flags["participanteLicitacao"]
                 },
             },
+            "social_benefits": {
+                "flags": social_flags,
+                "records": social_programs,
+                "unresolved_signals": unresolved_social_signals,
+            },
             "coverage": coverage,
             "executed_endpoints": list(dict.fromkeys(executed_endpoints)),
             "skipped_endpoints": skipped_endpoints,
-            "strategy": "PROFILE_GUIDED_PROFESSIONAL_ONLY",
-            "sensitive_sources_excluded": [
-                "beneficios_sociais",
-                "remuneracao",
-                "pensoes",
-            ],
+            "strategy": "PROFILE_GUIDED_COMPLETE",
             "external_request_id": ",".join(dict.fromkeys(request_ids))[:255],
             "observed_at": timezone.now().isoformat(),
         }

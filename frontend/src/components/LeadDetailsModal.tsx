@@ -98,6 +98,9 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
         ['Cartões', publicProfile?.card_records?.length ?? 0],
         ['Recursos', publicProfile?.resources_received?.length ?? 0],
         ['Documentos', publicProfile?.expense_documents?.length ?? 0],
+        ['Remunerações', publicProfile?.remuneration_records?.length ?? 0],
+        ['Pensões', publicProfile?.pension_records?.length ?? 0],
+        ['Benefícios', lead.governmentIntelligence?.social_benefits?.records?.length ?? 0],
       ];
   const governmentRecordCount = governmentMetrics.reduce((total, [, count]) => total + count, 0);
   const indexedInPortal = publicProfile?.indexed_in_portal ?? lead.governmentIntelligence?.indexed_in_portal;
@@ -402,7 +405,7 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                         <ShieldAlert className="w-4 h-4 text-amber-600" /> Inteligência governamental
                       </h3>
                       <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                        Consulta oficial por {isPJ ? 'CNPJ' : 'CPF'}, limitada a sinais profissionais. Ausência significa somente que não houve correspondência nas fontes e no momento indicados.
+                        Consulta oficial por {isPJ ? 'CNPJ' : 'CPF'} com dados públicos localizados no momento da pesquisa.
                       </p>
                     </div>
                     {lead.governmentRisk?.status && (
@@ -410,7 +413,7 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                         {lead.governmentRisk.has_matches
                           ? `${lead.governmentRisk.match_count ?? 0} ocorrência(s)`
                           : lead.governmentRisk.status === 'NOT_QUERIED_NO_PROFILE_FLAG'
-                            ? 'Perfil sem sinal de sanção'
+                            ? 'Nenhuma ocorrência encontrada'
                             : 'Sem correspondência'}
                       </span>
                     )}
@@ -499,17 +502,12 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                       )}
                       {indexedInPortal === false && (
                         <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] leading-4 text-slate-600">
-                          {isPJ ? 'Empresa' : 'Pessoa'} não indexada no perfil-resumo do Portal. As rotas dependentes foram omitidas para evitar consultas redundantes.
+                          Nenhuma informação pública adicional foi localizada para {isPJ ? 'esta empresa' : 'esta pessoa'}.
                         </p>
                       )}
                       {(lead.publicSectorProfile.unresolved_signals?.agreements || lead.publicSectorProfile.unresolved_signals?.procurement_participant) && (
                         <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800">
-                          O perfil oficial indica {isPJ ? 'convênio ou participação em licitação' : 'participação em licitação'}, mas a API não oferece busca reversa pelo documento para detalhar esse vínculo.
-                        </p>
-                      )}
-                      {!isPJ && (lead.governmentIntelligence?.sensitive_sources_excluded?.length ?? 0) > 0 && (
-                        <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] leading-4 text-emerald-800">
-                          Privacidade aplicada: benefícios sociais, remuneração e pensões não foram consultados.
+                          A fonte oficial indica {isPJ ? 'convênio ou participação em licitação' : 'participação em licitação'}, sem detalhes adicionais disponíveis.
                         </p>
                       )}
                     </div>
@@ -522,6 +520,7 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
               )}
 
               {/* Dados Cadastrais e Fiscais da Empresa */}
+              {isPJ ? (
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-indigo-600" /> Dados Fiscais e Cadastrais (RFB)
@@ -612,6 +611,108 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                   </div>
                 )}
               </div>
+              ) : (
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-emerald-600" /> Dossiê Cadastral da Pessoa
+                  </h3>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    {[
+                      ['CPF', lead.cpf],
+                      ['Situação na Receita', lead.taxStatus],
+                      ['Data de Nascimento', lead.birthDate],
+                      ['Sexo', lead.gender],
+                      ['Nome da Mãe', lead.motherName],
+                      ['Nome do Pai', lead.fatherName],
+                      ['Estado Civil', lead.maritalStatus],
+                      ['Instrução', lead.education],
+                      ['Origem do CPF', lead.taxIdOrigin],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                        <span className="text-slate-500 font-medium block text-[11px]">{label}</span>
+                        <span className="font-bold text-slate-900 block mt-0.5">{value || 'Não informado'}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {(lead.logradouro || lead.bairro || lead.municipio) && (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="text-slate-500 font-medium block text-[11px] flex items-center gap-1">
+                        <Home className="w-3 h-3 text-slate-400" /> Endereço Completo
+                      </span>
+                      <span className="font-semibold text-slate-800 block mt-1 text-xs">
+                        {[lead.logradouro, lead.numero, lead.complemento, lead.bairro, lead.cep, lead.municipio, lead.uf].filter(Boolean).join(', ')}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {[lead.phone1, lead.phone2, lead.phone3].map((phoneValue, index) => (
+                      <div key={`pf-phone-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+                        <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">Telefone {index + 1}</span>
+                        <span className="mt-1 block font-semibold text-slate-900">{phoneValue || 'Não informado'}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {lead.electoral && (
+                    <div className="border-t border-slate-100 pt-4">
+                      <span className="text-xs font-bold text-slate-800">Dados Eleitorais</span>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+                        {[
+                          ['Título de Eleitor', lead.electoral.titulo_eleitor],
+                          ['Status do Título', lead.electoral.status_titulo],
+                          ['Local de Votação', lead.electoral.local_votacao],
+                          ['Zona', lead.electoral.zona],
+                          ['Seção', lead.electoral.secao],
+                        ].map(([label, value]) => (
+                          <div key={String(label)} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                            <span className="block text-[9px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+                            <span className="mt-0.5 block font-bold text-slate-900">{value || 'Não informado'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border-t border-slate-100 pt-4">
+                    <span className="text-xs font-bold text-slate-800">Financeiro e Bancário</span>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                        <span className="block text-[9px] font-semibold uppercase tracking-wide text-slate-500">Instituição Bancária</span>
+                        <span className="mt-0.5 block font-bold text-slate-900">{lead.instituicaoBancaria || 'Não informada'}</span>
+                      </div>
+                      {[
+                        ['Pendências Financeiras', lead.financialRestrictions?.possui_pendencias],
+                        ['Protestos', lead.financialRestrictions?.protestos],
+                        ['Cheques sem Fundo', lead.financialRestrictions?.cheques_sem_fundo],
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                          <span className="block text-[9px] font-semibold uppercase tracking-wide text-slate-500">{String(label)}</span>
+                          <span className="mt-0.5 block font-bold text-slate-900">
+                            {value === true ? 'Sim' : value === false ? 'Não' : value != null ? String(value) : 'Não informado'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {(lead.socialBenefits?.length ?? 0) > 0 && (
+                    <div className="border-t border-slate-100 pt-4">
+                      <span className="text-xs font-bold text-slate-800">Benefícios Sociais e Previdenciários</span>
+                      <div className="mt-2 space-y-2">
+                        {lead.socialBenefits?.slice(0, 10).map((benefit, index) => (
+                          <div key={`benefit-${index}`} className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-xs">
+                            <span className="font-bold text-slate-900">{String(benefit.programa || 'Benefício')}</span>
+                            <span className="ml-2 text-slate-600">{String(benefit.status || 'Status não informado')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

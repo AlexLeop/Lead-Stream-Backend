@@ -32,6 +32,7 @@ from leadstream.entities.normalization import only_digits
 from leadstream.evidence.models import Observation
 from leadstream.integrations.models import CRMConnection
 from leadstream.intelligence.cnae import KNOWN_CNAES
+from leadstream.providers.adapters.portal_transparencia import public_person_portal_profile
 from leadstream.providers.enrichment_jobs import create_enrichment_job, execute_enrichment_job
 from leadstream.providers.models import EnrichmentJob
 from leadstream.providers.serializers import (
@@ -245,6 +246,49 @@ def _contact_confidence(*contacts: ContactPoint | None) -> int:
     return round(sum(present) / len(present)) if present else 0
 
 
+def _person_profile_fields(person: Person) -> dict[str, Any]:
+    profile = person.enrichment_profile or {}
+    cadastral = profile.get("dados_cadastrais") or {}
+    addresses = profile.get("enderecos") or []
+    address = addresses[0] if addresses else cadastral.get("endereco") or {}
+    phones = profile.get("telefones") or []
+    banks = profile.get("relacionamentos_bancarios") or []
+
+    def phone_at(index: int) -> str | None:
+        if len(phones) <= index:
+            return None
+        value = f"{phones[index].get('ddd', '')}{phones[index].get('numero', '')}"
+        return value or None
+
+    return {
+        "birthDate": cadastral.get("data_nascimento"),
+        "motherName": cadastral.get("nome_mae"),
+        "fatherName": cadastral.get("nome_pai"),
+        "gender": cadastral.get("genero"),
+        "maritalStatus": cadastral.get("estado_civil"),
+        "education": cadastral.get("instrucao"),
+        "taxStatus": cadastral.get("situacao_cpf"),
+        "taxIdOrigin": cadastral.get("origem_cpf"),
+        "electoral": profile.get("dados_eleitorais"),
+        "addresses": addresses,
+        "logradouro": address.get("logradouro") or "",
+        "numero": address.get("numero") or "",
+        "complemento": address.get("complemento") or "",
+        "bairro": address.get("bairro") or "",
+        "cep": address.get("cep") or "",
+        "municipio": address.get("municipio") or "",
+        "uf": address.get("uf") or "",
+        "phone1": phone_at(0),
+        "phone2": phone_at(1),
+        "phone3": phone_at(2),
+        "financialRestrictions": profile.get("restricoes_financeiras") or {},
+        "socialBenefits": profile.get("beneficios_sociais") or [],
+        "inssBenefits": profile.get("beneficios_inss") or [],
+        "personBankRelationships": banks,
+        "instituicaoBancaria": banks[0].get("instituicao") if banks else "",
+    }
+
+
 def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
     person = relationship.person
     company = relationship.company
@@ -306,7 +350,13 @@ def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
         "intentTopic": "",
         "initials": "".join(part[:1] for part in person.full_name.split()[:2]).upper(),
         "linkedinUrl": linkedin.normalized_url if linkedin else "",
-        "enriched": bool(email or phone or linkedin or person.government_profile),
+        "enriched": bool(
+            email
+            or phone
+            or linkedin
+            or person.government_profile
+            or person.enrichment_profile
+        ),
         "identityEvidenceStatus": "OBSERVED",
         "emailEvidenceStatus": _evidence_status(email),
         "phoneEvidenceStatus": _evidence_status(phone),
@@ -316,6 +366,7 @@ def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
             else "ABSENT"
         ),
         "cpf": person.cpf_masked,
+        **_person_profile_fields(person),
         "cnpj": establishment.cnpj if establishment else company.cnpj_root,
         "razaoSocial": company.legal_name,
         "nomeFantasia": company.trade_name,
@@ -323,7 +374,7 @@ def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
         "cnae": company.primary_cnae,
         "capitalSocial": str(company.share_capital) if company.share_capital is not None else "",
         "naturezaJuridica": company.legal_nature,
-        "governmentIntelligence": person.government_profile,
+        "governmentIntelligence": public_person_portal_profile(person.government_profile),
         "governmentRisk": person.government_profile.get("government_risk", {}),
         "governmentRiskObservedAt": (
             person.government_profile_observed_at.isoformat()
@@ -466,6 +517,12 @@ def _company_lead(company: Company) -> dict[str, Any]:
 
 def _person_lead(person: Person) -> dict[str, Any]:
     entity = person.entity
+    profile = person.enrichment_profile or {}
+    cadastral = profile.get("dados_cadastrais") or {}
+    addresses = profile.get("enderecos") or []
+    address = addresses[0] if addresses else cadastral.get("endereco") or {}
+    profile_phones = profile.get("telefones") or []
+    bank_relationships = profile.get("relacionamentos_bancarios") or []
     email = _preferred_contact(entity, (ContactPoint.Kind.EMAIL,))
     phone = _preferred_contact(entity, (ContactPoint.Kind.WHATSAPP, ContactPoint.Kind.PHONE))
     linkedin = _preferred_social(entity, SocialProfile.Network.LINKEDIN)
@@ -477,6 +534,7 @@ def _person_lead(person: Person) -> dict[str, Any]:
                 phone.last_observed_at if phone else None,
                 linkedin.last_observed_at if linkedin else None,
                 person.government_profile_observed_at,
+                person.enrichment_profile_observed_at,
             )
             if value is not None
         ],
@@ -490,12 +548,18 @@ def _person_lead(person: Person) -> dict[str, Any]:
         "seniority": "Não informado",
         "company": "",
         "domain": "",
-        "location": "",
-        "city": "",
-        "state": "",
+        "location": " / ".join(
+            value for value in (address.get("municipio"), address.get("uf")) if value
+        ),
+        "city": address.get("municipio") or "",
+        "state": address.get("uf") or "",
         "country": "Brasil",
         "email": email.normalized_value if email else "",
-        "phone": phone.normalized_value if phone else "",
+        "phone": phone.normalized_value if phone else (
+            f"{profile_phones[0].get('ddd', '')}{profile_phones[0].get('numero', '')}"
+            if profile_phones
+            else ""
+        ),
         "status": _email_status(email),
         "companySize": "",
         "employeeCount": 0,
@@ -511,7 +575,9 @@ def _person_lead(person: Person) -> dict[str, Any]:
         "intentTopic": "",
         "initials": "".join(part[:1] for part in person.full_name.split()[:2]).upper(),
         "linkedinUrl": linkedin.normalized_url if linkedin else "",
-        "enriched": bool(email or phone or linkedin or person.government_profile),
+        "enriched": bool(
+            email or phone or linkedin or person.government_profile or profile
+        ),
         "identityEvidenceStatus": "OBSERVED",
         "emailEvidenceStatus": _evidence_status(email),
         "phoneEvidenceStatus": _evidence_status(phone),
@@ -521,7 +587,46 @@ def _person_lead(person: Person) -> dict[str, Any]:
             else "ABSENT"
         ),
         "cpf": person.cpf_masked,
-        "governmentIntelligence": person.government_profile,
+        "birthDate": cadastral.get("data_nascimento"),
+        "motherName": cadastral.get("nome_mae"),
+        "fatherName": cadastral.get("nome_pai"),
+        "gender": cadastral.get("genero"),
+        "maritalStatus": cadastral.get("estado_civil"),
+        "education": cadastral.get("instrucao"),
+        "taxStatus": cadastral.get("situacao_cpf"),
+        "taxIdOrigin": cadastral.get("origem_cpf"),
+        "electoral": profile.get("dados_eleitorais"),
+        "addresses": addresses,
+        "logradouro": address.get("logradouro") or "",
+        "numero": address.get("numero") or "",
+        "complemento": address.get("complemento") or "",
+        "bairro": address.get("bairro") or "",
+        "cep": address.get("cep") or "",
+        "municipio": address.get("municipio") or "",
+        "uf": address.get("uf") or "",
+        "phone1": (
+            f"{profile_phones[0].get('ddd', '')}{profile_phones[0].get('numero', '')}"
+            if len(profile_phones) > 0
+            else None
+        ),
+        "phone2": (
+            f"{profile_phones[1].get('ddd', '')}{profile_phones[1].get('numero', '')}"
+            if len(profile_phones) > 1
+            else None
+        ),
+        "phone3": (
+            f"{profile_phones[2].get('ddd', '')}{profile_phones[2].get('numero', '')}"
+            if len(profile_phones) > 2
+            else None
+        ),
+        "financialRestrictions": profile.get("restricoes_financeiras") or {},
+        "socialBenefits": profile.get("beneficios_sociais") or [],
+        "inssBenefits": profile.get("beneficios_inss") or [],
+        "personBankRelationships": bank_relationships,
+        "instituicaoBancaria": (
+            bank_relationships[0].get("instituicao") if bank_relationships else ""
+        ),
+        "governmentIntelligence": public_person_portal_profile(person.government_profile),
         "governmentRisk": person.government_profile.get("government_risk", {}),
         "governmentRiskObservedAt": (
             person.government_profile_observed_at.isoformat()

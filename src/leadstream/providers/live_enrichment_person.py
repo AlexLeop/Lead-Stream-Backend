@@ -24,7 +24,10 @@ from leadstream.intelligence.cpf_rfb import (
     validate_cpf_with_details,
 )
 from leadstream.providers.adapters.bigdatacorp_person import BigDataCorpPersonAdapter, format_cpf_br
-from leadstream.providers.adapters.portal_transparencia import PortalTransparenciaAdapter
+from leadstream.providers.adapters.portal_transparencia import (
+    PortalTransparenciaAdapter,
+    public_person_portal_profile,
+)
 from leadstream.providers.exceptions import ProviderError
 from leadstream.tenancy.models import Tenant
 from leadstream.validation.phone_check import get_phone_operator_hint
@@ -242,6 +245,11 @@ def enrich_person_live(
     beneficios_inss: list[dict[str, Any]] = []
     vinculos_empregaticios: list[dict[str, Any]] = []
     renda_data: dict[str, Any] = {}
+    enderecos: list[dict[str, Any]] = []
+    beneficios_sociais: list[dict[str, Any]] = []
+    restricoes_financeiras: dict[str, Any] = {}
+    relacionamentos_bancarios: list[dict[str, Any]] = []
+    dados_eleitorais: dict[str, Any] | None = None
     bloqueios_nmp: list[dict[str, Any]] | None = None
     bureau_result: dict[str, Any] | None = None
     bureau_identity_found = False
@@ -275,6 +283,13 @@ def enrich_person_live(
                 beneficios_inss = bureau_result.get("beneficios_inss", [])
                 vinculos_empregaticios = bureau_result.get("vinculos_empregaticios", [])
                 renda_data = bureau_result.get("renda", {})
+                enderecos = bureau_result.get("enderecos", [])
+                beneficios_sociais = bureau_result.get("beneficios_sociais", [])
+                restricoes_financeiras = bureau_result.get("restricoes_financeiras", {})
+                relacionamentos_bancarios = bureau_result.get(
+                    "relacionamentos_bancarios", []
+                )
+                dados_eleitorais = bureau_result.get("dados_eleitorais")
                 if bureau_result.get("nao_me_perturbe_consultado"):
                     bloqueios_nmp = bureau_result.get("bloqueios_nao_perturbe", [])
 
@@ -297,11 +312,198 @@ def enrich_person_live(
                                 "value": f"{idade} anos" if idade else "Não informada",
                             },
                             {"label": "Nome da Mãe", "value": nome_mae or "Não informado"},
+                            {
+                                "label": "Nome do Pai",
+                                "value": cad.get("nome_pai") or "Não informado",
+                            },
+                            {"label": "Sexo", "value": genero or "Não informado"},
+                            {
+                                "label": "Estado Civil",
+                                "value": cad.get("estado_civil") or "Não informado",
+                            },
+                            {
+                                "label": "Instrução",
+                                "value": cad.get("instrucao") or "Não informada",
+                            },
                             {"label": "Situação Cadastral", "value": situacao_cpf},
+                            {
+                                "label": "Origem do CPF",
+                                "value": cad.get("origem_cpf") or "Não informada",
+                            },
                         ],
                         "items": [],
                     }
                 )
+                if enderecos:
+                    address = enderecos[0]
+                    sections.append(
+                        {
+                            "id": "address_data",
+                            "title": "Endereço do Titular",
+                            "description": "Endereço mais relevante localizado para o CPF",
+                            "status": "available",
+                            "summary": "Endereço cadastral localizado.",
+                            "fields": [
+                                {
+                                    "label": "Logradouro",
+                                    "value": address.get("logradouro") or "Não informado",
+                                },
+                                {
+                                    "label": "Número",
+                                    "value": address.get("numero") or "Não informado",
+                                },
+                                {
+                                    "label": "Complemento",
+                                    "value": address.get("complemento") or "Não informado",
+                                },
+                                {
+                                    "label": "Bairro",
+                                    "value": address.get("bairro") or "Não informado",
+                                },
+                                {
+                                    "label": "Município",
+                                    "value": address.get("municipio") or "Não informado",
+                                },
+                                {"label": "UF", "value": address.get("uf") or "Não informada"},
+                                {"label": "CEP", "value": address.get("cep") or "Não informado"},
+                            ],
+                            "items": enderecos,
+                        }
+                    )
+                if dados_eleitorais:
+                    sections.append(
+                        {
+                            "id": "electoral_data",
+                            "title": "Dados Eleitorais",
+                            "description": "Situação e local de votação informados pelo provedor",
+                            "status": "available",
+                            "summary": "Registro eleitoral localizado.",
+                            "fields": [
+                                {
+                                    "label": "Título de Eleitor",
+                                    "value": dados_eleitorais.get("titulo_eleitor")
+                                    or "Não informado",
+                                },
+                                {
+                                    "label": "Status do Título",
+                                    "value": dados_eleitorais.get("status_titulo")
+                                    or "Não informado",
+                                },
+                                {
+                                    "label": "Local de Votação",
+                                    "value": dados_eleitorais.get("local_votacao")
+                                    or "Não informado",
+                                },
+                                {
+                                    "label": "Zona",
+                                    "value": dados_eleitorais.get("zona") or "Não informada",
+                                },
+                                {
+                                    "label": "Seção",
+                                    "value": dados_eleitorais.get("secao") or "Não informada",
+                                },
+                            ],
+                            "items": [],
+                        }
+                    )
+                if beneficios_sociais:
+                    sections.append(
+                        {
+                            "id": "social_benefits",
+                            "title": "Benefícios Sociais e Previdenciários",
+                            "description": (
+                                "Programas, pagamentos e benefícios vinculados ao titular"
+                            ),
+                            "status": "available",
+                            "summary": f"{len(beneficios_sociais)} benefício(s) localizado(s).",
+                            "fields": [
+                                {
+                                    "label": item.get("programa") or "Benefício",
+                                    "value": str(item.get("status") or "Status não informado"),
+                                }
+                                for item in beneficios_sociais[:10]
+                            ],
+                            "items": beneficios_sociais,
+                        }
+                    )
+                if restricoes_financeiras:
+                    sections.append(
+                        {
+                            "id": "financial_restrictions",
+                            "title": "Pendências e Restrições Financeiras",
+                            "description": (
+                                "Indicadores financeiros observados no provedor contratado"
+                            ),
+                            "status": "available",
+                            "summary": (
+                                "Há indicador de pendência financeira."
+                                if restricoes_financeiras.get("possui_pendencias") is True
+                                else "Nenhuma pendência atual foi indicada."
+                                if restricoes_financeiras.get("possui_pendencias") is False
+                                else "Situação financeira sem confirmação conclusiva."
+                            ),
+                            "fields": [
+                                {
+                                    "label": "Pendências Financeiras",
+                                    "value": (
+                                        "Sim"
+                                        if restricoes_financeiras.get("possui_pendencias")
+                                        is True
+                                        else "Não"
+                                        if restricoes_financeiras.get("possui_pendencias")
+                                        is False
+                                        else "Não informado"
+                                    ),
+                                },
+                                {
+                                    "label": "Protestos",
+                                    "value": (
+                                        restricoes_financeiras.get("protestos")
+                                        if restricoes_financeiras.get("protestos") is not None
+                                        else "Não informado pelo plano contratado"
+                                    ),
+                                },
+                                {
+                                    "label": "Cheques sem Fundo",
+                                    "value": (
+                                        restricoes_financeiras.get("cheques_sem_fundo")
+                                        if restricoes_financeiras.get("cheques_sem_fundo")
+                                        is not None
+                                        else "Não informado pelo plano contratado"
+                                    ),
+                                },
+                                {
+                                    "label": "Score de Risco",
+                                    "value": restricoes_financeiras.get("score_risco")
+                                    or "Não informado",
+                                },
+                            ],
+                            "items": [],
+                        }
+                    )
+                if relacionamentos_bancarios:
+                    sections.append(
+                        {
+                            "id": "bank_relationships",
+                            "title": "Instituições Bancárias Localizadas",
+                            "description": "Vínculos bancários observados com contexto e origem",
+                            "status": "available",
+                            "summary": (
+                                f"{len(relacionamentos_bancarios)} instituição(ões) "
+                                "localizada(s)."
+                            ),
+                            "fields": [
+                                {
+                                    "label": item.get("instituicao") or "Instituição bancária",
+                                    "value": "Destino de restituição de IR"
+                                    if item.get("tipo_vinculo") == "DESTINO_RESTITUICAO_IR"
+                                    else str(item.get("tipo_vinculo") or "Vínculo informado"),
+                                }
+                                for item in relacionamentos_bancarios[:10]
+                            ],
+                            "items": relacionamentos_bancarios,
+                        }
+                    )
             else:
                 sections.append(
                     {
@@ -357,7 +559,7 @@ def enrich_person_live(
             }
         )
 
-    # 4. Inteligência governamental profissional (sem benefícios/remuneração).
+    # 4. Inteligência governamental completa, incluindo benefícios e rendimentos públicos.
     if "government_intelligence" in applied_caps:
         portal_adapter = PortalTransparenciaAdapter(client=http_client)
         if portal_adapter.is_configured():
@@ -371,6 +573,7 @@ def enrich_person_live(
                 pep = government_intelligence.get("pep", {})
                 risk = government_intelligence.get("government_risk", {})
                 public_sector = government_intelligence.get("public_sector", {})
+                portal_social = government_intelligence.get("social_benefits", {})
                 professional_records = sum(
                     len(public_sector.get(key) or [])
                     for key in (
@@ -381,8 +584,11 @@ def enrich_person_live(
                         "card_records",
                         "resources_received",
                         "expense_documents",
+                        "remuneration_records",
+                        "pension_records",
                     )
                 )
+                benefit_records = len(portal_social.get("records") or [])
                 has_government_data = bool(
                     government_intelligence.get("indexed_in_portal")
                     or pep.get("has_matches")
@@ -392,10 +598,9 @@ def enrich_person_live(
                 sections.append(
                     {
                         "id": "government_intelligence",
-                        "title": "Inteligência Governamental Profissional",
+                        "title": "Inteligência Governamental e Social",
                         "description": (
-                            "PEP, sanções e vínculos públicos oficiais; benefícios sociais e "
-                            "remuneração são excluídos"
+                            "PEP, sanções, vínculos públicos, benefícios, remunerações e pensões"
                         ),
                         "status": "available" if has_government_data else "empty",
                         "summary": (
@@ -418,21 +623,24 @@ def enrich_person_live(
                                 "value": str(risk.get("match_count", 0)),
                             },
                             {
-                                "label": "Registros profissionais públicos",
+                                "label": "Registros públicos",
                                 "value": str(professional_records),
                             },
                             {
-                                "label": "Endpoints executados",
-                                "value": str(
-                                    len(government_intelligence.get("executed_endpoints") or [])
-                                ),
+                                "label": "Benefícios sociais",
+                                "value": str(benefit_records),
                             },
                             {
-                                "label": "Fontes sensíveis",
-                                "value": "Benefícios, remuneração e pensões não consultados",
+                                "label": "Remunerações",
+                                "value": str(len(public_sector.get("remuneration_records") or [])),
+                            },
+                            {
+                                "label": "Pensões",
+                                "value": str(len(public_sector.get("pension_records") or [])),
                             },
                         ],
-                        "items": [],
+                        "items": (portal_social.get("records") or [])
+                        + (public_sector.get("remuneration_records") or []),
                     }
                 )
             except ProviderError as exc:
@@ -967,6 +1175,16 @@ def enrich_person_live(
                             "updated_at",
                         )
                     )
+                if bureau_result is not None:
+                    person_record.enrichment_profile = bureau_result
+                    person_record.enrichment_profile_observed_at = timezone.now()
+                    person_record.save(
+                        update_fields=(
+                            "enrichment_profile",
+                            "enrichment_profile_observed_at",
+                            "updated_at",
+                        )
+                    )
                 if whatsapp_garantido and whatsapp_garantido.get("numeroE164"):
                     create_contact_point(
                         tenant=tenant,
@@ -1017,13 +1235,40 @@ def enrich_person_live(
         "birthDate": str(data_nascimento)[:10] if data_nascimento else None,
         "age": idade,
         "motherName": nome_mae or None,
+        "fatherName": (
+            bureau_result.get("dados_cadastrais", {}).get("nome_pai")
+            if bureau_result
+            else None
+        ),
         "gender": genero or None,
+        "maritalStatus": (
+            bureau_result.get("dados_cadastrais", {}).get("estado_civil")
+            if bureau_result
+            else None
+        ),
+        "education": (
+            bureau_result.get("dados_cadastrais", {}).get("instrucao")
+            if bureau_result
+            else None
+        ),
         "taxStatus": situacao_cpf,
+        "taxIdOrigin": (
+            bureau_result.get("dados_cadastrais", {}).get("origem_cpf")
+            if bureau_result
+            else None
+        ),
         "isDeceased": filtro_perda["is_deceased"],
         "deathDate": filtro_perda["death_date"],
         "phone": primary_phone,
         "whatsapp": whatsapp_garantido["numero"] if whatsapp_garantido else None,
         "hasWhatsApp": bool(whatsapp_garantido),
+        "phones": [item.get("numero") for item in telefones_analisados[:3]],
+        "address": enderecos[0] if enderecos else None,
+        "electoral": dados_eleitorais,
+        "financialRestrictions": restricoes_financeiras,
+        "bankRelationships": relacionamentos_bancarios,
+        "socialBenefits": beneficios_sociais,
+        "inssBenefits": beneficios_inss,
         "observedAt": timezone.now().isoformat(),
     }
 
@@ -1072,6 +1317,10 @@ def enrich_person_live(
         "capabilitiesApplied": applied_caps,
         "costCredits": cost_credits,
         "regiaoFiscal": regiao_info,
-        "governmentIntelligence": government_intelligence,
+        "governmentIntelligence": (
+            public_person_portal_profile(government_intelligence)
+            if government_intelligence
+            else None
+        ),
         "canonical": canonical_payload,
     }
