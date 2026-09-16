@@ -3,9 +3,17 @@ from __future__ import annotations
 import pytest
 from django.utils import timezone
 
-from leadstream.entities.models import Company, ContactPoint
-from leadstream.entities.services import create_company
+from leadstream.billing.models import DataBlock
+from leadstream.entities.models import Company, ContactPoint, Relationship
+from leadstream.entities.services import (
+    create_company,
+    create_contact_point,
+    create_person,
+    create_relationship,
+    create_social_profile,
+)
 from leadstream.providers.live_enrichment import enrich_company_live
+from leadstream.providers.orchestrator import CascadeResult
 from leadstream.tenancy.services import get_internal_tenant
 
 pytestmark = pytest.mark.django_db
@@ -97,3 +105,120 @@ def test_projecao_em_cache_preserva_false_explicito(monkeypatch) -> None:
     assert "Não optante" in tax_section["summary"]
     assert "MEI: Não" in tax_section["summary"]
     assert result["registryEvidence"]["method"] == "CACHE"
+
+
+def test_mei_e_apresentado_como_simei_vinculado_ao_simples(monkeypatch) -> None:
+    tenant = get_internal_tenant()
+    monkeypatch.setattr(
+        "leadstream.providers.live_enrichment.fetch_official_rfb_data",
+        lambda _cnpj: {
+            "_leadstream_source": "Fonte cadastral de teste",
+            "_leadstream_observed_at": timezone.now(),
+            "razao_social": "EMPRESA INDIVIDUAL TESTE",
+            "opcao_pelo_simples": True,
+            "opcao_pelo_mei": True,
+            "data_opcao_pelo_simples": "2024-01-01",
+            "data_opcao_pelo_mei": "2024-01-01",
+        },
+    )
+
+    result = enrich_company_live("04.252.011/0001-10", tenant)
+    tax_section = next(section for section in result["sections"] if section["id"] == "tax")
+    fields = {field["label"]: field["value"] for field in tax_section["fields"]}
+
+    assert tax_section["summary"] == "MEI (SIMEI), modalidade vinculada ao Simples Nacional."
+    assert fields["Enquadramento"] == "Microempreendedor Individual (MEI / SIMEI)"
+    assert fields["Regime associado"] == "Simples Nacional"
+
+
+def test_consulta_individual_executa_cascata_e_retorna_decisor_atribuivel(
+    monkeypatch,
+) -> None:
+    tenant = get_internal_tenant()
+    monkeypatch.setattr(
+        "leadstream.providers.live_enrichment.fetch_official_rfb_data",
+        lambda _cnpj: {
+            "_leadstream_source": "Fonte cadastral de teste",
+            "_leadstream_observed_at": timezone.now(),
+            "razao_social": "Empresa Decisora Ltda",
+            "nome_fantasia": "Empresa Decisora",
+            "descricao_situacao_cadastral": "ATIVA",
+        },
+    )
+
+    def fake_cascade(*, tenant, batch, item, requested_blocks):  # type: ignore[no-untyped-def]
+        assert item.entity_id is not None
+        assert DataBlock.DECISION_MAKER in requested_blocks
+        assert DataBlock.DIRECT_EMAIL in requested_blocks
+        assert DataBlock.DIRECT_PHONE in requested_blocks
+        assert DataBlock.SOCIAL_PROFILES in requested_blocks
+        company = Company.objects.get(entity=item.entity)
+        person = create_person(
+            tenant=tenant,
+            full_name="Maria Decisora",
+            external_key="provider:maria-decisora",
+        )
+        create_relationship(
+            tenant=tenant,
+            person=person,
+            company=company,
+            qualification=Relationship.Qualification.ADMINISTRATOR,
+            observed_title="Diretora comercial",
+            seniority=Relationship.Seniority.DIRECTOR,
+        )
+        create_contact_point(
+            tenant=tenant,
+            owner=person.entity,
+            kind=ContactPoint.Kind.EMAIL,
+            value="maria@example.com",
+        )
+        create_contact_point(
+            tenant=tenant,
+            owner=person.entity,
+            kind=ContactPoint.Kind.PHONE,
+            value="11987654321",
+        )
+        create_social_profile(
+            tenant=tenant,
+            owner=person.entity,
+            network="LINKEDIN",
+            profile_url="https://www.linkedin.com/in/maria-decisora",
+        )
+        return CascadeResult(
+            delivered_blocks=frozenset(
+                {
+                    DataBlock.DECISION_MAKER,
+                    DataBlock.DIRECT_EMAIL,
+                    DataBlock.DIRECT_PHONE,
+                    DataBlock.SOCIAL_PROFILES,
+                }
+            ),
+            missing_blocks=frozenset(),
+            providers_called=1,
+            errors=(),
+        )
+
+    monkeypatch.setattr(
+        "leadstream.providers.live_enrichment.run_enrichment_cascade",
+        fake_cascade,
+    )
+
+    result = enrich_company_live(
+        "04.252.011/0001-10",
+        tenant,
+        capabilities=["cnpj_qsa", "emails_smtp", "phones_whatsapp"],
+        execution_key="job-test-decision-maker",
+    )
+    decision_section = next(
+        section for section in result["sections"] if section["id"] == "decision_makers"
+    )
+    fields = {
+        field["label"]: field["value"] for field in decision_section["items"][0]["fields"]
+    }
+
+    assert decision_section["status"] == "available"
+    assert decision_section["items"][0]["title"] == "Maria Decisora"
+    assert fields["E-mail 1"] == "maria@example.com"
+    assert fields["Telefone 1"] == "(11) 98765-4321"
+    assert fields["LinkedIn"] == "https://linkedin.com/in/maria-decisora"
+    assert result["providerCoverage"]["missing"] == []

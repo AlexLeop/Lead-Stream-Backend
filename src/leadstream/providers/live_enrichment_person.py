@@ -530,11 +530,10 @@ def enrich_person_live(
                 {
                     "id": "cadastral_data",
                     "title": "Dados Cadastrais do Titular",
-                    "description": "Consulta à base BigDataCorp",
+                    "description": "Identificação civil e canais associados ao titular",
                     "status": "unavailable",
-                    "summary": "Falha na comunicação com o bureau.",
-                    "errorMessage": "O provedor cadastral não respondeu conforme o esperado.",
-                    "fields": [{"label": "Status", "value": "Indisponível temporariamente"}],
+                    "summary": "Os dados complementares estão temporariamente indisponíveis.",
+                    "fields": [{"label": "CPF validado", "value": formatted_cpf_str}],
                     "items": [],
                 }
             )
@@ -543,17 +542,12 @@ def enrich_person_live(
         sections.append(
             {
                 "id": "cadastral_data",
-                "title": "Dados Cadastrais do Titular (Bureau BigDataCorp)",
+                "title": "Dados cadastrais complementares",
                 "description": "Identificação civil, nome e histórico de contatos",
-                "status": "unavailable",
-                "summary": "Bureau BigDataCorp não configurado no ambiente.",
-                "errorMessage": (
-                    "Para obter o nome civil, nascimento e candidatos telefônicos do CPF, "
-                    "configure BIGDATACORP_ACCESS_TOKEN e BIGDATACORP_TOKEN_ID."
-                ),
+                "status": "empty",
+                "summary": "Nenhum dado complementar foi retornado nesta consulta.",
                 "fields": [
-                    {"label": "CPF Validado", "value": formatted_cpf_str},
-                    {"label": "Status do Bureau", "value": "Credenciais não configuradas"},
+                    {"label": "CPF validado", "value": formatted_cpf_str},
                 ],
                 "items": [],
             }
@@ -656,7 +650,7 @@ def enrich_person_live(
                         "title": "Inteligência Governamental Profissional",
                         "description": "Consulta a fontes oficiais por CPF",
                         "status": "unavailable",
-                        "summary": "Portal da Transparência indisponível nesta execução.",
+                        "summary": "Os registros públicos estão temporariamente indisponíveis.",
                         "fields": [],
                         "items": [],
                     }
@@ -667,8 +661,8 @@ def enrich_person_live(
                     "id": "government_intelligence",
                     "title": "Inteligência Governamental Profissional",
                     "description": "Consulta a fontes oficiais por CPF",
-                    "status": "unavailable",
-                    "summary": "Portal da Transparência não configurado no ambiente.",
+                    "status": "empty",
+                    "summary": "Nenhum registro público foi retornado nesta consulta.",
                     "fields": [],
                     "items": [],
                 }
@@ -717,14 +711,6 @@ def enrich_person_live(
                             if filtro_perda["status"] == "INCONCLUSIVO"
                             else "Inapto / Expurgado"
                         )
-                    ),
-                },
-                {
-                    "label": "Tarifa de Consulta",
-                    "value": (
-                        "Cobrança condicionada a dado útil entregue"
-                        if filtro_perda["deve_cobrar_credito"] is not False
-                        else "Isento / zero créditos para expurgo confirmado"
                     ),
                 },
             ],
@@ -827,7 +813,7 @@ def enrich_person_live(
             "especieCodigo": "N/A",
             "especieDescricao": "Nenhum benefício ou vínculo salarial registrado",
             "categoriaElegibilidade": "INAPTO",
-            "alerta": "Dados insuficientes no bureau para cálculo de margem consignável.",
+            "alerta": "Dados insuficientes para cálculo de margem consignável.",
             "salarioBase": 0.0,
             "margemEmprestimo35": 0.0,
             "margemRmcCartao5": 0.0,
@@ -896,13 +882,13 @@ def enrich_person_live(
                 "title": "Camada 2: Core Consignado (INSS / SIAPE)",
                 "description": "Identificação de benefícios previdenciários e margem consignável",
                 "status": "empty",
-                "summary": "Nenhum benefício INSS ou salário localizado no bureau.",
+                "summary": "Nenhum benefício INSS ou salário foi localizado nesta consulta.",
                 "fields": [
                     {
                         "label": "Situação de Vínculo",
-                        "value": "Sem registros previdenciários no bureau",
+                        "value": "Sem registros previdenciários disponíveis",
                     },
-                    {"label": "Elegibilidade", "value": "Requer averiguação manual"},
+                    {"label": "Elegibilidade", "value": "Não determinada"},
                 ],
                 "items": [],
             }
@@ -1070,16 +1056,11 @@ def enrich_person_live(
                 "title": "Conta WhatsApp tecnicamente confirmada",
                 "description": "Verificação técnica ativa realizada na rede do WhatsApp",
                 "status": "available",
-                "summary": f"Conta localizada no probe: {whatsapp_garantido['numero']}.",
+                "summary": f"Conta WhatsApp confirmada para {whatsapp_garantido['numero']}.",
                 "fields": [
                     {"label": "Número WhatsApp", "value": whatsapp_garantido["numero"]},
                     {"label": "Conta WhatsApp", "value": whatsapp_garantido["tipoConta"]},
-                    {"label": "JID do Contato", "value": str(whatsapp_garantido["jid"])},
                     {"label": "Link de Conversa Direta", "value": whatsapp_garantido["linkDireto"]},
-                    {
-                        "label": "Origem da Validação",
-                        "value": str(whatsapp_garantido["provedorProbe"]),
-                    },
                 ],
                 "items": [],
             }
@@ -1088,19 +1069,14 @@ def enrich_person_live(
         sections.append(
             {
                 "id": "whatsapp_verified",
-                "title": "Verificação de WhatsApp (Probe)",
-                "description": "Checagem de conectividade de conta WhatsApp",
-                "status": "unavailable",
-                "summary": "Gateway de WhatsApp Probe não está configurado no servidor.",
-                "errorMessage": (
-                    "Para garantia técnica de entrega do número de WhatsApp, configure "
-                    "WHATSAPP_PROBE_URL e WHATSAPP_PROBE_API_KEY no EasyPanel/ambiente."
-                ),
+                "title": "Verificação de WhatsApp",
+                "description": "Confirmação técnica de disponibilidade do canal",
+                "status": "empty",
+                "summary": "Nenhum número com WhatsApp confirmado foi retornado nesta consulta.",
                 "fields": [
-                    {"label": "Status do Probe", "value": "Não configurado"},
                     {
-                        "label": "Telefones Identificados",
-                        "value": f"{len(telefones_analisados)} encontrados no bureau",
+                        "label": "Telefones identificados",
+                        "value": str(len(telefones_analisados)),
                     },
                 ],
                 "items": [],

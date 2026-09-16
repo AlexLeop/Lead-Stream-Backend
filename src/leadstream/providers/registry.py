@@ -67,7 +67,12 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
             "BigDataCorp",
             settings.BIGDATACORP_PROVIDER_PRIORITY,
             settings.BIGDATACORP_COST_CENTS,
-            [DataBlock.DECISION_MAKER, DataBlock.DIRECT_EMAIL, DataBlock.DIRECT_PHONE],
+            [
+                DataBlock.DECISION_MAKER,
+                DataBlock.DIRECT_EMAIL,
+                DataBlock.DIRECT_PHONE,
+                DataBlock.WHATSAPP,
+            ],
         ),
         (
             "apify-decision-maker",
@@ -78,6 +83,7 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
                 DataBlock.DECISION_MAKER,
                 DataBlock.DIRECT_EMAIL,
                 DataBlock.DIRECT_PHONE,
+                DataBlock.WHATSAPP,
                 DataBlock.SOCIAL_PROFILES,
             ],
         ),
@@ -86,7 +92,12 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
             "Open Enrich",
             settings.OPEN_ENRICH_PROVIDER_PRIORITY,
             settings.OPEN_ENRICH_COST_CENTS,
-            [DataBlock.DECISION_MAKER, DataBlock.DIRECT_EMAIL, DataBlock.DIRECT_PHONE],
+            [
+                DataBlock.DECISION_MAKER,
+                DataBlock.DIRECT_EMAIL,
+                DataBlock.DIRECT_PHONE,
+                DataBlock.WHATSAPP,
+            ],
         ),
         (
             "premium-enrich",
@@ -97,6 +108,7 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
                 DataBlock.DECISION_MAKER,
                 DataBlock.DIRECT_EMAIL,
                 DataBlock.DIRECT_PHONE,
+                DataBlock.WHATSAPP,
                 DataBlock.SOCIAL_PROFILES,
             ],
         ),
@@ -132,8 +144,17 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
         )
         if not created:
             configured = adapters[slug].is_configured()
+            update_fields: list[str] = []
             if policy.enabled != configured:
                 policy.enabled = configured
-                policy.save(update_fields=("enabled",))
+                update_fields.append("enabled")
+            # Upgrade compatível: amplia capacidades possíveis sem reabilitar provedor
+            # desconfigurado nem remover escolhas administrativas existentes.
+            merged_blocks = sorted(set(policy.allowed_blocks).union(blocks))
+            if policy.allowed_blocks != merged_blocks:
+                policy.allowed_blocks = merged_blocks
+                update_fields.append("allowed_blocks")
+            if update_fields:
+                policy.save(update_fields=(*update_fields, "updated_at"))
         policies.append(policy)
     return policies

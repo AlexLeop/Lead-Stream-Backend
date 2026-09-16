@@ -157,6 +157,25 @@ function formatRunDate(value?: string | null) {
     : new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
+function personIdentityFields(person: PersonEnrichmentResult['person']) {
+  if (!person) return [];
+  const phones = (person.phones || []).filter((value): value is string => Boolean(value));
+  return [
+    ['Nome completo', person.name],
+    ['CPF', person.cpf],
+    ['Data de nascimento', person.birthDate],
+    ['Nome da mãe', person.motherName],
+    ['Nome do pai', person.fatherName],
+    ['Sexo', person.gender],
+    ['Estado civil', person.maritalStatus],
+    ['Instrução', person.education],
+    ['Situação na Receita', person.taxStatus],
+    ['Origem do CPF', person.taxIdOrigin],
+    ['WhatsApp', person.whatsapp],
+    ['Telefones', phones.length ? phones.join(' · ') : null],
+  ].filter((field): field is [string, string] => Boolean(field[1]));
+}
+
 async function waitForEnrichmentJob<T>(initial: EnrichmentJob<T>): Promise<EnrichmentJob<T>> {
   let current = initial;
   const finalStatuses = new Set<EnrichmentRun['status']>(['SUCCEEDED', 'NO_DATA', 'FAILED']);
@@ -852,7 +871,18 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                   setResult(null);
                   setPersonResult(null);
                   setIndividualError(null);
-                  setSelectedCapabilities(['cpf_cadastral', 'phones_whatsapp_garantido']);
+                  setSelectedCapabilities(
+                    catalog?.presets.find((preset) => preset.id === 'consignado_premium')?.capabilityIds
+                    ?? [
+                      'cpf_cadastral',
+                      'consignado_core',
+                      'filtro_perda_obito',
+                      'nao_me_perturbe',
+                      'mailing_top3_discagem',
+                      'phones_whatsapp_probe',
+                      'government_intelligence',
+                    ],
+                  );
                 }}
                 className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                   docType === 'CPF'
@@ -1075,6 +1105,31 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
             {/* Resultado de Pessoa Física (CPF & Consignado & WhatsApp) */}
             {personResult && (
               <div className="space-y-4">
+                <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-2 border-b border-slate-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-blue-700">Pessoa identificada</p>
+                      <h3 className="mt-1 text-base font-bold text-slate-950">
+                        {personResult.person?.name || 'Identificação não localizada'}
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Dados localizados nesta consulta, com ausências preservadas sem preenchimento inferido.
+                      </p>
+                    </div>
+                    <span className="w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                      CPF {personResult.person?.cpf || 'não informado'}
+                    </span>
+                  </div>
+                  <dl className="mt-4 grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {personIdentityFields(personResult.person).map(([label, value]) => (
+                      <div key={label} className="min-w-0">
+                        <dt className="text-xs text-slate-500">{label}</dt>
+                        <dd className="mt-0.5 break-words text-sm font-semibold text-slate-900">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+
                 {/* 1. Camada 1: Filtro de Perda (Óbito & Expurgo) */}
                 {personResult.filtroPerda?.status === 'EXPURGADO_OBITO' ? (
                   <div className="rounded-xl border-2 border-red-500 bg-red-950/20 p-5 shadow-lg">
@@ -1147,7 +1202,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                         )}
                         <div>
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-200 text-emerald-900 mb-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" /> WhatsApp Ativo Garantido (Probe Oficial)
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" /> WhatsApp tecnicamente confirmado
                           </div>
                           <h3 className="text-base font-bold text-slate-900">{personResult.whatsappGarantido.numero}</h3>
                           <p className="text-xs text-slate-600 mt-0.5">
@@ -1169,7 +1224,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex items-start gap-3 text-xs text-slate-700">
                     <Info className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-bold uppercase tracking-wider text-slate-800">Status do WhatsApp Probe</div>
+                      <div className="font-bold text-slate-800">Disponibilidade do WhatsApp</div>
                       <p className="mt-0.5 text-slate-600">
                         {personResult.telefonesAtribuiveis && personResult.telefonesAtribuiveis.length > 0
                           ? 'Nenhum dos telefones identificados no cadastro possui conta ativa no WhatsApp no momento.'
@@ -1537,7 +1592,7 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
         <section className="rounded-[12px] border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
             <h3 className="text-sm font-bold text-slate-950">Últimas consultas individuais</h3>
-            <p className="mt-0.5 text-xs text-slate-500">Histórico das últimas execuções do endpoint de enriquecimento.</p>
+            <p className="mt-0.5 text-xs text-slate-500">Histórico das consultas individuais mais recentes.</p>
           </div>
           <ul className="divide-y divide-slate-100">
             {runs.slice(0, 10).map((run) => {

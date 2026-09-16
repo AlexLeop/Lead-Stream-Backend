@@ -1391,6 +1391,20 @@ class EnrichmentCatalogView(APIView):
                         "depth": "Conformidade",
                     },
                     {
+                        "id": "government_intelligence",
+                        "groupId": "risk",
+                        "label": "Dados governamentais e sociais",
+                        "description": (
+                            "PEP, sanções, vínculos públicos, benefícios, remunerações e pensões"
+                        ),
+                        "highlights": [
+                            "Benefícios sociais",
+                            "Remunerações públicas",
+                            "Pensões e vínculos",
+                        ],
+                        "depth": "Completo",
+                    },
+                    {
                         "id": "mailing_top3_discagem",
                         "groupId": "sales",
                         "label": "Priorização de até 3 telefones",
@@ -1431,6 +1445,7 @@ class EnrichmentCatalogView(APIView):
                             "nao_me_perturbe",
                             "mailing_top3_discagem",
                             "phones_whatsapp_probe",
+                            "government_intelligence",
                         ],
                     },
                 ],

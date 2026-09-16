@@ -48,10 +48,19 @@ from leadstream.providers.models import (
     ProviderPolicy,
 )
 from leadstream.providers.pipeline import process_enrichment_chunk
+from leadstream.providers.registry import ensure_provider_policies
 from leadstream.providers.resilience import _rate_limit, reserve_shared_rate_limit
 from leadstream.tenancy.services import get_internal_tenant
 
 pytestmark = pytest.mark.django_db
+
+
+def test_provider_policies_permit_whatsapp_for_people_enrichment() -> None:
+    tenant = get_internal_tenant()
+    policies = {policy.provider: policy for policy in ensure_provider_policies(tenant)}
+
+    for provider in ("bigdatacorp", "apify-decision-maker", "open-enrich", "premium-enrich"):
+        assert DataBlock.WHATSAPP in policies[provider].allowed_blocks
 
 
 def make_context(*, suffix: str = "001") -> ProviderContext:

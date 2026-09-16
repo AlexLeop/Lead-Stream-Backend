@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import patch
 
@@ -453,6 +454,32 @@ def test_enrichment_catalog_has_consignado_preset(api_client: APIClient) -> None
     assert "consignado_core" in presets["consignado_premium"]["capabilityIds"]
     assert "nao_me_perturbe" in presets["consignado_premium"]["capabilityIds"]
     assert "filtro_perda_obito" in presets["consignado_premium"]["capabilityIds"]
+    assert "government_intelligence" in presets["consignado_premium"]["capabilityIds"]
+
+
+@pytest.mark.django_db
+def test_dossie_pf_publico_nao_expoe_configuracao_operacional() -> None:
+    tenant = Tenant.objects.create(name="Tenant PF Público", slug="tenant-pf-publico")
+    with override_settings(
+        BIGDATACORP_ACCESS_TOKEN=None,
+        BIGDATACORP_TOKEN_ID=None,
+        PORTAL_TRANSPARENCIA_TOKEN=None,
+        WHATSAPP_PROBE_URL=None,
+        WHATSAPP_PROBE_API_KEY=None,
+    ):
+        result = enrich_person_live(query="52998224725", tenant=tenant)
+
+    public_payload = json.dumps(result["sections"], ensure_ascii=False)
+    for internal_term in (
+        "EasyPanel",
+        "BIGDATACORP_ACCESS_TOKEN",
+        "BIGDATACORP_TOKEN_ID",
+        "WHATSAPP_PROBE_URL",
+        "WHATSAPP_PROBE_API_KEY",
+        "não configurado no ambiente",
+        "Status do Bureau",
+    ):
+        assert internal_term not in public_payload
 
 
 @pytest.mark.django_db

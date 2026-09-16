@@ -30,7 +30,7 @@ interface LeadStreamContextValue {
   loading: boolean;
   error: string | null;
   permissions: string[];
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<DjangoUser>;
   logout: () => void;
   refresh: () => Promise<void>;
   refreshWorkspace: () => Promise<void>;
@@ -85,7 +85,7 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadAuthUser = useCallback(async (): Promise<boolean> => {
+  const loadAuthUser = useCallback(async (): Promise<DjangoUser | null> => {
     try {
       if (!hasAccessToken()) {
         await api.restoreSession();
@@ -101,10 +101,10 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
       setPermissions(me?.permissions || []);
       setIsAuthenticated(true);
       await refreshWallet().catch(() => {});
-      return true;
+      return me?.user || null;
     } catch {
       clearSessionState();
-      return false;
+      return null;
     } finally {
       setLoading(false);
     }
@@ -114,7 +114,9 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
     async (username: string, password: string) => {
       await api.login(username, password);
       setIsAuthenticated(true);
-      await loadAuthUser();
+      const authenticatedUser = await loadAuthUser();
+      if (!authenticatedUser) throw new Error('Não foi possível carregar o perfil autenticado.');
+      return authenticatedUser;
     },
     [loadAuthUser],
   );
@@ -140,8 +142,8 @@ export function LeadStreamProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void (async () => {
-      const authenticated = await loadAuthUser();
-      if (authenticated) await refresh();
+      const authenticatedUser = await loadAuthUser();
+      if (authenticatedUser) await refresh();
     })();
 
     const handleUnauthorized = () => clearSessionState();

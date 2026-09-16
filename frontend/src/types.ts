@@ -867,6 +867,8 @@ export interface DjangoTenant {
   id: string;
   name: string;
   slug: string;
+  role?: string;
+  is_owner?: boolean;
 }
 
 export interface DjangoUser {

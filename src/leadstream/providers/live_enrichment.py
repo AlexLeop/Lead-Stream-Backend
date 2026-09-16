@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import unicodedata
 import uuid
 from typing import Any
 
@@ -8,6 +9,8 @@ import httpx
 from django.db import transaction
 from django.utils import timezone
 
+from leadstream.batches.models import Batch, BatchItem
+from leadstream.billing.models import BillableEvent, DataBlock
 from leadstream.common.redaction import correlation_tag
 from leadstream.entities.models import Company, ContactPoint, Relationship
 from leadstream.entities.normalization import (
@@ -24,6 +27,8 @@ from leadstream.entities.services import (
     create_relationship,
 )
 from leadstream.tenancy.models import Tenant
+
+from .orchestrator import CascadeResult, run_enrichment_cascade
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +103,183 @@ def display_bool(value: bool | None, *, yes: str, no: str) -> str:
     if value is None:
         return "Não informado"
     return yes if value else no
+
+
+CAPABILITY_BLOCKS: dict[str, frozenset[str]] = {
+    "cnpj_qsa": frozenset(
+        {DataBlock.COMPANY_REGISTRY, DataBlock.DECISION_MAKER, DataBlock.SOCIAL_PROFILES}
+    ),
+    "emails_smtp": frozenset({DataBlock.DIRECT_EMAIL}),
+    "phones_whatsapp": frozenset({DataBlock.DIRECT_PHONE, DataBlock.WHATSAPP}),
+    "social_profiles": frozenset({DataBlock.SOCIAL_PROFILES}),
+}
+
+
+def _requested_blocks(capabilities: list[str]) -> frozenset[str]:
+    blocks: set[str] = set()
+    for capability in capabilities:
+        blocks.update(CAPABILITY_BLOCKS.get(capability, ()))
+    return frozenset(blocks or {DataBlock.COMPANY_REGISTRY, DataBlock.DECISION_MAKER})
+
+
+def _individual_enrichment_context(
+    *,
+    execution_key: str,
+    tenant: Tenant,
+    company: Company,
+    cnpj: str,
+    normalized_data: dict[str, Any],
+) -> tuple[Batch, BatchItem]:
+    """Cria um contexto durável e idempotente para a cascata da consulta individual."""
+    idempotency_key = f"individual:{execution_key}"[:128]
+    batch, _ = Batch.objects.get_or_create(
+        tenant=tenant,
+        idempotency_key=idempotency_key,
+        defaults={
+            "name": f"Consulta individual · {format_cnpj(cnpj)}",
+            "source_type": Batch.SourceType.DISCOVERY,
+            "status": Batch.Status.RUNNING,
+            "current_stage": "ENRICHMENT",
+            "chunk_size": 50,
+            "total_rows": 1,
+            "processed_rows": 1,
+            "succeeded_rows": 1,
+            "started_at": timezone.now(),
+        },
+    )
+    item, _ = BatchItem.objects.get_or_create(
+        tenant=tenant,
+        batch=batch,
+        row_number=1,
+        defaults={
+            "original_data": {"cnpj": cnpj},
+            "normalized_data": normalized_data,
+            "hygiene_state": BatchItem.HygieneState.UNCHANGED,
+            "status": BatchItem.Status.SUCCEEDED,
+            "entity": company.entity,
+            "processed_at": timezone.now(),
+        },
+    )
+    changed: list[str] = []
+    if item.entity_id != company.entity_id:
+        item.entity = company.entity
+        changed.append("entity")
+    if item.normalized_data != normalized_data:
+        item.normalized_data = normalized_data
+        changed.append("normalized_data")
+    if changed:
+        item.save(update_fields=(*changed, "updated_at"))
+    return batch, item
+
+
+def _run_individual_cascade(
+    *,
+    execution_key: str,
+    tenant: Tenant,
+    company: Company,
+    cnpj: str,
+    capabilities: list[str],
+    normalized_data: dict[str, Any],
+) -> CascadeResult:
+    batch, item = _individual_enrichment_context(
+        execution_key=execution_key,
+        tenant=tenant,
+        company=company,
+        cnpj=cnpj,
+        normalized_data=normalized_data,
+    )
+    result = run_enrichment_cascade(
+        tenant=tenant,
+        batch=batch,
+        item=item,
+        requested_blocks=_requested_blocks(capabilities),
+    )
+    item.delivered_blocks = sorted(result.delivered_blocks)
+    item.missing_blocks = sorted(result.missing_blocks)
+    item.enrichment_errors = list(result.errors)
+    item.enrichment_status = (
+        BatchItem.EnrichmentStatus.SUCCEEDED
+        if not result.missing_blocks
+        else BatchItem.EnrichmentStatus.PARTIAL
+        if result.delivered_blocks
+        else BatchItem.EnrichmentStatus.FAILED
+    )
+    item.save(
+        update_fields=(
+            "delivered_blocks",
+            "missing_blocks",
+            "enrichment_errors",
+            "enrichment_status",
+            "updated_at",
+        )
+    )
+    batch.status = Batch.Status.COMPLETED if result.delivered_blocks else Batch.Status.PARTIAL
+    batch.current_stage = "ENRICHMENT"
+    batch.completed_at = timezone.now()
+    batch.save(update_fields=("status", "current_stage", "completed_at", "updated_at"))
+    return result
+
+
+def _normalized_person_name(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value)
+    return " ".join(
+        "".join(char for char in decomposed if not unicodedata.combining(char))
+        .casefold()
+        .split()
+    )
+
+
+def _decision_maker_dossier(company: Company) -> list[dict[str, Any]]:
+    """Consolida pessoas duplicadas por nome para apresentação, sem inventar atribuição."""
+    dossiers: dict[str, dict[str, Any]] = {}
+    relationships = company.relationships.select_related("person", "person__entity").all()
+    for relationship in relationships:
+        person = relationship.person
+        key = _normalized_person_name(person.full_name)
+        dossier = dossiers.setdefault(
+            key,
+            {
+                "name": person.full_name,
+                "roles": set(),
+                "seniorities": set(),
+                "emails": set(),
+                "phones": set(),
+                "whatsapps": set(),
+                "socials": {},
+            },
+        )
+        role = relationship.observed_title or relationship.get_qualification_display()
+        if role:
+            dossier["roles"].add(role)
+        if relationship.seniority != Relationship.Seniority.UNKNOWN:
+            dossier["seniorities"].add(relationship.get_seniority_display())
+        for contact in person.entity.contact_points.all():
+            if contact.kind == ContactPoint.Kind.EMAIL:
+                dossier["emails"].add(contact.original_value)
+            elif contact.kind == ContactPoint.Kind.WHATSAPP:
+                dossier["whatsapps"].add(format_phone_br(contact.original_value))
+            elif contact.kind == ContactPoint.Kind.PHONE:
+                dossier["phones"].add(format_phone_br(contact.original_value))
+        for social in person.entity.social_profiles.all():
+            dossier["socials"].setdefault(social.get_network_display(), set()).add(
+                social.profile_url
+            )
+    result: list[dict[str, Any]] = []
+    for dossier in dossiers.values():
+        result.append(
+            {
+                "nome": dossier["name"],
+                "funcoes": sorted(dossier["roles"]),
+                "senioridades": sorted(dossier["seniorities"]),
+                "emails": sorted(dossier["emails"]),
+                "telefones": sorted(dossier["phones"]),
+                "whatsapps": sorted(dossier["whatsapps"]),
+                "redesSociais": {
+                    network: sorted(urls) for network, urls in dossier["socials"].items()
+                },
+            }
+        )
+    return sorted(result, key=lambda item: item["nome"])
 
 
 def fetch_official_rfb_data(cnpj_digits: str) -> dict[str, Any] | None:
@@ -186,6 +368,7 @@ def enrich_company_live(
     query: str,
     tenant: Tenant,
     capabilities: list[str] | None = None,
+    execution_key: str | None = None,
 ) -> dict[str, Any]:
     """Executa o pipeline real de enriquecimento cadastral de empresa brasileira.
 
@@ -465,6 +648,10 @@ def enrich_company_live(
                 person = create_person(
                     tenant=tenant,
                     full_name=socio["nome"],
+                    external_key=(
+                        f"registry:{normalized_cnpj}:"
+                        f"{_normalized_person_name(socio['nome'])}"
+                    ),
                 )
                 create_relationship(
                     tenant=tenant,
@@ -500,6 +687,41 @@ def enrich_company_live(
                 )
             except (ValueError, TypeError):
                 pass
+
+    cascade_result: CascadeResult | None = None
+    if execution_key:
+        cascade_result = _run_individual_cascade(
+            execution_key=execution_key,
+            tenant=tenant,
+            company=company_record,
+            cnpj=normalized_cnpj,
+            capabilities=applied_caps,
+            normalized_data={
+                "cnpj": normalized_cnpj,
+                "legal_name": razao_social,
+                "trade_name": nome_fantasia,
+                "municipio": municipio_end,
+                "qsa": raw_qsa,
+            },
+        )
+        company_record.refresh_from_db()
+        company_contacts = company_record.entity.contact_points.all()
+        emails_oficiais = sorted(
+            {
+                contact.original_value.lower()
+                for contact in company_contacts
+                if contact.kind == ContactPoint.Kind.EMAIL
+            }
+        )
+        telefones_oficiais = sorted(
+            {
+                format_phone_br(contact.original_value)
+                for contact in company_contacts
+                if contact.kind in {ContactPoint.Kind.PHONE, ContactPoint.Kind.WHATSAPP}
+            }
+        )
+
+    decision_makers = _decision_maker_dossier(company_record)
 
     # --- 5. Construção das seções canônicas de exibição ---
     sections: list[dict[str, Any]] = []
@@ -624,32 +846,41 @@ def enrich_company_live(
 
     # 5.5 Seção Regime Tributário
     has_tax_data = simples_nacional is not None or mei_enquadrado is not None
+    if mei_enquadrado is True:
+        tax_summary = "MEI (SIMEI), modalidade vinculada ao Simples Nacional."
+        tax_fields = [
+            {"label": "Enquadramento", "value": "Microempreendedor Individual (MEI / SIMEI)"},
+            {"label": "Regime associado", "value": "Simples Nacional"},
+            {"label": "MEI desde", "value": data_opcao_mei or "Não informado"},
+            {"label": "Simples desde", "value": data_opcao_simples or "Não informado"},
+        ]
+    else:
+        tax_summary = (
+            "Simples Nacional: "
+            f"{display_bool(simples_nacional, yes='Optante', no='Não optante')} · "
+            f"MEI: {display_bool(mei_enquadrado, yes='Enquadrado', no='Não enquadrado')}."
+            if has_tax_data
+            else "A fonte consultada não informou o enquadramento tributário."
+        )
+        tax_fields = [
+            {
+                "label": "Simples Nacional",
+                "value": display_bool(simples_nacional, yes="Optante", no="Não optante"),
+            },
+            {
+                "label": "Microempreendedor Individual (MEI)",
+                "value": display_bool(mei_enquadrado, yes="Enquadrado", no="Não enquadrado"),
+            },
+            {"label": "Simples desde", "value": data_opcao_simples or "Não informado"},
+        ]
     sections.append(
         {
             "id": "tax",
-            "title": "Regime Tributário & Fiscal",
-            "description": "Opção pelo Simples Nacional, MEI e regularidade",
+            "title": "Regime tributário",
+            "description": "Enquadramento informado no cadastro empresarial",
             "status": "available" if has_tax_data else "empty",
-            "summary": (
-                f"Simples: {display_bool(simples_nacional, yes='Optante', no='Não optante')} · "
-                f"MEI: {display_bool(mei_enquadrado, yes='Sim', no='Não')}"
-                if has_tax_data
-                else "A fonte consultada não informou o enquadramento tributário."
-            ),
-            "fields": [
-                {
-                    "label": "Simples Nacional",
-                    "value": display_bool(
-                        simples_nacional, yes="Optante", no="Não optante"
-                    ),
-                },
-                {
-                    "label": "Microempreendedor (MEI)",
-                    "value": display_bool(mei_enquadrado, yes="Sim", no="Não"),
-                },
-                {"label": "Opção Simples Desde", "value": data_opcao_simples or "—"},
-                {"label": "Opção MEI Desde", "value": data_opcao_mei or "—"},
-            ],
+            "summary": tax_summary,
+            "fields": tax_fields,
             "items": [],
         }
     )
@@ -681,9 +912,51 @@ def enrich_company_live(
         }
     )
 
+    decision_items: list[dict[str, Any]] = []
+    for decision_maker in decision_makers:
+        fields = [
+            {
+                "label": "Função",
+                "value": ", ".join(decision_maker["funcoes"]) or "Não informada",
+            },
+        ]
+        if decision_maker["senioridades"]:
+            fields.append(
+                {
+                    "label": "Senioridade",
+                    "value": ", ".join(decision_maker["senioridades"]),
+                }
+            )
+        for index, email in enumerate(decision_maker["emails"], 1):
+            fields.append({"label": f"E-mail {index}", "value": email})
+        for index, phone in enumerate(decision_maker["telefones"], 1):
+            fields.append({"label": f"Telefone {index}", "value": phone})
+        for index, whatsapp in enumerate(decision_maker["whatsapps"], 1):
+            fields.append({"label": f"WhatsApp {index}", "value": whatsapp})
+        for network, urls in decision_maker["redesSociais"].items():
+            for index, url in enumerate(urls, 1):
+                suffix = f" {index}" if len(urls) > 1 else ""
+                fields.append({"label": f"{network}{suffix}", "value": url})
+        decision_items.append({"title": decision_maker["nome"], "fields": fields})
+    sections.append(
+        {
+            "id": "decision_makers",
+            "title": "Decisores e canais atribuíveis",
+            "description": "Pessoas vinculadas à empresa e dados associados a cada titular",
+            "status": "available" if decision_items else "empty",
+            "summary": (
+                f"{len(decision_items)} pessoa(s) vinculada(s) à empresa."
+                if decision_items
+                else "Nenhuma pessoa com vínculo empresarial foi localizada nesta consulta."
+            ),
+            "fields": [],
+            "items": decision_items,
+        }
+    )
+
     # Cobertura
     total_fields = sum(len(sec["fields"]) for sec in sections)
-    total_records = len(qsa_items) + len(sec_cnae_items)
+    total_records = len(qsa_items) + len(sec_cnae_items) + len(decision_items)
     coverage = {
         "requested": len(applied_caps),
         "available": sum(1 for sec in sections if sec["status"] == "available"),
@@ -727,8 +1000,17 @@ def enrich_company_live(
         "coverage": coverage,
         "sections": sections,
         "socioAdministradores": qsa_socios,
-        "emailsValidados": [],
-        "telefonesAtribuiveis": [],
+        "decisores": decision_makers,
+        "emailsValidados": sorted(
+            {email for person in decision_makers for email in person["emails"]}
+        ),
+        "telefonesAtribuiveis": sorted(
+            {
+                phone
+                for person in decision_makers
+                for phone in (*person["telefones"], *person["whatsapps"])
+            }
+        ),
         "contatosCadastraisEmpresa": [
             {"tipo": "EMAIL", "valor": em, "fonte": source_name}
             for em in emails_oficiais
@@ -742,5 +1024,16 @@ def enrich_company_live(
             for tel in telefones_oficiais
         ],
         "capabilitiesApplied": applied_caps,
-        "costCredits": 1,
+        "providerCoverage": {
+            "delivered": sorted(cascade_result.delivered_blocks) if cascade_result else [],
+            "missing": sorted(cascade_result.missing_blocks) if cascade_result else [],
+        },
+        "costCredits": (
+            BillableEvent.objects.filter(
+                tenant=tenant,
+                item__batch__idempotency_key=f"individual:{execution_key}"[:128],
+            ).count()
+            if execution_key
+            else 1
+        ),
     }

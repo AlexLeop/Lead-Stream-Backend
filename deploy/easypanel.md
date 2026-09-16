@@ -94,9 +94,13 @@ rotas de negócio; os health checks são isentos para permitir sondagem interna.
 
 ## 6. Provisione o Super Administrador e Valide
 
-1. No terminal do container `leadstream-api` ou via tarefa de release, execute:
+1. Configure `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL` e
+   `DJANGO_SUPERUSER_PASSWORD` no EasyPanel com a conta do proprietário da plataforma. O
+   entrypoint promove e mantém exatamente esse usuário como administrador global a cada deploy.
+   Para corrigir uma instalação já existente imediatamente, execute no terminal do container
+   `leadstream-api`:
    ```bash
-   python manage.py setup_security_admin --username admin --email contato@leadstream.com.br
+   python manage.py setup_security_admin --username <seu-usuario> --email <seu-email>
    ```
    *Guarde com segurança a senha temporária e a Master API Key geradas.*
 

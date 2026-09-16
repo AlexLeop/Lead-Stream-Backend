@@ -10,7 +10,7 @@ function routeFromLocation(): string {
 }
 
 function Application() {
-  const { isAuthenticated, loading } = useLeadStream();
+  const { isAuthenticated, loading, user } = useLeadStream();
   const [route, setRoute] = useState(routeFromLocation);
 
   useEffect(() => {
@@ -26,6 +26,12 @@ function Application() {
     setRoute(nextRoute);
   };
 
+  useEffect(() => {
+    if (!loading && isAuthenticated && user?.is_superuser && route === 'dashboard') {
+      navigate('admin', true);
+    }
+  }, [isAuthenticated, loading, route, user?.is_superuser]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--ls-bg)]" role="status">
@@ -39,7 +45,7 @@ function Application() {
 
   if (!isAuthenticated) {
     if (window.location.pathname !== '/login') window.history.replaceState({}, '', '/login');
-    return <Login onLoginSuccess={() => navigate('dashboard', true)} />;
+    return <Login onLoginSuccess={(destination) => navigate(destination, true)} />;
   }
 
   if (window.location.pathname === '/login') window.history.replaceState({}, '', `/${route}`);

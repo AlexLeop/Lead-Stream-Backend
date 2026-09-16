@@ -91,7 +91,20 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
   const { workspace, tenant, wallet, loading, error, refresh, logout, user } = useLeadStream();
-  const page = pageTitles[currentRoute] ?? pageTitles.dashboard;
+  const isPlatformOwner = Boolean(user?.is_superuser);
+  const effectiveRoute = currentRoute === 'admin' && !isPlatformOwner ? 'dashboard' : currentRoute;
+  const page = pageTitles[effectiveRoute] ?? pageTitles.dashboard;
+  const visibleNavigation = isPlatformOwner
+    ? [
+        {
+          label: 'Gestão da plataforma',
+          items: navigation.flatMap((group) => group.items).filter((item) => item.id === 'admin'),
+        },
+      ]
+    : navigation.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => !item.superuserOnly),
+      }));
 
   useEffect(() => {
     if (!mobileNavOpen) return;
@@ -116,6 +129,10 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
     onNavigate(route);
   };
 
+  useEffect(() => {
+    if (currentRoute === 'admin' && !isPlatformOwner) onNavigate('dashboard');
+  }, [currentRoute, isPlatformOwner, onNavigate]);
+
   const handleNavigateToSearchWithSet = (setId: string) => {
     setSelectedSetFilterId(setId);
     navigate('search');
@@ -126,7 +143,7 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
       {/* Brand Header */}
       <div className="flex h-[72px] items-center justify-between border-b border-slate-800 px-5">
         <button
-          onClick={() => navigate('dashboard')}
+          onClick={() => navigate(isPlatformOwner ? 'admin' : 'dashboard')}
           className="flex items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 cursor-pointer"
           aria-label="Ir para a central de dados"
         >
@@ -148,13 +165,13 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
 
       {/* Main Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-5" aria-label="Navegação principal">
-        {navigation.map((group) => (
+        {visibleNavigation.map((group) => (
           <div key={group.label} className="mb-6">
             <p className="mb-2 px-3 text-[11px] font-semibold text-slate-500">{group.label}</p>
             <div className="space-y-1">
-              {group.items.filter((item) => !item.superuserOnly || user?.is_superuser).map((item) => {
+              {group.items.map((item) => {
                 const Icon = item.icon;
-                const active = currentRoute === item.id;
+                const active = effectiveRoute === item.id;
                 return (
                   <button
                     key={item.id}
@@ -184,15 +201,21 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
         <div className="rounded-[12px] bg-slate-900 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="flex items-center gap-2 text-[11px] font-semibold text-slate-200">
-              <Activity className="h-3.5 w-3.5 text-blue-400" /> Sua base
+              <Activity className="h-3.5 w-3.5 text-blue-400" /> {isPlatformOwner ? 'Ambiente global' : 'Sua base'}
             </span>
             <span className="rounded-full bg-blue-400/10 px-2 py-0.5 text-[10px] font-bold text-blue-300">
               {tenant?.slug || 'Banco local'}
             </span>
           </div>
           <div className="flex items-center justify-between text-[10px] text-slate-400">
-            <span>{(workspace.companies || 0).toLocaleString('pt-BR')} {(workspace.companies || 0) === 1 ? 'empresa' : 'empresas'}</span>
-            <span>{(workspace.contacts || 0).toLocaleString('pt-BR')} {(workspace.contacts || 0) === 1 ? 'contato' : 'contatos'}</span>
+            {isPlatformOwner ? (
+              <span>Administração de clientes, custos e operação</span>
+            ) : (
+              <>
+                <span>{(workspace.companies || 0).toLocaleString('pt-BR')} {(workspace.companies || 0) === 1 ? 'empresa' : 'empresas'}</span>
+                <span>{(workspace.contacts || 0).toLocaleString('pt-BR')} {(workspace.contacts || 0) === 1 ? 'contato' : 'contatos'}</span>
+              </>
+            )}
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between gap-3 px-1">
@@ -200,7 +223,9 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
             <p className="truncate text-xs font-semibold text-slate-200">
               {user?.first_name || user?.username || 'Operador'}
             </p>
-            <p className="truncate text-[11px] text-slate-500">{tenant?.name || 'Workspace atual'}</p>
+            <p className="truncate text-[11px] text-slate-500">
+              {isPlatformOwner ? 'Proprietário da plataforma' : tenant?.name || 'Workspace atual'}
+            </p>
           </div>
           <button
             type="button"
@@ -254,7 +279,7 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
           </div>
           <div className="flex items-center gap-3 text-[11px] font-medium text-slate-600">
             {/* Real BRL Wallet Badge */}
-            <button
+            {!isPlatformOwner && <button
               onClick={() => navigate('wallet')}
               className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 hover:bg-slate-100 hover:border-blue-400 transition-all cursor-pointer shadow-2xs"
               title="Gerenciar Carteira & Ledger Contábil"
@@ -266,10 +291,10 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
                   : 'R$ 0,00'}
               </span>
               <span className="text-[10px] text-slate-500">disp.</span>
-            </button>
+            </button>}
 
             <span className="hidden items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 sm:flex">
-              <Activity className="h-3.5 w-3.5 text-blue-600" /> Dados do workspace
+              <Activity className="h-3.5 w-3.5 text-blue-600" /> {isPlatformOwner ? 'Controle da plataforma' : 'Dados do workspace'}
             </span>
 
             <button
@@ -291,20 +316,20 @@ export default function AppShell({ currentRoute, onNavigate }: AppShellProps) {
               </button>
             </div>
           )}
-          {currentRoute === 'dashboard' && <Dashboard onNavigate={navigate} />}
-          {currentRoute === 'data-health' && <DataHealth onNavigate={navigate} />}
-          {currentRoute === 'enrichment' && <Enrichment onNavigate={navigate} />}
-          {currentRoute === 'search' && (
+          {effectiveRoute === 'dashboard' && <Dashboard onNavigate={navigate} />}
+          {effectiveRoute === 'data-health' && <DataHealth onNavigate={navigate} />}
+          {effectiveRoute === 'enrichment' && <Enrichment onNavigate={navigate} />}
+          {effectiveRoute === 'search' && (
             <SearchPage
               initialSetFilterId={selectedSetFilterId}
               onClearSetFilter={() => setSelectedSetFilterId(null)}
             />
           )}
-          {currentRoute === 'datasets' && <DatasetsPage onNavigateToSearchWithSet={handleNavigateToSearchWithSet} />}
-          {currentRoute === 'lists' && <ListsPage />}
-          {currentRoute === 'wallet' && <Wallet />}
-          {currentRoute === 'validation' && <EmailValidation />}
-          {currentRoute === 'admin' && <AdminCenter />}
+          {effectiveRoute === 'datasets' && <DatasetsPage onNavigateToSearchWithSet={handleNavigateToSearchWithSet} />}
+          {effectiveRoute === 'lists' && <ListsPage />}
+          {effectiveRoute === 'wallet' && <Wallet />}
+          {effectiveRoute === 'validation' && <EmailValidation />}
+          {effectiveRoute === 'admin' && isPlatformOwner && <AdminCenter />}
         </main>
       </div>
     </div>

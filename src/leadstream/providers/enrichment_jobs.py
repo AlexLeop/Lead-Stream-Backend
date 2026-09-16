@@ -158,6 +158,7 @@ def execute_enrichment_job(job_id: str, *, worker_id: str) -> EnrichmentJob:
                 query=query,
                 tenant=job.tenant,
                 capabilities=list(job.capabilities),
+                execution_key=str(job.pk),
             )
             matched = bool(result.get("company"))
             matched_entity_id = str(result.get("companyId") or "")

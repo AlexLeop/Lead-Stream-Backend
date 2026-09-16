@@ -3,7 +3,7 @@ import { useLeadStream } from '../LeadStreamContext';
 import { Lock, User, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 
 interface LoginProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (destination: 'admin' | 'dashboard') => void;
 }
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
@@ -24,8 +24,8 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      await login(username.trim(), password);
-      onLoginSuccess();
+      const authenticatedUser = await login(username.trim(), password);
+      onLoginSuccess(authenticatedUser.is_superuser ? 'admin' : 'dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Falha na autenticação. Verifique as credenciais.');
     } finally {

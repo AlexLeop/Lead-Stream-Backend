@@ -12,6 +12,7 @@ from .exceptions import (
     ProviderCircuitOpen,
     ProviderError,
     ProviderNotConfigured,
+    ProviderPending,
     ProviderRateLimited,
 )
 from .executor import execute_provider
@@ -76,9 +77,9 @@ def run_enrichment_cascade(
         )
         try:
             execution = execute_provider(adapter=adapter, policy=policy, context=context)
-        except ProviderRateLimited:
-            # Quota é um estado transitório esperado. O worker devolve o chunk à fila
-            # sem marcar o lead como ausente ou consumir as tentativas técnicas.
+        except (ProviderRateLimited, ProviderPending):
+            # Quota e execução remota em andamento são estados transitórios. O worker
+            # precisa retomar a mesma chamada durável, não concluir o lead como ausente.
             raise
         except (
             ProviderNotConfigured,
