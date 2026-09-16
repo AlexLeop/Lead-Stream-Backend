@@ -13,6 +13,8 @@ import {
   Send, 
   UserCheck, 
   ShieldCheck, 
+  ShieldAlert,
+  Landmark,
   Scale, 
   Layers, 
   Home, 
@@ -370,6 +372,95 @@ export default function LeadDetailsModal({ lead, onClose, onAddToList }: LeadDet
                   </div>
                 ) : null}
               </div>
+              )}
+
+              {(lead.governmentRisk?.status || lead.publicSectorProfile) && (
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-amber-600" /> Inteligência governamental
+                      </h3>
+                      <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                        Consulta oficial por CNPJ. Ausência significa somente que não houve correspondência nas fontes e no momento indicados.
+                      </p>
+                    </div>
+                    {lead.governmentRisk?.status && (
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${lead.governmentRisk.has_matches ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                        {lead.governmentRisk.has_matches ? `${lead.governmentRisk.match_count ?? 0} ocorrência(s)` : 'Sem correspondência'}
+                      </span>
+                    )}
+                  </div>
+
+                  {lead.governmentRisk?.checked_sources?.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {lead.governmentRisk.checked_sources.map((source) => (
+                        <span key={source} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                          {source.replaceAll('_', ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {(lead.governmentRisk?.records?.length ?? 0) > 0 && (
+                    <div className="space-y-2">
+                      {lead.governmentRisk?.records?.slice(0, 6).map((record, index) => (
+                        <div key={`${record.source}-${record.record_id ?? index}`} className="rounded-xl border border-red-100 bg-red-50/40 p-3 text-xs">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <span className="font-bold text-slate-900">{record.sanction_type || record.reason || record.status || 'Registro governamental'}</span>
+                              <span className="mt-0.5 block text-[10px] text-slate-600">
+                                {record.source.replaceAll('_', ' ')}{record.sanctioning_organ || record.responsible_organ ? ` · ${record.sanctioning_organ || record.responsible_organ}` : ''}
+                              </span>
+                            </div>
+                            {record.publication_url ? (
+                              <a href={record.publication_url} target="_blank" rel="noreferrer" aria-label="Abrir publicação oficial" className="rounded-lg p-1.5 text-slate-500 hover:bg-white hover:text-indigo-700">
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            ) : null}
+                          </div>
+                          {(record.starts_on || record.ends_on || record.process_number) && (
+                            <span className="mt-2 block text-[10px] text-slate-500">
+                              {[record.starts_on && `Início: ${record.starts_on}`, record.ends_on && `Fim: ${record.ends_on}`, record.process_number && `Processo: ${record.process_number}`].filter(Boolean).join(' · ')}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {lead.publicSectorProfile && (
+                    <div className="border-t border-slate-100 pt-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                          <Landmark className="h-4 w-4 text-indigo-600" /> Contratos federais
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-500">
+                          {lead.publicSectorProfile.contract_count ?? 0} na página consultada
+                        </span>
+                      </div>
+                      {(lead.publicSectorProfile.contracts?.length ?? 0) > 0 ? (
+                        <div className="mt-2 space-y-2">
+                          {lead.publicSectorProfile.contracts?.slice(0, 5).map((contract, index) => (
+                            <div key={`${contract.record_id ?? contract.number ?? index}`} className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 text-xs">
+                              <span className="font-bold text-slate-900">{contract.number ? `Contrato ${contract.number}` : 'Contrato federal'}</span>
+                              <span className="mt-0.5 block text-[11px] leading-5 text-slate-700">{contract.object || 'Objeto não informado'}</span>
+                              <span className="mt-1 block text-[10px] text-slate-500">
+                                {[contract.managing_unit, contract.status, contract.final_value != null && `R$ ${Number(contract.final_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`].filter(Boolean).join(' · ')}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-[11px] text-slate-500">Nenhum contrato federal localizado na página consultada.</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="text-[10px] text-slate-500">
+                    Atualizado em {lead.governmentRiskObservedAt || lead.publicSectorObservedAt ? new Date(lead.governmentRiskObservedAt || lead.publicSectorObservedAt || '').toLocaleString('pt-BR') : 'data não informada'} · Fonte: Portal da Transparência / CGU
+                  </div>
+                </div>
               )}
 
               {/* Dados Cadastrais e Fiscais da Empresa */}

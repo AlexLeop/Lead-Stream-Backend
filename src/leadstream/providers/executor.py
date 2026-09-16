@@ -20,12 +20,13 @@ from leadstream.billing.services import (
 )
 from leadstream.entities.normalization import fingerprint_value
 
-from .contracts import ProviderAdapter, ProviderContext
+from .contracts import ProviderAdapter, ProviderContext, ProviderQuota
 from .exceptions import (
     ProviderError,
     ProviderNotConfigured,
     ProviderPending,
     ProviderPermanentError,
+    ProviderRateLimited,
     ProviderSubmissionUncertain,
     ProviderTemporaryError,
 )
@@ -58,6 +59,23 @@ def _base_key(context: ProviderContext, policy: ProviderPolicy) -> str:
     )
 
 
+def _provider_quota(
+    adapter: ProviderAdapter,
+    policy: ProviderPolicy,
+    context: ProviderContext,
+) -> ProviderQuota:
+    quota_factory = getattr(adapter, "quota_for", None)
+    if not callable(quota_factory):
+        return ProviderQuota(
+            scope=policy.provider,
+            requests_per_minute=policy.requests_per_minute,
+        )
+    quota = quota_factory(context)
+    if not isinstance(quota, ProviderQuota):
+        raise ValidationError("Adapter retornou uma definição de quota inválida.")
+    return quota
+
+
 @transaction.atomic
 def _reserve(
     adapter: ProviderAdapter,
@@ -73,6 +91,7 @@ def _reserve(
     ):
         raise ValidationError("Contexto do provedor contém referências de outro lote/tenant.")
     base = _base_key(context, policy)
+    quota = _provider_quota(adapter, locked, context)
     calls = ProviderCall.objects.filter(tenant=context.tenant, idempotency_key__startswith=base)
     completed = calls.filter(status__in=("SUCCEEDED", "ABSENT")).first()
     if completed is not None:
@@ -88,13 +107,27 @@ def _reserve(
             raise ProviderPending("Execução remota já está em andamento.")
         if not getattr(adapter, "resumable", False):
             raise ProviderSubmissionUncertain("Chamada interrompida sem confirmação remota.")
-        _rate_limit(tenant=context.tenant, policy=locked)
+        _rate_limit(
+            tenant=context.tenant,
+            policy=locked,
+            scope=quota.scope,
+            requests_per_minute=quota.requests_per_minute,
+            units=quota.units,
+        )
     else:
         if not adapter.is_configured():
             raise ProviderNotConfigured(f"{policy.display_name} não está configurado.")
-        if calls.count() > locked.max_retries:
+        technical_attempts = calls.exclude(error_code="ProviderRateLimited").count()
+        if technical_attempts > locked.max_retries:
             raise ProviderPermanentError("Limite de tentativas do provedor atingido.")
-        gate = acquire_provider_gate(tenant=context.tenant, policy=locked, batch=context.batch)
+        gate = acquire_provider_gate(
+            tenant=context.tenant,
+            policy=locked,
+            batch=context.batch,
+            rate_limit_scope=quota.scope,
+            requests_per_minute=quota.requests_per_minute,
+            rate_limit_units=quota.units,
+        )
         call = register_provider_call(
             tenant=context.tenant,
             batch=context.batch,
@@ -191,7 +224,8 @@ def execute_provider(
                     error_code=type(exc).__name__,
                     latency_ms=round((time.monotonic() - started) * 1000),
                 )
-        record_provider_failure(policy=policy, error_code=type(exc).__name__)
+        if not isinstance(exc, ProviderRateLimited):
+            record_provider_failure(policy=policy, error_code=type(exc).__name__)
         if isinstance(exc, (ProviderError, ValidationError)):
             raise
         raise ProviderTemporaryError("Falha inesperada no provedor.") from exc

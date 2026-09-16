@@ -300,6 +300,8 @@ export default function Enrichment({ onNavigate }: EnrichmentProps) {
             'WHATSAPP',
             'SOCIAL_PROFILES',
             'BANKING',
+            'GOVERNMENT_RISK',
+            'PUBLIC_SECTOR',
           ]);
           progress = await api.batchDetail(batchId);
         }

@@ -23,6 +23,8 @@ class DataBlock(models.TextChoices):
     WHATSAPP = "WHATSAPP", "WhatsApp validado"
     SOCIAL_PROFILES = "SOCIAL_PROFILES", "Redes sociais"
     BANKING = "BANKING", "Instituição bancária"
+    GOVERNMENT_RISK = "GOVERNMENT_RISK", "Risco governamental"
+    PUBLIC_SECTOR = "PUBLIC_SECTOR", "Atuação no setor público"
 
 
 class PriceBook(TenantOwnedModel):

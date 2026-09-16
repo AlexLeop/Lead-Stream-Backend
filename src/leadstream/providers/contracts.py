@@ -71,6 +71,15 @@ class ProviderContext:
 
 
 @dataclass(frozen=True)
+class ProviderQuota:
+    """Quota externa compartilhada, medida em requisições reais ao provedor."""
+
+    scope: str
+    requests_per_minute: int
+    units: int = 1
+
+
+@dataclass(frozen=True)
 class ProviderResult:
     outcome: str
     confirmed_cost_cents: int

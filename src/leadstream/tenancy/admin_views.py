@@ -133,6 +133,8 @@ class AdminTenantListCreateView(APIView):
                 DataBlock.WHATSAPP: 30,
                 DataBlock.SOCIAL_PROFILES: 15,
                 DataBlock.BANKING: 15,
+                DataBlock.GOVERNMENT_RISK: 0,
+                DataBlock.PUBLIC_SECTOR: 0,
             }
             for block, price in default_block_prices.items():
                 PriceRule.objects.create(

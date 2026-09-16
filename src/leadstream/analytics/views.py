@@ -323,6 +323,18 @@ def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
         "cnae": company.primary_cnae,
         "capitalSocial": str(company.share_capital) if company.share_capital is not None else "",
         "naturezaJuridica": company.legal_nature,
+        "governmentRisk": company.government_risk,
+        "governmentRiskObservedAt": (
+            company.government_risk_observed_at.isoformat()
+            if company.government_risk_observed_at
+            else None
+        ),
+        "publicSectorProfile": company.public_sector_profile,
+        "publicSectorObservedAt": (
+            company.public_sector_observed_at.isoformat()
+            if company.public_sector_observed_at
+            else None
+        ),
         "papelCompra": relationship.buying_role,
         "observedAt": observed_at.isoformat() if observed_at else None,
         "createdAt": person.created_at.isoformat(),
@@ -347,6 +359,8 @@ def _company_lead(company: Company) -> dict[str, Any]:
             value
             for value in (
                 company.registry_observed_at,
+                company.government_risk_observed_at,
+                company.public_sector_observed_at,
                 email.last_observed_at if email else None,
                 phone.last_observed_at if phone else None,
                 linkedin.last_observed_at if linkedin else None,
@@ -421,6 +435,18 @@ def _company_lead(company: Company) -> dict[str, Any]:
         "municipio": establishment.city if establishment else "",
         "uf": establishment.state if establishment else "",
         "dataAbertura": company.opened_on.isoformat() if company.opened_on else None,
+        "governmentRisk": company.government_risk,
+        "governmentRiskObservedAt": (
+            company.government_risk_observed_at.isoformat()
+            if company.government_risk_observed_at
+            else None
+        ),
+        "publicSectorProfile": company.public_sector_profile,
+        "publicSectorObservedAt": (
+            company.public_sector_observed_at.isoformat()
+            if company.public_sector_observed_at
+            else None
+        ),
         "companyLinkedinUrl": linkedin.normalized_url if linkedin else "",
         "companyInstagramUrl": instagram.normalized_url if instagram else "",
         "companyFacebookUrl": facebook.normalized_url if facebook else "",

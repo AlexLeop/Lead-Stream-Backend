@@ -58,9 +58,14 @@ valores reais diretamente no cofre de variáveis do EasyPanel para API, worker e
 - `DATABASE_SSL_REQUIRED=false` é aceitável apenas para a conexão dentro da rede privada do
   EasyPanel. Para um PostgreSQL externo, habilite TLS e use `true`.
 - Gere `DJANGO_SECRET_KEY` exclusivamente para esta aplicação.
+- Gere `FIELD_ENCRYPTION_KEYS` como uma chave Fernet persistente e use o mesmo valor na API,
+  worker e tarefa de release. A primeira chave cifra; as seguintes só mantêm a leitura durante
+  rotação. Trocar ou perder todas as chaves antigas torna credenciais já gravadas ilegíveis.
 - Use uma nova chave Appwrite de runtime com o menor escopo possível. A chave compartilhada
   durante o planejamento deve ser revogada.
 - Nunca grave URLs com senha, tokens ou chaves na imagem, no repositório ou nos logs.
+- Cadastre `PORTAL_TRANSPARENCIA_TOKEN` na API e no worker. O e-mail é apenas referência
+  operacional; somente o token é enviado no cabeçalho `chave-api-dados`.
 
 ## 4. Publique com ordem segura
 

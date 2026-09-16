@@ -61,6 +61,10 @@ class Company(models.Model):
     mei = models.BooleanField(null=True, blank=True)
     registry_source = models.CharField(max_length=160, blank=True)
     registry_observed_at = models.DateTimeField(null=True, blank=True)
+    government_risk = models.JSONField(default=dict, blank=True)
+    government_risk_observed_at = models.DateTimeField(null=True, blank=True)
+    public_sector_profile = models.JSONField(default=dict, blank=True)
+    public_sector_observed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

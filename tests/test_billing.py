@@ -49,7 +49,7 @@ def make_batch_item() -> tuple[Batch, BatchItem]:
 def test_tabela_padrao_totaliza_oitenta_centavos(api_client: object) -> None:
     tenant = get_internal_tenant()
     book = ensure_default_price_book(tenant)
-    assert book.rules.count() == 8
+    assert book.rules.count() == 10
     assert sum(book.rules.values_list("unit_price_cents", flat=True)) == 80
 
     response = api_client.get("/api/v1/precos/")  # type: ignore[attr-defined]

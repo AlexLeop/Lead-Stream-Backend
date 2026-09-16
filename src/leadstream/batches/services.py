@@ -49,6 +49,7 @@ class BatchCreation:
 class ChunkExecution:
     status: str
     retryable: bool = False
+    retry_after_seconds: int | None = None
 
 
 def _validate_idempotency_key(value: str) -> str:

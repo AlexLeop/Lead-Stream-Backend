@@ -21,7 +21,12 @@ from .pipeline import process_enrichment_chunk
 )
 def process_enrichment_chunk_task(self: Any, chunk_id: str) -> None:
     result = process_enrichment_chunk(chunk_id=chunk_id, worker_id=str(self.request.id))
-    if result.retryable:
+    if result.retry_after_seconds is not None:
+        process_enrichment_chunk_task.apply_async(
+            args=[chunk_id],
+            countdown=result.retry_after_seconds,
+        )
+    elif result.retryable:
         raise self.retry(countdown=30)
 
 

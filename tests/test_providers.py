@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
+from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
 
-from leadstream.batches.models import Batch, BatchChunk, BatchItem
+from leadstream.batches.models import Batch, BatchChunk, BatchItem, ProcessingAttempt
 from leadstream.billing.models import BillableEvent, DataBlock, ProviderCall
-from leadstream.entities.models import ContactPoint, Person, Relationship, SocialProfile
+from leadstream.entities.models import Company, ContactPoint, Person, Relationship, SocialProfile
 from leadstream.entities.normalization import fingerprint_value
 from leadstream.entities.services import create_company
 from leadstream.evidence.models import CaptureMethod, EvidenceStatus, Observation, SourceRecord
@@ -18,6 +21,10 @@ from leadstream.providers.adapters.apify import ApifyDecisionMakerAdapter
 from leadstream.providers.adapters.bigdatacorp import BigDataCorpAdapter
 from leadstream.providers.adapters.bigquery import BigQueryOpenCNPJAdapter, QueryResponse
 from leadstream.providers.adapters.fixture import FixtureProviderAdapter
+from leadstream.providers.adapters.portal_transparencia import (
+    PortalTransparenciaAdapter,
+    portal_requests_per_minute,
+)
 from leadstream.providers.contracts import (
     ContactCandidate,
     FieldObservation,
@@ -30,6 +37,7 @@ from leadstream.providers.discovery import execute_discovery_search
 from leadstream.providers.exceptions import (
     ProviderBudgetExceeded,
     ProviderCircuitOpen,
+    ProviderRateLimited,
     ProviderTemporaryError,
 )
 from leadstream.providers.executor import execute_provider
@@ -39,6 +47,8 @@ from leadstream.providers.models import (
     ProviderHealth,
     ProviderPolicy,
 )
+from leadstream.providers.pipeline import process_enrichment_chunk
+from leadstream.providers.resilience import _rate_limit
 from leadstream.tenancy.services import get_internal_tenant
 
 pytestmark = pytest.mark.django_db
@@ -483,7 +493,7 @@ def test_api_expoe_politicas_sem_credenciais_e_inicia_enriquecimento(
 ) -> None:
     response = api_client.get("/api/v1/provedores/")
     assert response.status_code == 200
-    assert len(response.json()) == 5
+    assert len(response.json()) == 6
     assert all("token" not in str(item["config"]).casefold() for item in response.json())
 
     context = make_context(suffix="007")
@@ -503,6 +513,186 @@ def test_api_expoe_politicas_sem_credenciais_e_inicia_enriquecimento(
     chunk = BatchChunk.objects.get(batch=context.batch, stage=BatchChunk.Stage.ENRICHMENT)
     assert chunk.requested_blocks == [DataBlock.COMPANY_REGISTRY, DataBlock.DECISION_MAKER]
     assert published == [[chunk.pk]]
+
+
+@override_settings(
+    PORTAL_TRANSPARENCIA_TOKEN="test-token",
+    PORTAL_TRANSPARENCIA_BASE_URL="https://api.portaldatransparencia.gov.br/api-de-dados",
+    PORTAL_TRANSPARENCIA_COST_CENTS=0,
+    PORTAL_TRANSPARENCIA_DAY_RPM=400,
+    PORTAL_TRANSPARENCIA_NIGHT_RPM=700,
+    PORTAL_TRANSPARENCIA_RESTRICTED_RPM=180,
+    PORTAL_TRANSPARENCIA_CACHE_SECONDS=60,
+)
+def test_portal_transparencia_mapeia_risco_e_contratos_sem_expor_token() -> None:
+    context = replace(
+        make_context(suffix="portal-001"),
+        missing_blocks=frozenset({DataBlock.GOVERNMENT_RISK, DataBlock.PUBLIC_SECTOR}),
+    )
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["chave-api-dados"] == "test-token"
+        assert request.url.params["pagina"] == "1"
+        requests.append(request.url.path)
+        if request.url.path.endswith("/ceis"):
+            assert request.url.params["codigoSancionado"] == context.cnpj
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 123,
+                        "dataInicioSancao": "01/01/2026",
+                        "tipoSancao": {"descricaoPortal": "Suspensão"},
+                        "orgaoSancionador": {"nome": "Órgão Exemplo"},
+                        "sancionado": {
+                            "nome": "Empresa Exemplo",
+                            "codigoFormatado": "04.252.011/0001-10",
+                        },
+                        "linkPublicacao": "https://gov.example/publicacao/123",
+                    }
+                ],
+                headers={"x-request-id": "ceis-123"},
+            )
+        if request.url.path.endswith("/contratos/cpf-cnpj"):
+            assert request.url.params["cpfCnpj"] == context.cnpj
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 456,
+                        "numero": "10/2026",
+                        "objeto": "Serviços de tecnologia",
+                        "situacaoContrato": "ATIVO",
+                        "unidadeGestora": {"nome": "Ministério Exemplo"},
+                        "fornecedor": {"cnpjFormatado": "04.252.011/0001-10"},
+                        "valorFinalCompra": 120000.5,
+                    }
+                ],
+                headers={"x-request-id": "contract-456"},
+            )
+        return httpx.Response(200, json=[])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        adapter = PortalTransparenciaAdapter(client=client)
+        result = adapter.enrich(context)
+        policy = make_policy(context, slug=adapter.slug, estimated_cost_cents=0)
+        execution = execute_provider(adapter=adapter, policy=policy, context=context)
+
+    assert len(requests) == 5
+    assert result.delivered_blocks == frozenset(
+        {DataBlock.GOVERNMENT_RISK, DataBlock.PUBLIC_SECTOR}
+    )
+    risk = result.observations[0].value
+    assert risk["has_matches"] is True
+    assert risk["records"][0]["sanction_type"] == "Suspensão"
+    company = Company.objects.get(entity=context.item.entity)
+    assert company.government_risk["match_count"] == 1
+    assert company.public_sector_profile["contracts"][0]["number"] == "10/2026"
+    assert execution.delivered_blocks == frozenset(
+        {DataBlock.GOVERNMENT_RISK, DataBlock.PUBLIC_SECTOR}
+    )
+    assert "test-token" not in str(
+        Observation.objects.filter(target=context.item.entity).values_list(
+            "value", "source_record__source_url"
+        )
+    )
+
+
+@override_settings(
+    PORTAL_TRANSPARENCIA_DAY_RPM=400,
+    PORTAL_TRANSPARENCIA_NIGHT_RPM=700,
+    PORTAL_TRANSPARENCIA_RESTRICTED_RPM=180,
+)
+def test_portal_transparencia_aplica_janelas_oficiais_de_quota() -> None:
+    tz = ZoneInfo("America/Sao_Paulo")
+    assert portal_requests_per_minute(moment=datetime(2026, 9, 15, 2, tzinfo=tz)) == 700
+    assert portal_requests_per_minute(moment=datetime(2026, 9, 15, 10, tzinfo=tz)) == 400
+    assert portal_requests_per_minute(
+        restricted=True,
+        moment=datetime(2026, 9, 15, 2, tzinfo=tz),
+    ) == 180
+
+
+def test_quota_compartilhada_contabiliza_requisicoes_reais() -> None:
+    cache.clear()
+    context = make_context(suffix="quota-units")
+    policy = make_policy(
+        context,
+        slug="quota-units",
+        requests_per_minute=5,
+    )
+    _rate_limit(
+        tenant=context.tenant,
+        policy=policy,
+        scope="shared-token",
+        requests_per_minute=5,
+        units=4,
+    )
+    with pytest.raises(ProviderRateLimited):
+        _rate_limit(
+            tenant=context.tenant,
+            policy=policy,
+            scope="shared-token",
+            requests_per_minute=5,
+            units=2,
+        )
+
+
+def test_resposta_429_nao_consumira_tentativas_tecnicas_do_provedor() -> None:
+    context = make_context(suffix="provider-429")
+    policy = make_policy(
+        context,
+        slug="provider-429",
+        max_retries=0,
+    )
+
+    def limited(_: ProviderContext) -> ProviderResult:
+        raise ProviderRateLimited("Quota externa atingida.", retry_after_seconds=30)
+
+    adapter = FixtureProviderAdapter("provider-429", limited)
+    with pytest.raises(ProviderRateLimited):
+        execute_provider(adapter=adapter, policy=policy, context=context)
+    with pytest.raises(ProviderRateLimited):
+        execute_provider(adapter=adapter, policy=policy, context=context)
+
+    calls = ProviderCall.objects.filter(provider="provider-429").order_by("started_at")
+    assert calls.count() == 2
+    assert set(calls.values_list("error_code", flat=True)) == {"ProviderRateLimited"}
+    health = ProviderHealth.objects.get(policy=policy)
+    assert health.consecutive_failures == 0
+    assert health.circuit_open_until is None
+
+
+def test_chunk_aguarda_quota_sem_consumir_tentativa_tecnica(monkeypatch: Any) -> None:
+    context = make_context(suffix="quota-deferral")
+    chunk = BatchChunk.objects.create(
+        tenant=context.tenant,
+        batch=context.batch,
+        stage=BatchChunk.Stage.ENRICHMENT,
+        requested_blocks=[DataBlock.GOVERNMENT_RISK],
+        sequence=1,
+        start_row=context.item.row_number,
+        end_row=context.item.row_number,
+        checkpoint_row=context.item.row_number - 1,
+        max_attempts=5,
+    )
+
+    def limited(**_: Any) -> None:
+        raise ProviderRateLimited("Aguardar quota.", retry_after_seconds=17)
+
+    monkeypatch.setattr("leadstream.providers.pipeline.run_enrichment_cascade", limited)
+    result = process_enrichment_chunk(chunk_id=chunk.pk, worker_id="worker-quota")
+
+    chunk.refresh_from_db()
+    attempt = ProcessingAttempt.objects.get(chunk=chunk)
+    assert result.status == BatchChunk.Status.PENDING
+    assert result.retry_after_seconds == 17
+    assert chunk.status == BatchChunk.Status.PENDING
+    assert chunk.max_attempts == 6
+    assert chunk.attempt_count == 1
+    assert attempt.status == ProcessingAttempt.Status.ABANDONED
+    assert attempt.error_code == "PROVIDER_RATE_LIMITED"
 
 
 @override_settings(

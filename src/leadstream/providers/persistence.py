@@ -47,11 +47,8 @@ def _governance(
     item: BatchItem, policy: ProviderPolicy
 ) -> tuple[Source, ProcessingPurpose, RetentionPolicy]:
     tenant = item.tenant
-    category = (
-        Source.Category.GOVERNMENT
-        if policy.provider == "open-cnpj-bigquery"
-        else Source.Category.COMMERCIAL
-    )
+    is_government = policy.provider in {"open-cnpj-bigquery", "portal-transparencia"}
+    category = Source.Category.GOVERNMENT if is_government else Source.Category.COMMERCIAL
     source, _ = Source.objects.get_or_create(
         tenant=tenant,
         slug=policy.provider,
@@ -59,8 +56,36 @@ def _governance(
             "name": policy.display_name,
             "category": category,
             "priority": max(1, 100 - policy.priority),
+            "terms_url": (
+                "https://portaldatransparencia.gov.br/api-de-dados"
+                if policy.provider == "portal-transparencia"
+                else ""
+            ),
         },
     )
+    if policy.provider == "portal-transparencia":
+        purpose, _ = ProcessingPurpose.objects.get_or_create(
+            tenant=tenant,
+            code="due-diligence-b2b",
+            defaults={
+                "name": "Due diligence e inteligência comercial B2B",
+                "description": (
+                    "Verificação de sanções e de atuação empresarial no setor público, "
+                    "sempre por CNPJ."
+                ),
+                "operational_basis": "Fonte oficial aberta e finalidade profissional documentada.",
+            },
+        )
+        retention, _ = RetentionPolicy.objects.get_or_create(
+            tenant=tenant,
+            code="inteligencia-governamental-b2b",
+            defaults={
+                "name": "Inteligência governamental B2B",
+                "stale_after_days": 1,
+                "retention_days": 365,
+            },
+        )
+        return source, purpose, retention
     purpose, _ = ProcessingPurpose.objects.get_or_create(
         tenant=tenant,
         code="prospeccao-b2b",
@@ -475,7 +500,49 @@ def persist_provider_result(
     }
     for observation in result.observations:
         _observe(record=record, target=item.entity, observation=observation)
-        if observation.field_path.startswith("company."):
+        if observation.field_path == "company.government_risk":
+            _quality_update(
+                qualities,
+                DataBlock.GOVERNMENT_RISK,
+                observation.evidence_status,
+                observation.confidence,
+                observation.value,
+            )
+            if isinstance(observation.value, dict):
+                company.government_risk = observation.value
+                company.government_risk_observed_at = (
+                    observation.observed_at or record.captured_at
+                )
+                company.save(
+                    update_fields=(
+                        "government_risk",
+                        "government_risk_observed_at",
+                        "updated_at",
+                    )
+                )
+                normalized_updates["government_risk"] = observation.value
+        elif observation.field_path == "company.public_sector_profile":
+            _quality_update(
+                qualities,
+                DataBlock.PUBLIC_SECTOR,
+                observation.evidence_status,
+                observation.confidence,
+                observation.value,
+            )
+            if isinstance(observation.value, dict):
+                company.public_sector_profile = observation.value
+                company.public_sector_observed_at = (
+                    observation.observed_at or record.captured_at
+                )
+                company.save(
+                    update_fields=(
+                        "public_sector_profile",
+                        "public_sector_observed_at",
+                        "updated_at",
+                    )
+                )
+                normalized_updates["public_sector_profile"] = observation.value
+        elif observation.field_path.startswith("company."):
             _quality_update(
                 qualities,
                 DataBlock.COMPANY_REGISTRY,

@@ -131,6 +131,50 @@ export interface Lead {
     observedAt: string;
     expiresAt?: string;
   }>;
+  governmentRisk?: {
+    status?: 'MATCH_FOUND' | 'NO_MATCH_ON_CHECKED_SOURCES';
+    has_matches?: boolean;
+    match_count?: number;
+    checked_sources?: string[];
+    pagination?: string;
+    records?: Array<{
+      source: string;
+      record_id?: number | string;
+      sanctioned_name?: string;
+      document?: string;
+      sanction_type?: string;
+      reason?: string;
+      status?: string;
+      sanctioning_organ?: string;
+      responsible_organ?: string;
+      starts_on?: string;
+      ends_on?: string;
+      published_on?: string;
+      publication_url?: string;
+      process_number?: string;
+      fine_value?: string;
+    }>;
+  };
+  governmentRiskObservedAt?: string;
+  publicSectorProfile?: {
+    has_federal_contracts?: boolean;
+    contract_count?: number;
+    pagination?: string;
+    contracts?: Array<{
+      record_id?: number | string;
+      number?: string;
+      object?: string;
+      process_number?: string;
+      status?: string;
+      signed_on?: string;
+      starts_on?: string;
+      ends_on?: string;
+      managing_unit?: string;
+      initial_value?: number;
+      final_value?: number;
+    }>;
+  };
+  publicSectorObservedAt?: string;
   commercialPhoneSecondary?: string;
 
   // Campos específicos de Pessoa Física (PF)

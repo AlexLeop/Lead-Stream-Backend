@@ -38,6 +38,7 @@ $env:REDIS_URL = "redis://localhost:6379/15"
 $env:DJANGO_SECURE_SSL_REDIRECT = "true"
 $env:DATA_HASH_KEY = "quality-check-only-data-hash-key"
 $env:DATA_HASH_KEY_VERSION = "v1"
+$env:FIELD_ENCRYPTION_KEYS = "LN9efNDmugNtrk_5pkcuBrkDKU3LrWZgHEZVWlUzvDI="
 Invoke-QualityStep "Configuração de produção" {
     & $python manage.py check --deploy --fail-level WARNING
 }

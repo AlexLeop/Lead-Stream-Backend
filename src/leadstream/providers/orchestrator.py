@@ -26,6 +26,8 @@ DEFAULT_BLOCKS = frozenset(
         DataBlock.DIRECT_PHONE,
         DataBlock.WHATSAPP,
         DataBlock.SOCIAL_PROFILES,
+        DataBlock.GOVERNMENT_RISK,
+        DataBlock.PUBLIC_SECTOR,
     }
 )
 
@@ -74,10 +76,13 @@ def run_enrichment_cascade(
         )
         try:
             execution = execute_provider(adapter=adapter, policy=policy, context=context)
+        except ProviderRateLimited:
+            # Quota é um estado transitório esperado. O worker devolve o chunk à fila
+            # sem marcar o lead como ausente ou consumir as tentativas técnicas.
+            raise
         except (
             ProviderNotConfigured,
             ProviderCircuitOpen,
-            ProviderRateLimited,
             ProviderBudgetExceeded,
         ) as exc:
             errors.append(f"{policy.provider}:{type(exc).__name__}")

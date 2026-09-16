@@ -36,6 +36,8 @@ DEFAULT_PRICE_RULES: tuple[tuple[str, int, int, int], ...] = (
     (DataBlock.WHATSAPP, 12, 95, 15),
     (DataBlock.SOCIAL_PROFILES, 9, 85, 30),
     (DataBlock.BANKING, 5, 95, 30),
+    (DataBlock.GOVERNMENT_RISK, 0, 100, 1),
+    (DataBlock.PUBLIC_SECTOR, 0, 100, 1),
 )
 ELIGIBLE_EVIDENCE_STATUSES = {
     EvidenceStatus.TECHNICALLY_VALIDATED,

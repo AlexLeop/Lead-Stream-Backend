@@ -9,6 +9,7 @@ from .adapters.apify import ApifyDecisionMakerAdapter
 from .adapters.bigdatacorp import BigDataCorpAdapter
 from .adapters.bigquery import BigQueryOpenCNPJAdapter
 from .adapters.generic import GenericPeopleEnrichmentAdapter
+from .adapters.portal_transparencia import PortalTransparenciaAdapter
 from .contracts import ProviderAdapter
 from .models import ProviderPolicy
 
@@ -16,6 +17,7 @@ from .models import ProviderPolicy
 def default_adapters() -> dict[str, ProviderAdapter]:
     adapters: tuple[ProviderAdapter, ...] = (
         BigQueryOpenCNPJAdapter(),
+        PortalTransparenciaAdapter(),
         BigDataCorpAdapter(),
         ApifyDecisionMakerAdapter(),
         GenericPeopleEnrichmentAdapter(
@@ -52,6 +54,13 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
                 DataBlock.DIRECT_EMAIL,
                 DataBlock.DIRECT_PHONE,
             ],
+        ),
+        (
+            "portal-transparencia",
+            "Portal da Transparência / CGU",
+            settings.PORTAL_TRANSPARENCIA_PROVIDER_PRIORITY,
+            settings.PORTAL_TRANSPARENCIA_COST_CENTS,
+            [DataBlock.GOVERNMENT_RISK, DataBlock.PUBLIC_SECTOR],
         ),
         (
             "bigdatacorp",
@@ -102,7 +111,23 @@ def ensure_provider_policies(tenant: Tenant) -> list[ProviderPolicy]:
                 "enabled": adapters[slug].is_configured(),
                 "priority": priority,
                 "estimated_cost_cents": cost,
+                "requests_per_minute": (
+                    settings.PORTAL_TRANSPARENCIA_NIGHT_RPM
+                    if slug == "portal-transparencia"
+                    else 60
+                ),
                 "allowed_blocks": blocks,
+                "config": (
+                    {
+                        "quota_scope": "portal-transparencia-api",
+                        "day_rpm": settings.PORTAL_TRANSPARENCIA_DAY_RPM,
+                        "night_rpm": settings.PORTAL_TRANSPARENCIA_NIGHT_RPM,
+                        "restricted_rpm": settings.PORTAL_TRANSPARENCIA_RESTRICTED_RPM,
+                        "terms_url": "https://portaldatransparencia.gov.br/api-de-dados",
+                    }
+                    if slug == "portal-transparencia"
+                    else {}
+                ),
             },
         )
         if not created:

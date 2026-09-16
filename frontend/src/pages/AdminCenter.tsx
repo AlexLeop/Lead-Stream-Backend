@@ -941,6 +941,8 @@ function PricingTab({
     DIGITAL_PRESENCE: 'Presença Digital (Web, Redes Sociais)',
     LOCATION_GEO: 'Geolocalização & Endereço Completo',
     PIX_BANKING: 'Chaves Pix & Domicílio Bancário',
+    GOVERNMENT_RISK: 'Sanções e Acordos (Portal da Transparência)',
+    PUBLIC_SECTOR: 'Contratos com o Governo Federal',
   };
 
   const loadPricing = useCallback(async () => {

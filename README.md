@@ -166,8 +166,23 @@ Cliente Web / CRM / Integração
        |            v
        |     [ Celery Workers ]  (Fatiamento, Higienização & Enriquecimento)
        |            |
-       +------------+---> Cascata de Provedores (OpenCNPJ BigQuery / BigDataCorp / Apify)
+       +------------+---> Cascata de Provedores (OpenCNPJ / Portal da Transparência / BigDataCorp / Apify)
 ```
+
+### Portal da Transparência / CGU
+
+O provedor `portal-transparencia` acrescenta dois blocos verificáveis por CNPJ:
+
+- `GOVERNMENT_RISK`: consulta CEIS, CNEP, CEPIM e acordos de leniência;
+- `PUBLIC_SECTOR`: consulta contratos do Poder Executivo Federal pelo CNPJ do fornecedor.
+
+O token é enviado exclusivamente no cabeçalho `chave-api-dados`. A quota é global entre todos
+os workspaces e contabiliza as requisições HTTP reais: 400 por minuto entre 06:00 e 23:59,
+700 por minuto entre 00:00 e 05:59 e 180 por minuto para rotas restritas. Ao atingir a quota,
+o chunk volta à fila sem consumir uma tentativa técnica nem classificar o lead como ausente.
+As respostas ficam em cache por 24 horas por padrão. O enriquecimento em tempo real registra
+explicitamente que consultou somente a primeira página de cada rota; cargas exaustivas devem
+usar os arquivos de dados abertos do próprio Portal.
 
 ---
 

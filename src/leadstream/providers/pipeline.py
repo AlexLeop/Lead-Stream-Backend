@@ -14,6 +14,7 @@ from leadstream.batches.services import ChunkExecution, _publish_chunks, claim_c
 from leadstream.billing.models import DataBlock
 from leadstream.tenancy.models import Tenant
 
+from .exceptions import ProviderRateLimited
 from .orchestrator import DEFAULT_BLOCKS, run_enrichment_cascade
 
 
@@ -172,6 +173,27 @@ def process_enrichment_chunk(
             attempt.save(update_fields=("status", "finished_at"))
         _complete_batch(chunk.batch_id)
         return ChunkExecution(status=BatchChunk.Status.COMPLETED)
+    except ProviderRateLimited as exc:
+        with transaction.atomic():
+            locked_chunk = BatchChunk.objects.select_for_update().get(pk=chunk.pk)
+            locked_chunk.status = BatchChunk.Status.PENDING
+            # A espera por quota não consome a tolerância destinada a falhas técnicas.
+            locked_chunk.max_attempts += 1
+            locked_chunk.dispatched_at = timezone.now()
+            locked_chunk.lease_owner = ""
+            locked_chunk.leased_until = None
+            locked_chunk.last_error_code = "PROVIDER_RATE_LIMITED"
+            locked_chunk.last_error_message = str(exc)[:500]
+            locked_chunk.save()
+            attempt.status = ProcessingAttempt.Status.ABANDONED
+            attempt.error_code = "PROVIDER_RATE_LIMITED"
+            attempt.error_message = str(exc)[:500]
+            attempt.finished_at = timezone.now()
+            attempt.save()
+        return ChunkExecution(
+            status=BatchChunk.Status.PENDING,
+            retry_after_seconds=exc.retry_after_seconds,
+        )
     except Exception as exc:  # noqa: BLE001 -- fronteira do worker persiste retry
         with transaction.atomic():
             locked_chunk = BatchChunk.objects.select_for_update().get(pk=chunk.pk)

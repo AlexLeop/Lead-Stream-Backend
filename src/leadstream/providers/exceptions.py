@@ -7,7 +7,9 @@ class ProviderNotConfigured(ProviderError):
 
 
 class ProviderRateLimited(ProviderError):
-    pass
+    def __init__(self, message: str, *, retry_after_seconds: int = 60) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = max(1, min(retry_after_seconds, 300))
 
 
 class ProviderBudgetExceeded(ProviderError):
