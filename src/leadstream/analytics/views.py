@@ -246,18 +246,31 @@ def _contact_confidence(*contacts: ContactPoint | None) -> int:
     return round(sum(present) / len(present)) if present else 0
 
 
+def _person_enrichment_profile(person: Person) -> dict[str, Any]:
+    raw_profile: Any = getattr(person, "enrichment_profile", None)
+    return raw_profile if isinstance(raw_profile, dict) else {}
+
+
 def _person_profile_fields(person: Person) -> dict[str, Any]:
-    profile = person.enrichment_profile or {}
-    cadastral = profile.get("dados_cadastrais") or {}
-    addresses = profile.get("enderecos") or []
-    address = addresses[0] if addresses else cadastral.get("endereco") or {}
-    phones = profile.get("telefones") or []
-    banks = profile.get("relacionamentos_bancarios") or []
+    profile = _person_enrichment_profile(person)
+    raw_cadastral = profile.get("dados_cadastrais")
+    cadastral: dict[str, Any] = raw_cadastral if isinstance(raw_cadastral, dict) else {}
+    raw_addresses = profile.get("enderecos")
+    addresses: list[Any] = raw_addresses if isinstance(raw_addresses, list) else []
+    raw_address = addresses[0] if addresses else cadastral.get("endereco")
+    address: dict[str, Any] = raw_address if isinstance(raw_address, dict) else {}
+    raw_phones = profile.get("telefones")
+    phones: list[Any] = raw_phones if isinstance(raw_phones, list) else []
+    raw_banks = profile.get("relacionamentos_bancarios")
+    banks: list[Any] = raw_banks if isinstance(raw_banks, list) else []
 
     def phone_at(index: int) -> str | None:
         if len(phones) <= index:
             return None
-        value = f"{phones[index].get('ddd', '')}{phones[index].get('numero', '')}"
+        phone_item = phones[index]
+        if not isinstance(phone_item, dict):
+            return None
+        value = f"{phone_item.get('ddd', '')}{phone_item.get('numero', '')}"
         return value or None
 
     return {
@@ -285,8 +298,11 @@ def _person_profile_fields(person: Person) -> dict[str, Any]:
         "socialBenefits": profile.get("beneficios_sociais") or [],
         "inssBenefits": profile.get("beneficios_inss") or [],
         "personBankRelationships": banks,
-        "instituicaoBancaria": banks[0].get("instituicao") if banks else "",
+        "instituicaoBancaria": (
+            banks[0].get("instituicao") if banks and isinstance(banks[0], dict) else ""
+        ),
     }
+
 
 
 def _relationship_lead(relationship: Relationship) -> dict[str, Any]:
@@ -517,12 +533,17 @@ def _company_lead(company: Company) -> dict[str, Any]:
 
 def _person_lead(person: Person) -> dict[str, Any]:
     entity = person.entity
-    profile = person.enrichment_profile or {}
-    cadastral = profile.get("dados_cadastrais") or {}
-    addresses = profile.get("enderecos") or []
-    address = addresses[0] if addresses else cadastral.get("endereco") or {}
-    profile_phones = profile.get("telefones") or []
-    bank_relationships = profile.get("relacionamentos_bancarios") or []
+    profile = _person_enrichment_profile(person)
+    raw_cadastral = profile.get("dados_cadastrais")
+    cadastral: dict[str, Any] = raw_cadastral if isinstance(raw_cadastral, dict) else {}
+    raw_addresses = profile.get("enderecos")
+    addresses: list[Any] = raw_addresses if isinstance(raw_addresses, list) else []
+    raw_address = addresses[0] if addresses else cadastral.get("endereco")
+    address: dict[str, Any] = raw_address if isinstance(raw_address, dict) else {}
+    raw_phones = profile.get("telefones")
+    profile_phones: list[Any] = raw_phones if isinstance(raw_phones, list) else []
+    raw_banks = profile.get("relacionamentos_bancarios")
+    bank_relationships: list[Any] = raw_banks if isinstance(raw_banks, list) else []
     email = _preferred_contact(entity, (ContactPoint.Kind.EMAIL,))
     phone = _preferred_contact(entity, (ContactPoint.Kind.WHATSAPP, ContactPoint.Kind.PHONE))
     linkedin = _preferred_social(entity, SocialProfile.Network.LINKEDIN)
@@ -540,6 +561,16 @@ def _person_lead(person: Person) -> dict[str, Any]:
         ],
         default=None,
     )
+
+    def profile_phone_at(index: int) -> str | None:
+        if len(profile_phones) <= index:
+            return None
+        phone_item = profile_phones[index]
+        if not isinstance(phone_item, dict):
+            return None
+        value = f"{phone_item.get('ddd', '')}{phone_item.get('numero', '')}"
+        return value or None
+
     return {
         "id": str(entity.id),
         "leadType": "PF",
@@ -555,11 +586,7 @@ def _person_lead(person: Person) -> dict[str, Any]:
         "state": address.get("uf") or "",
         "country": "Brasil",
         "email": email.normalized_value if email else "",
-        "phone": phone.normalized_value if phone else (
-            f"{profile_phones[0].get('ddd', '')}{profile_phones[0].get('numero', '')}"
-            if profile_phones
-            else ""
-        ),
+        "phone": phone.normalized_value if phone else (profile_phone_at(0) or ""),
         "status": _email_status(email),
         "companySize": "",
         "employeeCount": 0,
@@ -604,27 +631,17 @@ def _person_lead(person: Person) -> dict[str, Any]:
         "cep": address.get("cep") or "",
         "municipio": address.get("municipio") or "",
         "uf": address.get("uf") or "",
-        "phone1": (
-            f"{profile_phones[0].get('ddd', '')}{profile_phones[0].get('numero', '')}"
-            if len(profile_phones) > 0
-            else None
-        ),
-        "phone2": (
-            f"{profile_phones[1].get('ddd', '')}{profile_phones[1].get('numero', '')}"
-            if len(profile_phones) > 1
-            else None
-        ),
-        "phone3": (
-            f"{profile_phones[2].get('ddd', '')}{profile_phones[2].get('numero', '')}"
-            if len(profile_phones) > 2
-            else None
-        ),
+        "phone1": profile_phone_at(0),
+        "phone2": profile_phone_at(1),
+        "phone3": profile_phone_at(2),
         "financialRestrictions": profile.get("restricoes_financeiras") or {},
         "socialBenefits": profile.get("beneficios_sociais") or [],
         "inssBenefits": profile.get("beneficios_inss") or [],
         "personBankRelationships": bank_relationships,
         "instituicaoBancaria": (
-            bank_relationships[0].get("instituicao") if bank_relationships else ""
+            bank_relationships[0].get("instituicao")
+            if bank_relationships and isinstance(bank_relationships[0], dict)
+            else ""
         ),
         "governmentIntelligence": public_person_portal_profile(person.government_profile),
         "governmentRisk": person.government_profile.get("government_risk", {}),
